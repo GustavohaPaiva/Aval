@@ -90,16 +90,26 @@ function clienteInitial(nome) {
   return trimmed ? trimmed.charAt(0).toUpperCase() : "?";
 }
 
-export function ClienteNameBadge({ nome }) {
+export function ClienteNameBadge({ nome, ativo = true }) {
   return (
     <span className="inline-flex max-w-full items-center gap-2">
       <span
-        className="flex size-7 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-100"
+        className={[
+          "flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold ring-1",
+          ativo === false
+            ? "bg-slate-100 text-slate-600 ring-slate-200"
+            : "bg-emerald-50 text-emerald-700 ring-emerald-100",
+        ].join(" ")}
         aria-hidden
       >
         {clienteInitial(nome)}
       </span>
       <span className="truncate font-medium text-slate-900">{nome}</span>
+      {ativo === false ? (
+        <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-slate-600 ring-1 ring-slate-200">
+          Inativo
+        </span>
+      ) : null}
     </span>
   );
 }

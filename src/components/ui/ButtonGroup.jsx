@@ -8,7 +8,7 @@ const alignClass = {
 
 export function ButtonGroup({
   children,
-  align = 'end',
+  align = 'stretch',
   className = '',
 }) {
   const items = Children.toArray(children).filter(Boolean)
@@ -17,7 +17,7 @@ export function ButtonGroup({
     <div
       className={[
         'flex w-full flex-col-reverse gap-2 sm:flex-row sm:items-center',
-        alignClass[align] ?? alignClass.end,
+        alignClass[align] ?? alignClass.stretch,
         className,
       ]
         .filter(Boolean)
@@ -28,7 +28,7 @@ export function ButtonGroup({
         return cloneElement(child, {
           key: child.key ?? index,
           className: [
-            'w-full sm:min-w-[9rem] sm:max-w-[14rem] sm:flex-1',
+            'w-full sm:flex-1',
             child.props.className ?? '',
           ]
             .filter(Boolean)

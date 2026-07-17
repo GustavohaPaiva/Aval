@@ -10,6 +10,7 @@ import { PageHeader } from '../components/ui/PageHeader'
 import { PageInfoBanner } from '../components/ui/InfoStatCard'
 import { useSyncPageLoading } from '../contexts/PageLoadingContext'
 import { useAbortableAsync } from '../hooks/useAbortableAsync'
+import { usePersistedFilters } from '../hooks/usePersistedFilters'
 import { supabase } from '../services/supabase'
 
 export function GerenciarConsultores() {
@@ -18,7 +19,10 @@ export function GerenciarConsultores() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(null)
   const [modalOpen, setModalOpen] = useState(false)
-  const [searchQuery, setSearchQuery] = useState('')
+  const [filters, , patchFilters] = usePersistedFilters('filters:consultores', {
+    searchQuery: '',
+  })
+  const { searchQuery } = filters
 
   useSyncPageLoading(loading)
 
@@ -113,8 +117,8 @@ export function GerenciarConsultores() {
       <ConsultorFiltersPanel
         searchQuery={searchQuery}
         hasFilters={hasFilters}
-        onClear={() => setSearchQuery('')}
-        onSearchChange={(e) => setSearchQuery(e.target.value)}
+        onClear={() => patchFilters({ searchQuery: '' })}
+        onSearchChange={(e) => patchFilters({ searchQuery: e.target.value })}
       />
 
       <ConsultorTable

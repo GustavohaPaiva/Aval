@@ -10,23 +10,29 @@ import { ModalClienteForm } from "../components/clientes/ModalClienteForm";
 import { AlertMessage } from "../components/ui/AlertMessage";
 import { EmptyState } from "../components/ui/EmptyState";
 import { PageBackLink } from "../components/ui/PageBackLink";
+import { useAlertDialog } from "../contexts/AlertDialogProvider";
 import { useSyncPageLoading } from "../contexts/PageLoadingContext";
 import { useAbortableAsync } from "../hooks/useAbortableAsync";
 import { useAuth } from "../hooks/useAuth";
 import {
+  deleteClient,
   fetchClientById,
   fetchClientSimulations,
+  setClientAtivo,
 } from "../services/clientService";
 
 export function ClienteDetalhePage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { role } = useAuth();
+  const { showAlert } = useAlertDialog();
   const isGestor = role === "gestor";
   const [client, setClient] = useState(null);
   const [simulations, setSimulations] = useState([]);
   const [loading, setLoading] = useState(Boolean(id));
   const [error, setError] = useState(null);
+  const [actionError, setActionError] = useState(null);
+  const [actionLoading, setActionLoading] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
 
   useSyncPageLoading(loading);
@@ -37,6 +43,7 @@ export function ClienteDetalhePage() {
 
       setLoading(true);
       setError(null);
+      setActionError(null);
 
       const [clientRes, simRes] = await Promise.all([
         fetchClientById(id),
@@ -80,6 +87,58 @@ export function ClienteDetalhePage() {
   const conversionRate =
     stats.total > 0 ? Math.round((stats.vendas / stats.total) * 100) : 0;
 
+  async function handleToggleAtivo() {
+    if (!client) return;
+
+    const nextAtivo = client.ativo === false;
+    const confirmed = window.confirm(
+      nextAtivo
+        ? "Reativar este cliente? Ele voltará a aparecer no simulador e poderá receber lançamentos."
+        : "Inativar este cliente? Ele deixará de aparecer no simulador e não poderá receber novos lançamentos.",
+    );
+    if (!confirmed) return;
+
+    setActionLoading(true);
+    setActionError(null);
+    const res = await setClientAtivo(client.id, nextAtivo);
+    setActionLoading(false);
+
+    if (!res.ok) {
+      setActionError(res.error);
+      return;
+    }
+
+    setClient(res.client);
+    showAlert({
+      title: nextAtivo ? "Cliente reativado" : "Cliente inativado",
+      message: nextAtivo
+        ? "O cliente voltou a ficar disponível para lançamentos."
+        : "O cliente não aparece mais no select do simulador.",
+      tone: "success",
+    });
+  }
+
+  async function handleDelete() {
+    if (!client) return;
+
+    const confirmed = window.confirm(
+      `Excluir o cliente "${client.nome}"? Esta ação não pode ser desfeita.`,
+    );
+    if (!confirmed) return;
+
+    setActionLoading(true);
+    setActionError(null);
+    const res = await deleteClient(client.id);
+    setActionLoading(false);
+
+    if (!res.ok) {
+      setActionError(res.error);
+      return;
+    }
+
+    navigate("/clientes", { replace: true });
+  }
+
   if (!id) {
     return (
       <div className="w-full min-w-0 space-y-4">
@@ -111,11 +170,15 @@ export function ClienteDetalhePage() {
           />
 
           {error ? <AlertMessage>{error}</AlertMessage> : null}
+          {actionError ? <AlertMessage>{actionError}</AlertMessage> : null}
 
           <ClienteInfoPanel
             client={client}
             isGestor={isGestor}
+            actionLoading={actionLoading}
             onEdit={() => setEditOpen(true)}
+            onToggleAtivo={() => void handleToggleAtivo()}
+            onDelete={() => void handleDelete()}
           />
 
           <ClienteSimulationsTable
@@ -132,7 +195,11 @@ export function ClienteDetalhePage() {
             initial={client}
             onClose={() => setEditOpen(false)}
             onSaved={(updated) => {
-              setClient(updated);
+              setClient((prev) => ({
+                ...prev,
+                ...updated,
+                ativo: updated.ativo ?? prev?.ativo,
+              }));
               setEditOpen(false);
             }}
           />

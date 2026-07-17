@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { PedidoPdfDocument } from '../components/pedido/PedidoPdfDocument'
 import { AlertMessage } from '../components/ui/AlertMessage'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
@@ -14,15 +15,7 @@ import {
   updateSimulationStatus,
 } from '../services/simulationOrderService'
 import { fetchViaCepAddress } from '../services/viaCep'
-import { displayCpfCnpj, displayPhone, parseCepInput } from '../utils/dataFormatters'
-import { formatBRL } from '../utils/money'
-import { roundMoney } from '../utils/roundMoney'
-
-function freightLabel(tipo) {
-  if (tipo === 'CIF') return 'CIF — Posto Fazenda'
-  if (tipo === 'FOB') return 'FOB — Cliente Retira'
-  return '—'
-}
+import { parseCepInput } from '../utils/dataFormatters'
 
 export function Pedido({ simulationId }) {
   const printRef = useRef(null)
@@ -109,6 +102,21 @@ export function Pedido({ simulationId }) {
   const displayedCepLookupError =
     isCif && cepDigits.length === 8 ? cepLookupError : null
 
+  const pdfBundle =
+    bundle && isCif
+      ? {
+          ...bundle,
+          client: {
+            ...bundle.client,
+            cep: parseCepInput(cep) || null,
+            logradouro: logradouro.trim() || null,
+            bairro: bairro.trim() || null,
+            municipio: municipio.trim() || null,
+            uf: uf.trim().toUpperCase().slice(0, 2) || null,
+          },
+        }
+      : bundle
+
   const handleGerarPdf = useCallback(async () => {
     if (!bundle || !printRef.current) return
 
@@ -121,7 +129,7 @@ export function Pedido({ simulationId }) {
       const { downloadPedidoPdfFromElement } = await import('../services/pedidoPdf')
       await downloadPedidoPdfFromElement(
         printRef.current,
-        `pedido-syagri-${bundle.simulation.id}-${safeName}.pdf`,
+        `proposta-syagri-${formatDocSuffix(bundle.simulation.id)}-${safeName}.pdf`,
       )
 
       if (isCif) {
@@ -221,8 +229,9 @@ export function Pedido({ simulationId }) {
       <PageBackLink to="/simulacoes">Voltar para simulações</PageBackLink>
 
       <PageHeader
-        eyebrow="Syagri"
-        title="Pedido"
+        eyebrow="SyAgri"
+        title="Proposta comercial"
+        description="Documento para envio ao cliente com base nesta simulação."
         actions={
           isConverted ? (
             <span className="inline-flex rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-800 ring-1 ring-emerald-200">
@@ -239,192 +248,108 @@ export function Pedido({ simulationId }) {
 
       {actionError ? <AlertMessage className="mb-4">{actionError}</AlertMessage> : null}
 
-      <div ref={printRef} className="flex flex-col gap-6">
-        <Card className="rounded-3xl">
-          <h2 className="mb-4 text-sm font-semibold text-primary-800">Cliente</h2>
-          <dl className="grid gap-4 sm:grid-cols-2">
+      {isCif ? (
+        <Card className="mb-6 rounded-3xl">
+          <h2 className="mb-4 text-sm font-semibold text-primary-800">
+            Endereço de entrega (CIF)
+          </h2>
+          <div className="grid gap-6 sm:grid-cols-2">
             <div>
-              <dt className="text-xs font-semibold uppercase text-slate-500">Nome</dt>
-              <dd className="mt-1 text-base font-medium text-slate-900">
-                {bundle.client.nome}
-              </dd>
+              <FormattedInput
+                format="cep"
+                label="CEP"
+                placeholder="00000-000"
+                value={cep}
+                onChange={(e) => setCep(e.target.value)}
+                disabled={formLocked}
+                className="finance-text"
+              />
+              {cepLookupLoading ? (
+                <p className="mt-2 text-xs text-slate-500">Consultando ViaCEP…</p>
+              ) : null}
+              {displayedCepLookupError ? (
+                <p className="mt-2 text-xs font-medium text-feedback-error">
+                  {displayedCepLookupError}
+                </p>
+              ) : null}
             </div>
-            <div>
-              <dt className="text-xs font-semibold uppercase text-slate-500">
-                CPF / CNPJ
-              </dt>
-              <dd className="mt-1 text-base font-medium text-slate-900">
-                {displayCpfCnpj(bundle.client.cnpj_cpf)}
-              </dd>
-            </div>
-            {bundle.client.email ? (
-              <div>
-                <dt className="text-xs font-semibold uppercase text-slate-500">
-                  E-mail
-                </dt>
-                <dd className="mt-1 text-base text-slate-800">{bundle.client.email}</dd>
-              </div>
-            ) : null}
-            {bundle.client.telefone ? (
-              <div>
-                <dt className="text-xs font-semibold uppercase text-slate-500">
-                  Telefone
-                </dt>
-                <dd className="mt-1 text-base text-slate-800">
-                  {displayPhone(bundle.client.telefone)}
-                </dd>
-              </div>
-            ) : null}
-            <div>
-              <dt className="text-xs font-semibold uppercase text-slate-500">
-                Tipo de frete
-              </dt>
-              <dd className="mt-1 text-base text-slate-800">
-                {freightLabel(bundle.simulation.tipo_frete)}
-              </dd>
-            </div>
-          </dl>
-        </Card>
-
-        {isCif ? (
-          <Card className="rounded-3xl">
-            <h2 className="mb-4 text-sm font-semibold text-primary-800">Entrega</h2>
-            <div className="grid gap-6 sm:grid-cols-2">
-              <div>
-                <FormattedInput
-                  format="cep"
-                  label="CEP"
-                  placeholder="00000-000"
-                  value={cep}
-                  onChange={(e) => setCep(e.target.value)}
-                  disabled={formLocked}
-                  className="finance-text"
-                />
-                {cepLookupLoading ? (
-                  <p className="mt-2 text-xs text-slate-500">Consultando ViaCEP…</p>
-                ) : null}
-                {displayedCepLookupError ? (
-                  <p className="mt-2 text-xs font-medium text-feedback-error">
-                    {displayedCepLookupError}
-                  </p>
-                ) : null}
-              </div>
-              <Input
-                label="Complemento (opcional)"
-                value={complemento}
-                onChange={(e) => setComplemento(e.target.value)}
-                disabled={formLocked}
-              />
-              <Input
-                label="Logradouro"
-                value={logradouro}
-                onChange={(e) => setLogradouro(e.target.value)}
-                disabled={formLocked}
-              />
-              <Input
-                label="Bairro"
-                value={bairro}
-                onChange={(e) => setBairro(e.target.value)}
-                disabled={formLocked}
-              />
-              <Input
-                label="Município"
-                value={municipio}
-                onChange={(e) => setMunicipio(e.target.value)}
-                disabled={formLocked}
-              />
-              <Input
-                label="UF"
-                value={uf}
-                maxLength={2}
-                onChange={(e) => setUf(e.target.value.toUpperCase().slice(0, 2))}
-                disabled={formLocked}
-              />
-            </div>
-          </Card>
-        ) : null}
-
-        <Card className="rounded-3xl">
-          <h2 className="mb-4 text-sm font-semibold text-primary-800">Itens</h2>
-          <div className="overflow-x-auto rounded-2xl border border-slate-100">
-            <table className="min-w-full border-collapse text-left text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-600">
-                  <th className="px-4 py-3">Produto</th>
-                  <th className="px-4 py-3">Cultura</th>
-                  <th className="px-4 py-3">Volume</th>
-                  <th className="px-4 py-3">Preço unit.</th>
-                  <th className="px-4 py-3">Proposta unit.</th>
-                  <th className="px-4 py-3">Valor total</th>
-                  <th className="px-4 py-3">Proposta total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {bundle.items.map((item) => {
-                  const nome = item.product?.nome ?? '—'
-                  const cultura = item.product?.cultura ?? '—'
-                  const valorTotal = roundMoney(item.volume * item.preco_unitario)
-                  const propostaTotal = roundMoney(item.volume * item.proposta)
-                  return (
-                    <tr key={item.id} className="border-b border-slate-100">
-                      <td className="px-4 py-3 font-medium text-slate-900">{nome}</td>
-                      <td className="px-4 py-3 text-slate-700">{cultura}</td>
-                      <td className="finance-text px-4 py-3 text-slate-800">
-                        {item.volume}
-                      </td>
-                      <td className="finance-text px-4 py-3 text-slate-800">
-                        {formatBRL(item.preco_unitario)}
-                      </td>
-                      <td className="finance-text px-4 py-3 text-slate-800">
-                        {formatBRL(item.proposta)}
-                      </td>
-                      <td className="finance-text px-4 py-3 font-medium text-slate-900">
-                        {formatBRL(valorTotal)}
-                      </td>
-                      <td className="finance-text px-4 py-3 font-medium text-slate-900">
-                        {formatBRL(propostaTotal)}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+            <Input
+              label="Complemento (opcional)"
+              value={complemento}
+              onChange={(e) => setComplemento(e.target.value)}
+              disabled={formLocked}
+            />
+            <Input
+              label="Logradouro"
+              value={logradouro}
+              onChange={(e) => setLogradouro(e.target.value)}
+              disabled={formLocked}
+            />
+            <Input
+              label="Bairro"
+              value={bairro}
+              onChange={(e) => setBairro(e.target.value)}
+              disabled={formLocked}
+            />
+            <Input
+              label="Município"
+              value={municipio}
+              onChange={(e) => setMunicipio(e.target.value)}
+              disabled={formLocked}
+            />
+            <Input
+              label="UF"
+              value={uf}
+              maxLength={2}
+              onChange={(e) => setUf(e.target.value.toUpperCase().slice(0, 2))}
+              disabled={formLocked}
+            />
           </div>
-          <dl className="mt-6 grid gap-4 border-t border-slate-100 pt-6 sm:grid-cols-2">
-            <div>
-              <dt className="text-xs font-semibold uppercase text-slate-500">
-                Total bruto (tabela)
-              </dt>
-              <dd className="finance-text mt-1 text-lg font-semibold text-slate-900">
-                {formatBRL(bundle.simulation.total_bruto)}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs font-semibold uppercase text-slate-500">
-                Total proposta
-              </dt>
-              <dd className="finance-text mt-1 text-lg font-semibold text-slate-900">
-                {formatBRL(bundle.simulation.total_proposta)}
-              </dd>
-            </div>
-          </dl>
         </Card>
+      ) : null}
+
+      <div className="overflow-x-auto rounded-3xl border border-slate-200/80 bg-slate-100/60 p-3 shadow-sm sm:p-5">
+        <div className="mx-auto w-fit shadow-xl shadow-slate-900/10">
+          {pdfBundle ? (
+            <PedidoPdfDocument
+              bundle={pdfBundle}
+              vendedorNome={bundle.vendedorNome}
+              delivery={{ complemento }}
+            />
+          ) : null}
+        </div>
+      </div>
+
+      {/* Nó fora da tela, em escala 1:1, só para captura do PDF */}
+      <div
+        aria-hidden
+        className="pointer-events-none fixed left-[-10000px] top-0 z-[-1] overflow-hidden"
+      >
+        <div ref={printRef}>
+          {pdfBundle ? (
+            <PedidoPdfDocument
+              bundle={pdfBundle}
+              vendedorNome={bundle.vendedorNome}
+              delivery={{ complemento }}
+            />
+          ) : null}
+        </div>
       </div>
 
       <div className="mt-6 flex w-full flex-col gap-2">
         <Button
           type="button"
-          variant="secondary"
+          variant="primary"
           className="w-full"
           loading={pdfLoading}
           onClick={() => void handleGerarPdf()}
         >
-          Gerar PDF
+          Gerar PDF para o cliente
         </Button>
         {isApproved ? (
           <Button
             type="button"
-            variant="primary"
+            variant="secondary"
             className="w-full"
             loading={convertLoading}
             onClick={() => void handleMarcarConvertida()}
@@ -435,4 +360,10 @@ export function Pedido({ simulationId }) {
       </div>
     </div>
   )
+}
+
+function formatDocSuffix(id) {
+  const digits = String(id).replace(/\D/g, '')
+  if (digits.length >= 5) return digits.slice(-5)
+  return String(id).slice(0, 8)
 }

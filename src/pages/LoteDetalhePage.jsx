@@ -398,7 +398,7 @@ export function LoteDetalhePage() {
               {lote.ativo === false ? " · lista inativa" : ""}
             </p>
             {!readOnly ? (
-              <ButtonGroup align="stretch" className="sm:max-w-md">
+              <ButtonGroup align="stretch">
                 <Button
                   type="button"
                   variant="secondary"
@@ -461,7 +461,7 @@ export function LoteDetalhePage() {
                   options={CLASSES_PRODUTO}
                 />
               </div>
-              <ButtonGroup align="stretch" className="sm:flex-1 sm:max-w-lg">
+              <ButtonGroup align="stretch" className="sm:flex-1">
                 <Button
                   type="button"
                   variant="secondary"

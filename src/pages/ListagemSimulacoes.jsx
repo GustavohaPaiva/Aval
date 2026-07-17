@@ -1,5 +1,5 @@
-import { useCallback, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { SimulationListCard } from "../components/SimulationListCard";
 import {
   SimulacaoFiltersPanel,
@@ -16,27 +16,57 @@ import { useSyncPageLoading } from "../contexts/PageLoadingContext";
 import { useAbortableAsync } from "../hooks/useAbortableAsync";
 import { useAuth } from "../hooks/useAuth";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
-import {
-  fetchSimulationsList,
-  updateSimulationStatus,
-} from "../services/simulationOrderService";
+import { usePersistedFilters } from "../hooks/usePersistedFilters";
+import { fetchSimulationsList } from "../services/simulationOrderService";
 
 const PAGE_SIZE = 50;
+
+const SIMULACAO_STATUS_FILTERS = [
+  { key: "all", label: "Todos" },
+  { key: "draft", label: "Rascunhos" },
+  { key: "pending", label: "Pendentes" },
+  { key: "approved", label: "Aprovados" },
+  { key: "rejected", label: "Reprovados" },
+  { key: "converted", label: "Convertidos" },
+];
+
+const VALID_STATUS_KEYS = new Set(
+  SIMULACAO_STATUS_FILTERS.map((f) => f.key).filter((k) => k !== "all"),
+);
 
 export function ListagemSimulacoes() {
   const { user, role, initializing } = useAuth();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
   const [consultorNomeById, setConsultorNomeById] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [quickFilter, setQuickFilter] = useState("all");
-  const [page, setPage] = useState(1);
-  const [pendingAction, setPendingAction] = useState(null);
-  const [reloadToken, setReloadToken] = useState(0);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [filters, , patchFilters] = usePersistedFilters("filters:simulacoes", {
+    searchQuery: "",
+    quickFilter: "all",
+    page: 1,
+  });
+  const { searchQuery, quickFilter, page } = filters;
   const debouncedSearch = useDebouncedValue(searchQuery, 300);
+
+  useEffect(() => {
+    const statusParam = searchParams.get("status");
+    if (statusParam && VALID_STATUS_KEYS.has(statusParam)) {
+      if (quickFilter !== statusParam) {
+        patchFilters({ quickFilter: statusParam, page: 1 });
+      }
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.delete("status");
+          return next;
+        },
+        { replace: true },
+      );
+    }
+  }, [searchParams, quickFilter, patchFilters, setSearchParams]);
 
   useSyncPageLoading(loading || initializing);
 
@@ -83,64 +113,23 @@ export function ListagemSimulacoes() {
       setTotal(result.total);
       setConsultorNomeById(result.consultorNomeById);
     },
-    [user, role, statusForQuery, debouncedSearch, page, reloadToken],
+    [user, role, statusForQuery, debouncedSearch, page],
     canFetch,
   );
-
-  const reload = useCallback(() => {
-    setReloadToken((n) => n + 1);
-  }, []);
 
   function openSimulador(simulationId) {
     navigate(`/simulador?simulationId=${encodeURIComponent(simulationId)}`);
   }
 
-  async function handleApprove(id, clientName) {
-    setPendingAction({ id, type: "approve" });
-    const r = await updateSimulationStatus(id, "approved", {
-      notifyConsultor: true,
-      clientName,
-    });
-    setPendingAction(null);
-    if (!r.ok) {
-      setError(r.error);
-      return;
-    }
-    reload();
-  }
-
-  async function handleReject(id, clientName) {
-    setPendingAction({ id, type: "reject" });
-    const r = await updateSimulationStatus(id, "rejected", {
-      notifyConsultor: true,
-      clientName,
-    });
-    setPendingAction(null);
-    if (!r.ok) {
-      setError(r.error);
-      return;
-    }
-    reload();
-  }
-
   const isGestor = role === "gestor";
   const hasFilters = Boolean(searchQuery.trim()) || quickFilter !== "all";
-
-  const SIMULACAO_STATUS_FILTERS = [
-    { key: "all", label: "Todos" },
-    { key: "draft", label: "Rascunhos" },
-    { key: "pending", label: "Pendentes" },
-    { key: "approved", label: "Aprovados" },
-  ];
 
   const activeStatusLabel =
     SIMULACAO_STATUS_FILTERS.find((pill) => pill.key === quickFilter)?.label ??
     "Todos";
 
   function clearFilters() {
-    setSearchQuery("");
-    setQuickFilter("all");
-    setPage(1);
+    patchFilters({ searchQuery: "", quickFilter: "all", page: 1 });
   }
 
   return (
@@ -160,13 +149,15 @@ export function ListagemSimulacoes() {
           title={isGestor ? "Simulações" : "Minhas simulações"}
           description="Acompanhe rascunhos, aprovações e propostas convertidas."
           actions={
-            <Button
-              type="button"
-              className="w-full sm:w-auto"
-              onClick={() => navigate("/simulador")}
-            >
-              Nova simulação
-            </Button>
+            !isGestor ? (
+              <Button
+                type="button"
+                className="w-full sm:w-auto"
+                onClick={() => navigate("/simulador")}
+              >
+                Nova simulação
+              </Button>
+            ) : undefined
           }
           className="relative mb-0"
         />
@@ -192,13 +183,11 @@ export function ListagemSimulacoes() {
       <SimulacaoFiltersPanel
         searchQuery={searchQuery}
         onSearchChange={(e) => {
-          setSearchQuery(e.target.value);
-          setPage(1);
+          patchFilters({ searchQuery: e.target.value, page: 1 });
         }}
         quickFilter={quickFilter}
         onQuickFilterChange={(value) => {
-          setQuickFilter(value);
-          setPage(1);
+          patchFilters({ quickFilter: value, page: 1 });
         }}
         hasFilters={hasFilters}
         onClear={clearFilters}
@@ -218,7 +207,9 @@ export function ListagemSimulacoes() {
           }
           description={
             total === 0 && !hasFilters
-              ? "Crie uma nova simulação para começar."
+              ? isGestor
+                ? "Aguardando propostas dos consultores."
+                : "Crie uma nova simulação para começar."
               : "Tente outro termo ou limpe os filtros."
           }
         />
@@ -230,11 +221,8 @@ export function ListagemSimulacoes() {
               row={row}
               isGestor={isGestor}
               consultorNome={consultorNomeById[row.user_id]}
-              pendingAction={pendingAction}
               onContinueEdit={openSimulador}
               onViewDetails={openSimulador}
-              onApprove={(id) => void handleApprove(id, row.client_nome)}
-              onReject={(id) => void handleReject(id, row.client_nome)}
             />
           ))}
         </div>
@@ -248,8 +236,8 @@ export function ListagemSimulacoes() {
         total={total}
         loading={loading || initializing}
         itemLabel="simulações"
-        onPrev={() => setPage((p) => Math.max(1, p - 1))}
-        onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
+        onPrev={() => patchFilters({ page: Math.max(1, page - 1) })}
+        onNext={() => patchFilters({ page: Math.min(totalPages, page + 1) })}
       />
     </div>
   );

@@ -44,6 +44,11 @@ const GerenciarConsultores = lazy(() =>
     default: m.GerenciarConsultores,
   })),
 );
+const GerenciarListas = lazy(() =>
+  import("./pages/GerenciarListas").then((m) => ({
+    default: m.GerenciarListas,
+  })),
+);
 const GerenciarProdutos = lazy(() =>
   import("./pages/GerenciarProdutos").then((m) => ({
     default: m.GerenciarProdutos,
@@ -79,9 +84,6 @@ const ParametrosPage = lazy(() =>
 );
 const PedidoPage = lazy(() =>
   import("./pages/PedidoPage").then((m) => ({ default: m.PedidoPage })),
-);
-const PedidosPage = lazy(() =>
-  import("./pages/PedidosPage").then((m) => ({ default: m.PedidosPage })),
 );
 const Simulador = lazy(() =>
   import("./pages/Simulador").then((m) => ({ default: m.Simulador })),
@@ -152,9 +154,11 @@ export default function App() {
               <Route
                 path="notificacoes"
                 element={
-                  <LazyPage>
-                    <NotificacoesPage />
-                  </LazyPage>
+                  <ProtectedRoute roles={["gestor", "consultor"]}>
+                    <LazyPage>
+                      <NotificacoesPage />
+                    </LazyPage>
+                  </ProtectedRoute>
                 }
               />
               <Route
@@ -183,11 +187,7 @@ export default function App() {
               />
               <Route
                 path="pedidos"
-                element={
-                  <LazyPage>
-                    <PedidosPage />
-                  </LazyPage>
-                }
+                element={<Navigate to="/simulacoes?status=converted" replace />}
               />
               <Route
                 path="gestor"
@@ -256,6 +256,14 @@ export default function App() {
                   element={
                     <LazyPage>
                       <GerenciarProdutos />
+                    </LazyPage>
+                  }
+                />
+                <Route
+                  path="listas"
+                  element={
+                    <LazyPage>
+                      <GerenciarListas />
                     </LazyPage>
                   }
                 />

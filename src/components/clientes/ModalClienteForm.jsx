@@ -84,7 +84,7 @@ export function ModalClienteForm({
       return false
     }
 
-    const documentValidation = validateCpfCnpj(form.cnpj_cpf, { required: true })
+    const documentValidation = validateCpfCnpj(form.cnpj_cpf, { required: false })
     if (!documentValidation.ok) {
       showAlert({
         title: 'CPF / CNPJ inválido',
@@ -173,10 +173,11 @@ export function ModalClienteForm({
               value={form.nome}
               onChange={(e) => setField('nome', e.target.value)}
               disabled={saving}
+              required
             />
             <FormattedInput
               format="cpfCnpj"
-              label="CPF / CNPJ"
+              label="CPF / CNPJ (opcional)"
               name="cnpj_cpf"
               placeholder="000.000.000-00 ou 00.000.000/0000-00"
               value={form.cnpj_cpf}

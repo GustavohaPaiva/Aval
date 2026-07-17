@@ -43,21 +43,20 @@ export function ProdutoFiltersPanel({
               Encontre produtos por fertilizante, referência ou fornecedor.
             </p>
           </div>
-          {hasFilters ? (
-            <Button
-              type="button"
-              variant="ghost"
-              className="h-9 w-full shrink-0 px-3 sm:w-auto"
-              onClick={onClear}
-            >
-              Limpar filtros
-            </Button>
-          ) : null}
+          <Button
+            type="button"
+            variant="ghost"
+            className="h-9 w-full shrink-0 px-3 sm:w-auto"
+            disabled={!hasFilters}
+            onClick={onClear}
+          >
+            Limpar filtros
+          </Button>
         </div>
       </div>
 
-      <div className="grid gap-4 p-4 sm:grid-cols-2 sm:p-6 lg:grid-cols-5">
-        <div className="sm:col-span-2 lg:col-span-2">
+      <div className="space-y-4 p-4 sm:p-6">
+        <div>
           <label
             htmlFor="produto-filter-busca"
             className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500"
@@ -73,30 +72,33 @@ export function ProdutoFiltersPanel({
             onChange={onSearchChange}
           />
         </div>
-        <Select
-          label="Fornecedor"
-          value={fornecedorId}
-          onChange={onFornecedorChange}
-          options={fornecedorOptions}
-        />
-        <Select
-          label="Estado"
-          value={estadoFilter}
-          onChange={onEstadoChange}
-          options={[{ value: '', label: 'Todos' }, ...ESTADOS_PRODUTO]}
-        />
-        <Select
-          label="Classe"
-          value={classeFilter}
-          onChange={onClasseChange}
-          options={[{ value: '', label: 'Todas' }, ...CLASSES_PRODUTO]}
-        />
-        <Select
-          label="Status"
-          value={statusFilter}
-          onChange={onStatusChange}
-          options={STATUS_OPTIONS}
-        />
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Select
+            label="Fornecedor"
+            value={fornecedorId}
+            onChange={onFornecedorChange}
+            options={fornecedorOptions}
+          />
+          <Select
+            label="Estado"
+            value={estadoFilter}
+            onChange={onEstadoChange}
+            options={[{ value: '', label: 'Todos' }, ...ESTADOS_PRODUTO]}
+          />
+          <Select
+            label="Classe"
+            value={classeFilter}
+            onChange={onClasseChange}
+            options={[{ value: '', label: 'Todas' }, ...CLASSES_PRODUTO]}
+          />
+          <Select
+            label="Status"
+            value={statusFilter}
+            onChange={onStatusChange}
+            options={STATUS_OPTIONS}
+          />
+        </div>
       </div>
     </section>
   )

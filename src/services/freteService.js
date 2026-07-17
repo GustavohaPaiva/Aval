@@ -166,6 +166,37 @@ export async function deleteFrete(id) {
   return { ok: true }
 }
 
+export async function fetchFreteOrigensAtivas() {
+  const { data, error } = await supabase
+    .from('fretes')
+    .select('origem')
+    .eq('ativo', true)
+    .neq('origem', 'FOB')
+    .order('origem', { ascending: true })
+
+  if (error) return { ok: false, error: error.message }
+
+  const values = [...new Set((data ?? []).map((row) => String(row.origem)))]
+  return { ok: true, values }
+}
+
+export async function fetchFreteDestinosAtivos(origem) {
+  const origemNorm = normalizeFreteLocation(origem)
+  if (!origemNorm) return { ok: true, values: [] }
+
+  const { data, error } = await supabase
+    .from('fretes')
+    .select('destino')
+    .eq('ativo', true)
+    .eq('origem', origemNorm)
+    .order('destino', { ascending: true })
+
+  if (error) return { ok: false, error: error.message }
+
+  const values = [...new Set((data ?? []).map((row) => String(row.destino)))]
+  return { ok: true, values }
+}
+
 export async function lookupFreteValor(origem, destino) {
   const result = await findFreteDuplicate({
     origem: normalizeFreteLocation(origem),

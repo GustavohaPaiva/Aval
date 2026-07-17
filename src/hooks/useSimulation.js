@@ -1,13 +1,46 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CATALOG_PRODUCTS } from '../constants/catalogProducts'
 import { CULTURES } from '../constants/simulator'
 import { FLOOR_RATIO } from '../types/simulation'
 import { parseCpfCnpjInput } from '../utils/dataFormatters'
 import {
+  calcCustoBrlComDesconto,
   calcDiasAntecipacao,
   calcPrecoSimulacao,
 } from '../utils/pricingCalculations'
 import { roundMoney } from '../utils/roundMoney'
+import { createDraftSaver, loadDraft } from '../utils/uiDraftStorage'
+
+const SIMULADOR_DRAFT_KEY = 'simulador-draft'
+const OVERRIDE_FIELDS = ['custoUsd', 'descontoUsd', 'taxa', 'frete']
+
+function readSimulationDraft() {
+  const draft = loadDraft(SIMULADOR_DRAFT_KEY, null)
+  if (!draft || typeof draft !== 'object') return null
+  return draft
+}
+
+function normalizeDraftLines(lines) {
+  if (!Array.isArray(lines)) return []
+  return lines.map((line) => ({
+    id: String(line.id ?? crypto.randomUUID()),
+    productId: line.productId ?? '',
+    cultura: line.cultura ?? CULTURES[0] ?? '',
+    volume: Number(line.volume) || 0,
+    proposta: Number(line.proposta) || 0,
+    overrides: normalizeOverrides(line.overrides),
+  }))
+}
+
+function normalizeOverrides(overrides) {
+  if (!overrides) return undefined
+  const next = {}
+  for (const field of OVERRIDE_FIELDS) {
+    const value = overrides[field]
+    if (value != null && Number.isFinite(value)) next[field] = value
+  }
+  return Object.keys(next).length > 0 ? next : undefined
+}
 
 function clampProposta(proposta, precoUnitario, allowAnyPrice) {
   const p = Number.isFinite(proposta) ? proposta : 0
@@ -16,21 +49,58 @@ function clampProposta(proposta, precoUnitario, allowAnyPrice) {
   return Math.min(Math.max(0, p), safePu)
 }
 
-function resolvePrecoUnitario(product, context) {
-  if (!product) return 0
+function resolvePricing(product, context, overrides) {
+  if (!product) {
+    return { precoUnitario: 0, breakdown: null }
+  }
   const { dataPagamento, freteUnitario = 0 } = context
   const dias = calcDiasAntecipacao(dataPagamento, product.vencimentoLista)
+  const ov = normalizeOverrides(overrides)
+  const hasOverride = Boolean(ov)
+
+  const custoUsd = ov?.custoUsd ?? Number(product.custoUsd ?? 0)
+  const descontoUsd = ov?.descontoUsd ?? Number(product.descontoUsd ?? 0)
+  const taxa = ov?.taxa ?? Number(product.taxa ?? 0)
+  const frete = ov?.frete ?? freteUnitario
+
+  let custoBrl
+  let custoIcms
+  if (hasOverride) {
+    custoBrl = calcCustoBrlComDesconto(custoUsd, descontoUsd, taxa)
+    custoIcms = roundMoney(custoBrl * 0.96)
+  } else {
+    custoBrl = roundMoney(Number(product.custoBrl ?? 0))
+    custoIcms = Number(product.custoIcms ?? product.custoBrl * 0.96)
+  }
+
   const { precoFinal } = calcPrecoSimulacao({
-    custoIcms: product.custoIcms ?? product.custoBrl * 0.96,
-    freteUnitario,
+    custoIcms,
+    freteUnitario: frete,
     diasAntecipacao: dias,
   })
-  return precoFinal
+
+  return {
+    precoUnitario: precoFinal,
+    breakdown: {
+      custoUsd,
+      descontoUsd,
+      taxa,
+      custoBrl,
+      custoIcms,
+      frete,
+      hasOverride,
+    },
+  }
+}
+
+function resolvePrecoUnitario(product, context, overrides) {
+  return resolvePricing(product, context, overrides).precoUnitario
 }
 
 function buildLineView(line, catalog, context, canOverrideFloor) {
   const product = catalog.find((p) => p.id === line.productId)
-  const precoUnitario = resolvePrecoUnitario(product, context)
+  const overrides = normalizeOverrides(line.overrides)
+  const { precoUnitario, breakdown } = resolvePricing(product, context, overrides)
   const proposta = clampProposta(
     line.proposta ?? precoUnitario,
     precoUnitario,
@@ -51,18 +121,19 @@ function buildLineView(line, catalog, context, canOverrideFloor) {
     valorTotal,
     propostaTotal,
     isLineBelowFloor,
+    overrides: overrides ?? null,
+    custoBreakdown: breakdown,
     displayNome: product?.displayNome ?? product?.nome ?? '—',
   }
 }
 
-function createLine(product, context) {
-  const pu = resolvePrecoUnitario(product, context)
+function createLine() {
   return {
     id: crypto.randomUUID(),
-    productId: product.id,
-    cultura: CULTURES[0] ?? '',
+    productId: '',
+    cultura: '',
     volume: 1,
-    proposta: pu,
+    proposta: 0,
   }
 }
 
@@ -70,20 +141,45 @@ export function useSimulation(options = {}) {
   const catalog = options.catalog ?? CATALOG_PRODUCTS
   const freteUnitario = options.freteUnitario ?? 0
   const isGestor = options.role === 'gestor'
+  const persistDraft = options.persistDraft === true
 
-  const [estado, setEstadoState] = useState(null)
-  const [clientId, setClientId] = useState(null)
-  const [clientName, setClientNameState] = useState('')
-  const [clientCnpjCpf, setClientCnpjCpfState] = useState('')
-  const [dataPagamento, setDataPagamentoState] = useState('')
-  const [tipoFrete, setTipoFreteState] = useState(null)
-  const [origemFrete, setOrigemFreteState] = useState('')
-  const [destinoFrete, setDestinoFreteState] = useState('')
-  const [quarter, setQuarterState] = useState(null)
+  const initialDraft = persistDraft ? readSimulationDraft() : null
 
-  const [lines, setLines] = useState([])
+  const [estado, setEstadoState] = useState(() => initialDraft?.estado ?? null)
+  const [clientId, setClientId] = useState(() => initialDraft?.clientId ?? null)
+  const [clientName, setClientNameState] = useState(
+    () => initialDraft?.clientName ?? '',
+  )
+  const [clientCnpjCpf, setClientCnpjCpfState] = useState(
+    () => parseCpfCnpjInput(initialDraft?.clientCnpjCpf ?? ''),
+  )
+  const [dataPagamento, setDataPagamentoState] = useState(
+    () => initialDraft?.dataPagamento ?? '',
+  )
+  const [tipoFrete, setTipoFreteState] = useState(
+    () => initialDraft?.tipoFrete ?? null,
+  )
+  const [origemFrete, setOrigemFreteState] = useState(
+    () => initialDraft?.origemFrete ?? '',
+  )
+  const [destinoFrete, setDestinoFreteState] = useState(
+    () => initialDraft?.destinoFrete ?? '',
+  )
+  const [quarter, setQuarterState] = useState(() => initialDraft?.quarter ?? null)
+  const [observacoes, setObservacoesState] = useState(
+    () => initialDraft?.observacoes ?? '',
+  )
+
+  const [lines, setLines] = useState(() =>
+    normalizeDraftLines(initialDraft?.lines),
+  )
   const [actionBanner, setActionBanner] = useState(null)
   const [remotePendingLock, setRemotePendingLock] = useState(false)
+
+  const draftSaverRef = useRef(null)
+  if (draftSaverRef.current == null) {
+    draftSaverRef.current = createDraftSaver(SIMULADOR_DRAFT_KEY)
+  }
 
   const pricingContext = useMemo(
     () => ({ dataPagamento, freteUnitario }),
@@ -121,7 +217,7 @@ export function useSimulation(options = {}) {
     totalValor > 0 &&
     (canOverrideFloor || globalStatus === 'Aprovado')
 
-  const showFreteRotas = tipoFrete !== 'FOB'
+  const showFreteRotas = tipoFrete === 'CIF'
 
   const cultureOptions = useMemo(() => [...CULTURES].sort((a, b) => a.localeCompare(b, 'pt-BR')), [])
 
@@ -174,7 +270,7 @@ export function useSimulation(options = {}) {
       if (isReadOnly) return
       const next = value || null
       setTipoFreteState(next)
-      if (next === 'FOB') {
+      if (next !== 'CIF') {
         setOrigemFreteState('')
         setDestinoFreteState('')
       }
@@ -206,12 +302,18 @@ export function useSimulation(options = {}) {
     [isReadOnly],
   )
 
+  const setObservacoes = useCallback(
+    (value) => {
+      if (isReadOnly) return
+      setObservacoesState(value)
+    },
+    [isReadOnly],
+  )
+
   const addLine = useCallback(() => {
     if (isReadOnly) return
-    const first = catalog[0]
-    if (!first) return
-    setLines((prev) => [...prev, createLine(first, pricingContext)])
-  }, [catalog, isReadOnly, pricingContext])
+    setLines((prev) => [...prev, createLine()])
+  }, [isReadOnly])
 
   const removeLine = useCallback(
     (lineId) => {
@@ -224,6 +326,16 @@ export function useSimulation(options = {}) {
   const setLineProduct = useCallback(
     (lineId, productId) => {
       if (isReadOnly) return
+      if (!productId) {
+        setLines((prev) =>
+          prev.map((line) =>
+            line.id === lineId
+              ? { ...line, productId: '', proposta: 0, overrides: undefined }
+              : line,
+          ),
+        )
+        return
+      }
       const product = catalog.find((p) => p.id === productId)
       if (!product) return
       const pu = resolvePrecoUnitario(product, pricingContext)
@@ -234,6 +346,7 @@ export function useSimulation(options = {}) {
             ...line,
             productId,
             proposta: pu,
+            overrides: undefined,
           }
         }),
       )
@@ -273,7 +386,7 @@ export function useSimulation(options = {}) {
         prev.map((line) => {
           if (line.id !== lineId) return line
           const product = catalog.find((p) => p.id === line.productId)
-          const pu = resolvePrecoUnitario(product, pricingContext)
+          const pu = resolvePrecoUnitario(product, pricingContext, line.overrides)
           return {
             ...line,
             proposta: clampProposta(proposta, pu, canOverrideFloor),
@@ -282,6 +395,38 @@ export function useSimulation(options = {}) {
       )
     },
     [catalog, isReadOnly, canOverrideFloor, pricingContext],
+  )
+
+  const setLineOverride = useCallback(
+    (lineId, field, value) => {
+      if (!isGestor) return
+      if (!OVERRIDE_FIELDS.includes(field)) return
+      setLines((prev) =>
+        prev.map((line) => {
+          if (line.id !== lineId) return line
+          const nextOverrides = { ...(line.overrides ?? {}) }
+          if (value == null || value === '' || !Number.isFinite(Number(value))) {
+            delete nextOverrides[field]
+          } else {
+            nextOverrides[field] = Number(value)
+          }
+          return { ...line, overrides: normalizeOverrides(nextOverrides) }
+        }),
+      )
+    },
+    [isGestor],
+  )
+
+  const clearLineOverride = useCallback(
+    (lineId) => {
+      if (!isGestor) return
+      setLines((prev) =>
+        prev.map((line) =>
+          line.id === lineId ? { ...line, overrides: undefined } : line,
+        ),
+      )
+    },
+    [isGestor],
   )
 
   const dismissActionBanner = useCallback(() => setActionBanner(null), [])
@@ -295,15 +440,52 @@ export function useSimulation(options = {}) {
   }, [])
 
   const getLaunchBlockReason = useCallback(() => {
+    if (!quarter) return 'Selecione o quarter antes de lançar.'
+    if (!tipoFrete) return 'Selecione o tipo de frete.'
+    if (!dataPagamento) return 'Informe a data de pagamento.'
+    if (tipoFrete === 'CIF') {
+      if (!origemFrete?.trim()) return 'Selecione a origem do frete.'
+      if (!destinoFrete?.trim()) return 'Selecione o destino do frete.'
+    }
     if (lines.length === 0) return 'Inclua ao menos um produto.'
+    if (lines.some((line) => !line.productId)) {
+      return 'Selecione o produto em todas as linhas.'
+    }
+    if (lines.some((line) => !String(line.cultura ?? '').trim())) {
+      return 'Informe a cultura em todas as linhas.'
+    }
+    if (lines.some((line) => !(Number(line.volume) > 0))) {
+      return 'Informe um volume maior que zero em todas as linhas.'
+    }
     if (totalValor <= 0) return 'Informe volumes válidos nos produtos.'
     if (canOverrideFloor) return null
     if (globalStatus === 'Pendente') {
-      return 'A consolidação está abaixo de 97%. Notifique o gestor ou ajuste as propostas.'
+      return 'A proposta está abaixo da margem. Solicite revisão do gestor ou ajuste as propostas.'
     }
     if (globalStatus !== 'Aprovado') return 'Complete a simulação antes de converter.'
     return null
-  }, [canOverrideFloor, globalStatus, lines.length, totalValor])
+  }, [
+    canOverrideFloor,
+    dataPagamento,
+    destinoFrete,
+    globalStatus,
+    lines,
+    origemFrete,
+    quarter,
+    tipoFrete,
+    totalValor,
+  ])
+
+  const clearOrphanProducts = useCallback(() => {
+    const ids = new Set(catalog.map((p) => p.id))
+    setLines((prev) =>
+      prev.map((line) =>
+        line.productId && !ids.has(line.productId)
+          ? { ...line, productId: '', proposta: 0, overrides: undefined }
+          : line,
+      ),
+    )
+  }, [catalog])
 
   const hydrateFromBundle = useCallback(
     (bundle) => {
@@ -319,6 +501,7 @@ export function useSimulation(options = {}) {
       setOrigemFreteState(bundle.simulation.origem_frete ?? '')
       setDestinoFreteState(bundle.simulation.destino_frete ?? '')
       setQuarterState(bundle.simulation.quarter ?? null)
+      setObservacoesState(bundle.simulation.observacoes ?? '')
       setActionBanner(null)
       setLines(
         bundle.items
@@ -329,6 +512,12 @@ export function useSimulation(options = {}) {
             cultura: it.cultura ?? CULTURES[0] ?? '',
             volume: it.volume,
             proposta: roundMoney(it.proposta),
+            overrides: normalizeOverrides({
+              custoUsd: it.override_custo_usd ?? undefined,
+              descontoUsd: it.override_desconto_usd ?? undefined,
+              taxa: it.override_taxa ?? undefined,
+              frete: it.override_frete ?? undefined,
+            }),
           })),
       )
     },
@@ -346,9 +535,44 @@ export function useSimulation(options = {}) {
     setOrigemFreteState('')
     setDestinoFreteState('')
     setQuarterState(null)
+    setObservacoesState('')
     setLines([])
     setActionBanner(null)
   }, [])
+
+  const clearDraft = useCallback(() => {
+    draftSaverRef.current.clear()
+  }, [])
+
+  useEffect(() => {
+    if (!persistDraft) return
+    draftSaverRef.current.save({
+      clientId,
+      clientName,
+      clientCnpjCpf,
+      estado,
+      dataPagamento,
+      tipoFrete,
+      origemFrete,
+      destinoFrete,
+      quarter,
+      observacoes,
+      lines,
+    })
+  }, [
+    persistDraft,
+    clientId,
+    clientName,
+    clientCnpjCpf,
+    estado,
+    dataPagamento,
+    tipoFrete,
+    origemFrete,
+    destinoFrete,
+    quarter,
+    observacoes,
+    lines,
+  ])
 
   return {
     catalog,
@@ -371,6 +595,8 @@ export function useSimulation(options = {}) {
     setDestinoFrete,
     quarter,
     setQuarter,
+    observacoes,
+    setObservacoes,
     lines: lineViews,
     simulationLines: lines,
     totalValor,
@@ -388,6 +614,8 @@ export function useSimulation(options = {}) {
     setLineCultura,
     setLineVolume,
     setLineProposta,
+    setLineOverride,
+    clearLineOverride,
     lockAsPending,
     showActionBanner,
     getLaunchBlockReason,
@@ -395,5 +623,7 @@ export function useSimulation(options = {}) {
     dismissActionBanner,
     hydrateFromBundle,
     resetLocal,
+    clearDraft,
+    clearOrphanProducts,
   }
 }

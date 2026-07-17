@@ -35,11 +35,8 @@ export function SimulationListCard({
   row,
   consultorNome,
   isGestor,
-  pendingAction,
   onContinueEdit,
   onViewDetails,
-  onApprove,
-  onReject,
 }) {
   const formattedDate = new Date(row.created_at).toLocaleString('pt-BR', {
     day: '2-digit',
@@ -48,11 +45,6 @@ export function SimulationListCard({
     hour: '2-digit',
     minute: '2-digit',
   })
-
-  const isActionPending = pendingAction !== null
-  const isThisRowPending =
-    pendingAction?.id === row.id &&
-    (pendingAction.type === 'approve' || pendingAction.type === 'reject')
 
   return (
     <article className="group flex flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition-[box-shadow,border-color] hover:border-primary-200 hover:shadow-md">
@@ -115,28 +107,14 @@ export function SimulationListCard({
             Continuar edição
           </Button>
         ) : row.status === 'pending' && isGestor ? (
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="primary"
-              className="min-w-0 flex-1"
-              loading={isThisRowPending && pendingAction?.type === 'approve'}
-              disabled={isActionPending}
-              onClick={() => onApprove(row.id)}
-            >
-              Aprovar
-            </Button>
-            <Button
-              type="button"
-              variant="danger"
-              className="min-w-0 flex-1"
-              loading={isThisRowPending && pendingAction?.type === 'reject'}
-              disabled={isActionPending}
-              onClick={() => onReject(row.id)}
-            >
-              Reprovar
-            </Button>
-          </div>
+          <Button
+            type="button"
+            variant="primary"
+            className="w-full"
+            onClick={() => onViewDetails(row.id)}
+          >
+            Revisar
+          </Button>
         ) : (
           <Button
             type="button"

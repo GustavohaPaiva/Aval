@@ -4,9 +4,10 @@ import { PageTransition } from "../components/layout/PageTransition";
 import { SidebarUserMenu } from "../components/layout/SidebarUserMenu";
 import { ProfileModal } from "../components/layout/ProfileModal";
 import {
-  // IconBell,
+  IconBell,
   IconChevronsLeft,
   IconClipboardList,
+  IconFileSpreadsheet,
   IconLayoutDashboard,
   IconLeaf,
   IconPackage,
@@ -64,14 +65,13 @@ function CloseIcon() {
 }
 
 function navItemsForRole(role) {
-  const shared = [
-    // Notificações
-    //{ to: "/notificacoes", label: "Notificações", icon: IconBell },
-  ];
-
   if (role === "gestor") {
     return [
-      // Importação de Produtos
+      {
+        to: "/dashboard",
+        label: "Dashboard",
+        icon: IconLayoutDashboard,
+      },
       {
         to: "/admin/importacao",
         label: "Lançamento de Produtos",
@@ -82,36 +82,28 @@ function navItemsForRole(role) {
         label: "Produtos",
         icon: IconLeaf,
       },
-
-      // Clientes
+      {
+        to: "/admin/listas",
+        label: "Listas",
+        icon: IconFileSpreadsheet,
+      },
       { to: "/clientes", label: "Clientes", icon: IconUser },
-
-      // Simulações
       { to: "/simulacoes", label: "Todas Simulações", icon: IconClipboardList },
-
-      // Fretes
+      { to: "/notificacoes", label: "Notificações", icon: IconBell },
       { to: "/frete", label: "Fretes", icon: IconTruck },
-
-      // Consultores
       {
         to: "/admin/consultores",
         label: "Gestão de Consultores",
         icon: IconUsers,
       },
-
-      // Dashboard
-      //{ to: "/dashboard", label: "Dashboard", icon: IconLayoutDashboard },
-
-      // Parâmetros
       { to: "/parametros", label: "Parâmetros", icon: IconSliders },
-      ...shared,
     ];
   }
   return [
     { to: "/dashboard", label: "Dashboard", icon: IconLayoutDashboard },
     { to: "/simulacoes", label: "Minhas Simulações", icon: IconClipboardList },
     { to: "/clientes", label: "Clientes", icon: IconUser },
-    ...shared,
+    { to: "/notificacoes", label: "Notificações", icon: IconBell },
   ];
 }
 

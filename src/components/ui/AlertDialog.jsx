@@ -111,11 +111,9 @@ export function AlertDialog({
       title={title}
       size="sm"
       footer={
-        <div className="flex justify-end">
-          <Button type="button" onClick={onClose}>
-            {confirmLabel}
-          </Button>
-        </div>
+        <Button type="button" className="w-full" onClick={onClose}>
+          {confirmLabel}
+        </Button>
       }
     >
       <div className="flex items-start gap-3">

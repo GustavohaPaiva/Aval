@@ -27,7 +27,7 @@ const LOTE_DETAIL_SELECT = `
     `
 
 const PRODUTO_LIST_FIELDS =
-  'id, fornecedor_id, sku_fornecedor, nome, referencia_complementar, estado, classe, quarter, moeda_origem, preco_original, desconto_usd, preco_interno_calculado, custo_icms, lote_id, vencimento_lista, ativo, fornecedores(nome)'
+  'id, fornecedor_id, sku_fornecedor, nome, referencia_complementar, estado, classe, quarter, moeda_origem, preco_original, desconto_usd, preco_interno_calculado, custo_icms, lote_id, vencimento_lista, ativo, fornecedores(nome), lotes_importacao(id, quarter_calculado, data_validade, ativo)'
 
 function normalizeEstado(value) {
   const estado = String(value ?? '').trim().toUpperCase()
@@ -261,6 +261,101 @@ export async function fetchLotesRecentes(limit = 12) {
   })
 
   return { ok: true, rows }
+}
+
+export async function fetchLotesList(params = {}) {
+  const page = Math.max(1, params.page ?? 1)
+  const pageSize = Math.min(100, Math.max(10, params.pageSize ?? 50))
+  const from = (page - 1) * pageSize
+  const to = from + pageSize - 1
+
+  let q = supabase
+    .from('lotes_importacao')
+    .select(
+      `
+      id,
+      status,
+      data_upload,
+      fornecedor_id,
+      moeda_detectada,
+      data_validade,
+      quarter_calculado,
+      desconto_usd,
+      estado_padrao,
+      ativo,
+      fornecedores ( nome ),
+      produtos_oficiais ( count )
+    `,
+      { count: 'exact' },
+    )
+    .eq('status', 'concluido')
+    .order('data_upload', { ascending: false })
+    .range(from, to)
+
+  if (params.ativo === true || params.ativo === false) {
+    q = q.eq('ativo', params.ativo)
+  }
+
+  if (params.fornecedorId) {
+    q = q.eq('fornecedor_id', params.fornecedorId)
+  }
+
+  const quarter = (params.quarter ?? '').trim()
+  if (quarter) {
+    q = q.ilike('quarter_calculado', `%${quarter}%`)
+  }
+
+  const search = (params.search ?? '').trim()
+  if (search) {
+    const term = `%${search}%`
+    q = q.or(
+      `quarter_calculado.ilike.${term},estado_padrao.ilike.${term}`,
+    )
+  }
+
+  const { data, error, count } = await q
+  if (error) return { ok: false, error: formatSupabaseError(error) }
+
+  const rows = (data ?? []).map((row) => {
+    const rawFornecedor = row.fornecedores
+    const fornecedor = Array.isArray(rawFornecedor)
+      ? rawFornecedor[0]
+      : rawFornecedor
+    const countRow = Array.isArray(row.produtos_oficiais)
+      ? row.produtos_oficiais[0]
+      : row.produtos_oficiais
+    return {
+      id: row.id,
+      status: row.status,
+      data_upload: row.data_upload,
+      fornecedor_id: row.fornecedor_id,
+      fornecedor_nome: fornecedor?.nome ?? '—',
+      moeda_detectada: row.moeda_detectada ?? 'USD',
+      data_validade: row.data_validade ?? '',
+      quarter_calculado: row.quarter_calculado ?? '',
+      desconto_usd: Number(row.desconto_usd ?? 0),
+      estado_padrao: row.estado_padrao ?? '',
+      ativo: row.ativo ?? true,
+      produtos_count: Number(countRow?.count ?? 0),
+    }
+  })
+
+  return { ok: true, rows, total: count ?? 0 }
+}
+
+export async function fetchLotesTotalCount({ ativo } = {}) {
+  let q = supabase
+    .from('lotes_importacao')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'concluido')
+
+  if (ativo === true || ativo === false) {
+    q = q.eq('ativo', ativo)
+  }
+
+  const { count, error } = await q
+  if (error) return { ok: false, error: error.message }
+  return { ok: true, total: count ?? 0 }
 }
 
 export async function fetchLoteById(loteId) {
@@ -877,11 +972,19 @@ export async function fetchProdutosList(params = {}) {
   const { data, error, count } = await q
   if (error) return { ok: false, error: formatSupabaseError(error) }
 
-  const rows = (data ?? []).map((row) => ({
-    ...row,
-    referencia_complementar: row.referencia_complementar ?? row.sku_fornecedor ?? '',
-    fornecedor_nome: row.fornecedores?.nome ?? '—',
-  }))
+  const rows = (data ?? []).map((row) => {
+    const rawLote = row.lotes_importacao
+    const lote = Array.isArray(rawLote) ? rawLote[0] : rawLote
+    return {
+      ...row,
+      referencia_complementar: row.referencia_complementar ?? row.sku_fornecedor ?? '',
+      fornecedor_nome: row.fornecedores?.nome ?? '—',
+      lista_id: lote?.id ?? row.lote_id ?? null,
+      lista_quarter: lote?.quarter_calculado ?? row.quarter ?? '',
+      lista_validade: lote?.data_validade ?? row.vencimento_lista ?? '',
+      lista_ativa: lote?.ativo ?? null,
+    }
+  })
 
   return { ok: true, rows, total: count ?? 0 }
 }

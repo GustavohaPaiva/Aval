@@ -6,10 +6,28 @@ import {
 } from '../utils/dataFormatters'
 
 const CLIENT_FIELDS =
-  'id, nome, razao_social, cnpj_cpf, email, telefone, municipio, uf, created_at'
+  'id, nome, razao_social, cnpj_cpf, email, telefone, municipio, uf, ativo, created_at'
 
 const CLIENT_DETAIL_FIELDS =
-  'id, nome, razao_social, cnpj_cpf, email, telefone, municipio, uf, cep, logradouro, bairro, created_at'
+  'id, nome, razao_social, cnpj_cpf, email, telefone, municipio, uf, cep, logradouro, bairro, ativo, created_at'
+
+const DUPLICATE_CNPJ_CPF_ERROR =
+  'Esse CPF ou CNPJ não pode ser lançado.'
+
+const LINKED_SIMULATIONS_DELETE_ERROR =
+  'Não é possível excluir: este cliente possui simulações ou pedidos vinculados. Inative o cliente em vez de excluir.'
+
+function parseClientDbError(error) {
+  if (!error) return 'Não foi possível concluir a operação.'
+  if (error.code === '23505') return DUPLICATE_CNPJ_CPF_ERROR
+  if (
+    error.code === '23503' ||
+    /foreign key|violates foreign key/i.test(error.message ?? '')
+  ) {
+    return LINKED_SIMULATIONS_DELETE_ERROR
+  }
+  return error.message || 'Não foi possível concluir a operação.'
+}
 
 export async function fetchClientById(id) {
   const { data, error } = await supabase
@@ -73,10 +91,10 @@ export async function fetchClientsList(params = {}) {
 
 export async function createClient(payload) {
   const nome = payload.nome?.trim()
-  const cnpj_cpf = parseCpfCnpjInput(payload.cnpj_cpf ?? '')
+  const cnpj_cpf = parseCpfCnpjInput(payload.cnpj_cpf ?? '') || null
 
-  if (!nome || !cnpj_cpf) {
-    return { ok: false, error: 'Informe nome e CPF/CNPJ.' }
+  if (!nome) {
+    return { ok: false, error: 'Informe o nome do cliente.' }
   }
 
   const telefoneRaw = payload.telefone ? parsePhoneInput(payload.telefone) : ''
@@ -91,20 +109,21 @@ export async function createClient(payload) {
       telefone: telefoneRaw || null,
       municipio: payload.municipio?.trim() || null,
       uf: payload.uf?.trim() || null,
+      ativo: true,
     })
     .select(CLIENT_FIELDS)
     .single()
 
-  if (error) return { ok: false, error: error.message }
+  if (error) return { ok: false, error: parseClientDbError(error) }
   return { ok: true, client: data }
 }
 
 export async function updateClient(id, payload) {
   const nome = payload.nome?.trim()
-  const cnpj_cpf = parseCpfCnpjInput(payload.cnpj_cpf ?? '')
+  const cnpj_cpf = parseCpfCnpjInput(payload.cnpj_cpf ?? '') || null
 
-  if (!nome || !cnpj_cpf) {
-    return { ok: false, error: 'Informe nome e CPF/CNPJ.' }
+  if (!nome) {
+    return { ok: false, error: 'Informe o nome do cliente.' }
   }
 
   const telefoneRaw = payload.telefone ? parsePhoneInput(payload.telefone) : ''
@@ -124,6 +143,25 @@ export async function updateClient(id, payload) {
     .select(CLIENT_FIELDS)
     .single()
 
-  if (error) return { ok: false, error: error.message }
+  if (error) return { ok: false, error: parseClientDbError(error) }
   return { ok: true, client: data }
+}
+
+export async function setClientAtivo(id, ativo) {
+  const { data, error } = await supabase
+    .from('clients')
+    .update({ ativo: Boolean(ativo) })
+    .eq('id', id)
+    .select(CLIENT_DETAIL_FIELDS)
+    .single()
+
+  if (error) return { ok: false, error: parseClientDbError(error) }
+  return { ok: true, client: data }
+}
+
+export async function deleteClient(id) {
+  const { error } = await supabase.from('clients').delete().eq('id', id)
+
+  if (error) return { ok: false, error: parseClientDbError(error) }
+  return { ok: true }
 }

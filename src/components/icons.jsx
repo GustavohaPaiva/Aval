@@ -151,6 +151,18 @@ export function IconSliders({ className }) {
   )
 }
 
+export function IconSparkles({ className }) {
+  return (
+    <svg {...iconProps(className)}>
+      <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z" />
+      <path d="M20 3v4" />
+      <path d="M22 5h-4" />
+      <path d="M4 17v2" />
+      <path d="M5 18H3" />
+    </svg>
+  )
+}
+
 export function IconPanelLeft({ className }) {
   return (
     <svg {...iconProps(className)}>
@@ -165,6 +177,14 @@ export function IconChevronsLeft({ className }) {
     <svg {...iconProps(className)}>
       <path d="m11 17-5-5 5-5" />
       <path d="m18 17-5-5 5-5" />
+    </svg>
+  )
+}
+
+export function IconChevronDown({ className }) {
+  return (
+    <svg {...iconProps(className)}>
+      <path d="m6 9 6 6 6-6" />
     </svg>
   )
 }
@@ -276,6 +296,34 @@ export function IconPlus({ className }) {
     <svg {...iconProps(className)}>
       <path d="M5 12h14" />
       <path d="M12 5v14" />
+    </svg>
+  )
+}
+
+export function IconHistory({ className }) {
+  return (
+    <svg {...iconProps(className)}>
+      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+      <path d="M3 3v5h5" />
+      <path d="M12 7v5l4 2" />
+    </svg>
+  )
+}
+
+export function IconBan({ className }) {
+  return (
+    <svg {...iconProps(className)}>
+      <circle cx="12" cy="12" r="10" />
+      <path d="m4.9 4.9 14.2 14.2" />
+    </svg>
+  )
+}
+
+export function IconRotateCw({ className }) {
+  return (
+    <svg {...iconProps(className)}>
+      <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+      <path d="M21 3v5h-5" />
     </svg>
   )
 }

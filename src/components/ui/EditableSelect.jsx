@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
+import { Select } from './Select'
 
 export function EditableSelect({
   value,
@@ -10,11 +11,6 @@ export function EditableSelect({
   ariaLabel,
 }) {
   const [editing, setEditing] = useState(false)
-  const selectRef = useRef(null)
-
-  useEffect(() => {
-    if (editing) selectRef.current?.focus()
-  }, [editing])
 
   const selectedOption = options.find((o) => o.value === value)
   const display = selectedOption?.label ?? value ?? '—'
@@ -34,30 +30,18 @@ export function EditableSelect({
 
   if (editing) {
     return (
-      <select
-        ref={selectRef}
+      <Select
         aria-label={ariaLabel}
+        size="compact"
+        autoOpen
         value={value ?? ''}
+        placeholder={placeholder}
+        options={options}
         onChange={(e) => commit(e.target.value)}
         onBlur={() => setEditing(false)}
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') setEditing(false)
-        }}
+        className={className}
         data-no-row-click
-        className={[
-          'h-9 w-full min-w-[5rem] rounded-xl border border-primary-300 bg-white px-2 text-sm text-slate-900 outline-none ring-2 ring-primary-500/20',
-          className,
-        ]
-          .filter(Boolean)
-          .join(' ')}
-      >
-        <option value="">{placeholder}</option>
-        {options.map((opt) => (
-          <option key={opt.value} value={opt.value}>
-            {opt.label}
-          </option>
-        ))}
-      </select>
+      />
     )
   }
 

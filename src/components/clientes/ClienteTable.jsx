@@ -33,7 +33,7 @@ const ClienteTableRow = memo(function ClienteTableRow({
       <td className="flex items-center justify-between gap-3 border-b border-slate-100/80 py-2.5 md:table-cell md:border-0 md:px-4 md:py-4 md:text-center">
         <MobileCellLabel>Nome</MobileCellLabel>
         <div className="flex justify-end md:justify-center">
-          <ClienteNameBadge nome={row.nome} />
+          <ClienteNameBadge nome={row.nome} ativo={row.ativo} />
         </div>
       </td>
 

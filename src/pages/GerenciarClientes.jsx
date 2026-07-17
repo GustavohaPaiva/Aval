@@ -16,6 +16,7 @@ import { useSyncPageLoading } from "../contexts/PageLoadingContext";
 import { useAbortableAsync } from "../hooks/useAbortableAsync";
 import { useAuth } from "../hooks/useAuth";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
+import { usePersistedFilters } from "../hooks/usePersistedFilters";
 import {
   fetchClientsList,
   fetchClientsTotalCount,
@@ -30,10 +31,13 @@ export function GerenciarClientes() {
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
-  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [filters, , patchFilters] = usePersistedFilters("filters:clientes", {
+    searchQuery: "",
+    page: 1,
+  });
+  const { searchQuery, page } = filters;
   const debouncedSearch = useDebouncedValue(searchQuery, 300);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingClient, setEditingClient] = useState(null);
@@ -151,12 +155,10 @@ export function GerenciarClientes() {
         searchQuery={searchQuery}
         hasFilters={hasFilters}
         onClear={() => {
-          setSearchQuery("");
-          setPage(1);
+          patchFilters({ searchQuery: "", page: 1 });
         }}
         onSearchChange={(e) => {
-          setSearchQuery(e.target.value);
-          setPage(1);
+          patchFilters({ searchQuery: e.target.value, page: 1 });
         }}
       />
 
@@ -180,8 +182,8 @@ export function GerenciarClientes() {
         total={total}
         loading={loading}
         itemLabel="clientes"
-        onPrev={() => setPage((p) => Math.max(1, p - 1))}
-        onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
+        onPrev={() => patchFilters({ page: Math.max(1, page - 1) })}
+        onNext={() => patchFilters({ page: Math.min(totalPages, page + 1) })}
       />
 
       <ModalClienteForm

@@ -8,6 +8,8 @@ const SIMULACAO_STATUS_FILTERS = [
   { key: "draft", label: "Rascunhos" },
   { key: "pending", label: "Pendentes" },
   { key: "approved", label: "Aprovados" },
+  { key: "rejected", label: "Reprovados" },
+  { key: "converted", label: "Convertidos" },
 ];
 
 export function SimulacaoFiltersPanel({
@@ -72,7 +74,7 @@ export function SimulacaoFiltersPanel({
           <div
             role="tablist"
             aria-labelledby="simulacao-filter-status-label"
-            className="grid grid-cols-2 gap-1 rounded-2xl bg-slate-100/90 p-1 ring-1 ring-slate-200/70 sm:grid-cols-4"
+            className="grid grid-cols-2 gap-1 rounded-2xl bg-slate-100/90 p-1 ring-1 ring-slate-200/70 sm:grid-cols-3 lg:grid-cols-6"
           >
             {SIMULACAO_STATUS_FILTERS.map((pill) => {
               const active = quickFilter === pill.key;

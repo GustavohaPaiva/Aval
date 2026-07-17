@@ -6,6 +6,7 @@ import {
 } from "../icons";
 import { InfoStatCard } from "../ui/InfoStatCard";
 import { Button } from "../ui/Button";
+import { ButtonGroup } from "../ui/ButtonGroup";
 import { EmptyState } from "../ui/EmptyState";
 import { formatShortDate } from "../../utils/formatShortDate";
 import { formatBRL } from "../../utils/money";
@@ -49,6 +50,7 @@ function statusBadgeClass(status) {
 
 export function ClienteProfileHero({ client }) {
   const local = [client.municipio, client.uf].filter(Boolean).join(" — ");
+  const isInactive = client.ativo === false;
 
   return (
     <div className="relative overflow-hidden rounded-2xl border border-primary-100/80 bg-gradient-to-br from-primary-50/80 via-white to-emerald-50/40 p-4 shadow-sm sm:rounded-[2rem] sm:p-6 lg:p-8">
@@ -65,15 +67,27 @@ export function ClienteProfileHero({ client }) {
           {clienteInitial(client.nome)}
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary-700">
-            Cliente
-          </p>
+          <div className="flex flex-col items-center gap-2 sm:flex-row sm:items-center sm:gap-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary-700">
+              Cliente
+            </p>
+            {isInactive ? (
+              <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700 ring-1 ring-slate-200">
+                Inativo
+              </span>
+            ) : null}
+          </div>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
             {client.nome}
           </h1>
           <p className="mt-2 text-sm text-slate-600">{displayCpfCnpj(client.cnpj_cpf)}</p>
           {local ? (
             <p className="mt-1 text-sm text-slate-500">{local}</p>
+          ) : null}
+          {isInactive ? (
+            <p className="mt-2 text-sm text-slate-500">
+              Cliente inativo: não aparece no simulador e não recebe novos lançamentos.
+            </p>
           ) : null}
         </div>
       </div>
@@ -128,57 +142,107 @@ function InfoRow({ label, value }) {
   );
 }
 
-export function ClienteInfoPanel({ client, isGestor, onEdit }) {
+export function ClienteInfoPanel({
+  client,
+  isGestor,
+  onEdit,
+  onToggleAtivo,
+  onDelete,
+  actionLoading = false,
+}) {
   const endereco = [client.logradouro, client.bairro, displayCep(client.cep)]
     .filter(Boolean)
     .join(" · ");
+  const isInactive = client.ativo === false;
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm sm:rounded-3xl">
-      <div className="border-b border-slate-100 bg-gradient-to-r from-primary-50/70 via-white to-emerald-50/40 px-4 py-3.5 sm:px-6 sm:py-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-2">
-            <span className="flex size-8 items-center justify-center rounded-xl bg-primary-50 text-primary-700">
-              <IconUser className="size-4" />
-            </span>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary-700">
-                Dados cadastrais
-              </p>
-              <p className="mt-0.5 text-sm text-slate-600">
-                Informações de identificação e contato.
-              </p>
+    <div className="space-y-4">
+      <section className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm sm:rounded-3xl">
+        <div className="border-b border-slate-100 bg-gradient-to-r from-primary-50/70 via-white to-emerald-50/40 px-4 py-3.5 sm:px-6 sm:py-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2">
+              <span className="flex size-8 items-center justify-center rounded-xl bg-primary-50 text-primary-700">
+                <IconUser className="size-4" />
+              </span>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary-700">
+                  Dados cadastrais
+                </p>
+                <p className="mt-0.5 text-sm text-slate-600">
+                  Informações de identificação e contato.
+                </p>
+              </div>
             </div>
+            {isGestor ? (
+              <Button
+                type="button"
+                variant="secondary"
+                className="h-9 w-full px-3 sm:w-auto"
+                onClick={onEdit}
+                disabled={actionLoading}
+              >
+                Editar cliente
+              </Button>
+            ) : null}
           </div>
-          {isGestor ? (
-            <Button
-              type="button"
-              variant="secondary"
-              className="h-9 w-full px-3 sm:w-auto"
-              onClick={onEdit}
-            >
-              Editar cliente
-            </Button>
-          ) : null}
         </div>
-      </div>
 
-      <dl className="divide-y divide-slate-100">
-        <InfoRow label="CPF / CNPJ" value={displayCpfCnpj(client.cnpj_cpf)} />
-        <InfoRow
-          label="Cadastro"
-          value={formatShortDate(client.created_at)}
-        />
-        <InfoRow label="Razão social" value={client.razao_social} />
-        <InfoRow label="E-mail" value={client.email} />
-        <InfoRow label="Telefone" value={displayPhone(client.telefone)} />
-        <InfoRow
-          label="Local"
-          value={[client.municipio, client.uf].filter(Boolean).join(" — ")}
-        />
-        <InfoRow label="Endereço" value={endereco || null} />
-      </dl>
-    </section>
+        <dl className="divide-y divide-slate-100">
+          <InfoRow
+            label="Status"
+            value={isInactive ? "Inativo" : "Ativo"}
+          />
+          <InfoRow label="CPF / CNPJ" value={displayCpfCnpj(client.cnpj_cpf)} />
+          <InfoRow
+            label="Cadastro"
+            value={formatShortDate(client.created_at)}
+          />
+          <InfoRow label="Razão social" value={client.razao_social} />
+          <InfoRow label="E-mail" value={client.email} />
+          <InfoRow label="Telefone" value={displayPhone(client.telefone)} />
+          <InfoRow
+            label="Local"
+            value={[client.municipio, client.uf].filter(Boolean).join(" — ")}
+          />
+          <InfoRow label="Endereço" value={endereco || null} />
+        </dl>
+      </section>
+
+      {isGestor ? (
+        <section className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm sm:rounded-3xl">
+          <div className="border-b border-slate-100 bg-gradient-to-r from-slate-50/90 via-white to-amber-50/30 px-4 py-3.5 sm:px-6 sm:py-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-600">
+              Gerenciamento
+            </p>
+            <p className="mt-0.5 text-sm text-slate-600">
+              Inative para bloquear novos lançamentos ou exclua o cadastro quando não houver histórico.
+            </p>
+          </div>
+          <div className="p-4 sm:p-6">
+            <ButtonGroup>
+              <Button
+                type="button"
+                variant="secondary"
+                className="h-9"
+                loading={actionLoading}
+                onClick={onToggleAtivo}
+              >
+                {isInactive ? "Reativar cliente" : "Inativar cliente"}
+              </Button>
+              <Button
+                type="button"
+                variant="danger"
+                className="h-9"
+                loading={actionLoading}
+                onClick={onDelete}
+              >
+                Excluir cliente
+              </Button>
+            </ButtonGroup>
+          </div>
+        </section>
+      ) : null}
+    </div>
   );
 }
 

@@ -10,7 +10,7 @@ export function ModalFormFooter({
   onCancel,
 }) {
   return (
-    <ButtonGroup align="end">
+    <ButtonGroup>
       <Button
         type="button"
         variant="secondary"

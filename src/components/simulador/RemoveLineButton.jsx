@@ -8,7 +8,7 @@ export function RemoveLineButton({ onClick, disabled, className = '' }) {
       variant="ghost"
       aria-label="Remover linha"
       className={[
-        'mx-auto h-9 w-9 p-0 text-red-600 hover:bg-red-50 hover:text-red-700',
+        'h-9 w-9 shrink-0 p-0 text-red-600 hover:bg-red-50 hover:text-red-700',
         className,
       ]
         .filter(Boolean)

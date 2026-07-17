@@ -65,7 +65,16 @@ export const Button = forwardRef(function Button(
       {...props}
     >
       {loading ? <Spinner /> : null}
-      <span className={loading ? "opacity-90" : undefined}>{children}</span>
+      <span
+        className={[
+          "inline-flex items-center justify-center gap-2",
+          loading ? "opacity-90" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+      >
+        {children}
+      </span>
     </button>
   );
 });

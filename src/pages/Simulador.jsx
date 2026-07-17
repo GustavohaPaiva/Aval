@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAlertDialog } from '../contexts/AlertDialogProvider'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ModalClienteForm } from "../components/clientes/ModalClienteForm";
@@ -15,32 +15,35 @@ import { Button } from "../components/ui/Button";
 import { Combobox } from "../components/ui/Combobox";
 import { EmptyState } from "../components/ui/EmptyState";
 import { FormattedInput } from "../components/ui/FormattedInput";
-import { Input } from "../components/ui/Input";
+import { BotaoAssistenteIA, CampoTextoComIA } from "../components/ui/CampoTextoComIA";
+import { DatePicker } from "../components/ui/DatePicker";
 import { PageBackLink } from "../components/ui/PageBackLink";
 import { PageHeader } from "../components/ui/PageHeader";
 import { PageInfoBanner } from "../components/ui/InfoStatCard";
 import { Select } from "../components/ui/Select";
-import {
-  FREIGHT_TYPES,
-  QUARTERS,
-  STATES,
-  getCitiesForState,
-} from "../constants/simulator";
+import { FREIGHT_TYPES, QUARTERS, STATES } from "../constants/simulator";
+import { FRETE_ORIGENS } from "../constants/fretes";
 import { useAbortableAsync } from "../hooks/useAbortableAsync";
 import { useAuth } from "../hooks/useAuth";
 import { useSimulation } from "../hooks/useSimulation";
 import {
   fetchSimulationOrderBundle,
   persistApprovedSimulation,
+  saveDraftSimulation,
   savePendingSimulation,
+  saveGestorReview,
   searchClients,
+  updateSimulationStatus,
 } from "../services/simulationOrderService";
 import { notifyGestoresSimulationPending } from "../services/notificationService";
 import {
   fetchCatalogoSimulador,
-  fetchFreteValor,
-  getFallbackCatalog,
 } from "../services/produtoCatalogoService";
+import {
+  fetchFreteDestinosAtivos,
+  fetchFreteOrigensAtivas,
+  lookupFreteValor,
+} from "../services/freteService";
 import { formatBRL } from "../utils/money";
 import { displayCpfCnpj, validateCpfCnpj } from "../utils/dataFormatters";
 
@@ -48,16 +51,24 @@ export function Simulador() {
   const [searchParams] = useSearchParams();
   const simulationId = searchParams.get("simulationId");
   const { role } = useAuth();
-  const [catalog, setCatalog] = useState(getFallbackCatalog());
+  const [catalog, setCatalog] = useState([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
-  const [catalogSource, setCatalogSource] = useState("fallback");
   const [freteUnitario, setFreteUnitario] = useState(0);
-  const sim = useSimulation({ role, catalog, freteUnitario });
+  const [freteOrigens, setFreteOrigens] = useState([]);
+  const [freteDestinos, setFreteDestinos] = useState([]);
+  const [freteLookupError, setFreteLookupError] = useState(null);
+  const sim = useSimulation({
+    role,
+    catalog,
+    freteUnitario,
+    persistDraft: !simulationId,
+  });
   const navigate = useNavigate();
   const { showAlert } = useAlertDialog();
+  const wasRemoteSimRef = useRef(Boolean(simulationId));
 
   function ensureValidClientDocument() {
-    const validation = validateCpfCnpj(sim.clientCnpjCpf, { required: true });
+    const validation = validateCpfCnpj(sim.clientCnpjCpf, { required: false });
     if (!validation.ok) {
       showAlert({
         title: "CPF / CNPJ inválido",
@@ -68,29 +79,41 @@ export function Simulador() {
     return true;
   }
   const [persisting, setPersisting] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
   const [notifying, setNotifying] = useState(false);
   const [persistError, setPersistError] = useState(null);
+  const [saveError, setSaveError] = useState(null);
   const [notifyError, setNotifyError] = useState(null);
   const [launchError, setLaunchError] = useState(null);
   const [clientModalOpen, setClientModalOpen] = useState(false);
   const [convertAfterClientSave, setConvertAfterClientSave] = useState(false);
+  const [reviewSaving, setReviewSaving] = useState(false);
+  const [reviewDeciding, setReviewDeciding] = useState(null);
+  const [reviewError, setReviewError] = useState(null);
+  const [remoteStatus, setRemoteStatus] = useState(null);
+  const observacoesIARef = useRef(null);
 
   const loadCatalog = useCallback(async (quarter, estado, isActive) => {
+    if (!quarter) {
+      setCatalog([]);
+      setCatalogLoading(false);
+      return;
+    }
+
     setCatalogLoading(true);
     const res = await fetchCatalogoSimulador({
-      quarter: quarter || undefined,
+      quarter,
       estado: estado || undefined,
     });
     if (isActive && !isActive()) return;
     setCatalogLoading(false);
 
-    if (res.ok && res.rows.length > 0) {
-      setCatalog(res.rows);
-      setCatalogSource("oficial");
-    } else {
-      setCatalog(getFallbackCatalog());
-      setCatalogSource("fallback");
+    if (!res.ok) {
+      setCatalog([]);
+      return;
     }
+
+    setCatalog(res.rows);
   }, []);
 
   useAbortableAsync(
@@ -100,16 +123,53 @@ export function Simulador() {
     [sim.quarter, sim.estado, loadCatalog],
   );
 
+  useEffect(() => {
+    sim.clearOrphanProducts();
+    // Only re-run when catalog identity changes, not when clearOrphanProducts identity changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: catalog-driven cleanup
+  }, [catalog]);
+
   useAbortableAsync(
     async (_signal, isActive) => {
-      if (sim.tipoFrete === "FOB" || !sim.origemFrete || !sim.destinoFrete) {
+      if (sim.tipoFrete !== "CIF") return;
+      const res = await fetchFreteOrigensAtivas();
+      if (isActive && !isActive()) return;
+      setFreteOrigens(res.ok ? res.values : []);
+    },
+    [sim.tipoFrete],
+  );
+
+  useAbortableAsync(
+    async (_signal, isActive) => {
+      if (sim.tipoFrete !== "CIF" || !sim.origemFrete) {
         if (isActive && !isActive()) return;
-        setFreteUnitario(0);
+        setFreteDestinos([]);
         return;
       }
-      const res = await fetchFreteValor(sim.origemFrete, sim.destinoFrete);
+      const res = await fetchFreteDestinosAtivos(sim.origemFrete);
       if (isActive && !isActive()) return;
-      setFreteUnitario(res.ok ? res.valor : 0);
+      setFreteDestinos(res.ok ? res.values : []);
+    },
+    [sim.tipoFrete, sim.origemFrete],
+  );
+
+  useAbortableAsync(
+    async (_signal, isActive) => {
+      if (sim.tipoFrete !== "CIF" || !sim.origemFrete || !sim.destinoFrete) {
+        if (isActive && !isActive()) return;
+        setFreteUnitario(0);
+        setFreteLookupError(null);
+        return;
+      }
+      const res = await lookupFreteValor(sim.origemFrete, sim.destinoFrete);
+      if (isActive && !isActive()) return;
+      if (res.ok) {
+        setFreteUnitario(res.frete.valor);
+        setFreteLookupError(null);
+      } else {
+        setFreteUnitario(0);
+        setFreteLookupError(res.error);
+      }
     },
     [sim.tipoFrete, sim.origemFrete, sim.destinoFrete],
   );
@@ -117,9 +177,15 @@ export function Simulador() {
   useAbortableAsync(
     async (_signal, isActive) => {
       if (!simulationId) {
-        sim.resetLocal();
+        if (wasRemoteSimRef.current) {
+          sim.resetLocal();
+          sim.clearDraft();
+        }
+        wasRemoteSimRef.current = false;
+        setRemoteStatus(null);
         return;
       }
+      wasRemoteSimRef.current = true;
       const result = await fetchSimulationOrderBundle(simulationId);
       if (!isActive()) return;
       if (!result.ok) {
@@ -127,8 +193,9 @@ export function Simulador() {
         return;
       }
       sim.hydrateFromBundle(result.data);
+      setRemoteStatus(result.data.simulation.status ?? null);
     },
-    [simulationId, navigate, sim.hydrateFromBundle, sim.resetLocal],
+    [simulationId, navigate, sim.hydrateFromBundle, sim.resetLocal, sim.clearDraft],
   );
 
   const handleClientSearch = useCallback(async (query, signal) => {
@@ -156,48 +223,103 @@ export function Simulador() {
     setPersisting(true);
     try {
       const result = await persistApprovedSimulation({
+        ...buildSimulationPayload(),
         clientId: overrideClientId ?? sim.clientId,
-        clientName: sim.clientName,
-        clientCnpjCpf: sim.clientCnpjCpf,
-        estado: sim.estado,
-        tipoFrete: sim.tipoFrete,
-        origemFrete: sim.origemFrete,
-        destinoFrete: sim.destinoFrete,
-        dataPagamento: sim.dataPagamento || null,
-        quarter: sim.quarter,
-        lines: sim.lines.map((l) => ({
-          productId: l.productId,
-          volume: l.volume,
-          precoUnitario: l.precoUnitario,
-          proposta: l.proposta,
-          cultura: l.cultura,
-        })),
-        totalValor: sim.totalValor,
-        totalProposta: sim.totalProposta,
       });
       if (!result.ok) {
         setPersistError(result.error);
         return;
       }
+      sim.clearDraft();
       navigate(`/pedido/${result.simulationId}`);
     } finally {
       setPersisting(false);
     }
   }
 
+  function getSaveBlockReason() {
+    if (!sim.quarter) return "Selecione o quarter antes de salvar.";
+    if (!sim.tipoFrete) return "Selecione o tipo de frete.";
+    if (!sim.dataPagamento) return "Informe a data de pagamento.";
+    if (sim.tipoFrete === "CIF") {
+      if (!sim.origemFrete?.trim()) return "Selecione a origem do frete.";
+      if (!sim.destinoFrete?.trim()) return "Selecione o destino do frete.";
+      if (freteLookupError) return freteLookupError;
+    }
+    if (sim.lines.length === 0) return "Inclua ao menos um produto.";
+    if (sim.lines.some((line) => !line.productId)) {
+      return "Selecione o produto em todas as linhas.";
+    }
+    if (sim.lines.some((line) => !String(line.cultura ?? "").trim())) {
+      return "Informe a cultura em todas as linhas.";
+    }
+    if (sim.lines.some((line) => !(Number(line.volume) > 0))) {
+      return "Informe um volume maior que zero em todas as linhas.";
+    }
+    if (!sim.clientName.trim()) return "Informe o nome do cliente.";
+    return null;
+  }
+
+  async function handleSaveSimulation() {
+    setSaveError(null);
+    setLaunchError(null);
+    if (sim.isReadOnly) return;
+
+    const blockReason = getSaveBlockReason();
+    if (blockReason) {
+      setSaveError(blockReason);
+      return;
+    }
+    if (!ensureValidClientDocument()) return;
+
+    setSavingDraft(true);
+    try {
+      const result = await saveDraftSimulation(buildSimulationPayload());
+      if (!result.ok) {
+        setSaveError(result.error);
+        return;
+      }
+      sim.clearDraft();
+      setRemoteStatus("draft");
+      sim.showActionBanner("Simulação salva com sucesso.");
+      if (!simulationId) {
+        navigate(
+          `/simulador?simulationId=${encodeURIComponent(result.simulationId)}`,
+          { replace: true },
+        );
+      }
+    } finally {
+      setSavingDraft(false);
+    }
+  }
+
   async function handleConvertToPedido() {
     setPersistError(null);
     setLaunchError(null);
-    const blockReason = sim.getLaunchBlockReason();
-    if (blockReason) {
-      setLaunchError(blockReason);
-      return;
+
+    const liberatedByGestor = remoteStatus === "approved";
+    if (!liberatedByGestor) {
+      const blockReason = sim.getLaunchBlockReason();
+      if (blockReason) {
+        setLaunchError(blockReason);
+        return;
+      }
+      if (sim.tipoFrete === "CIF" && freteLookupError) {
+        setLaunchError(freteLookupError);
+        return;
+      }
+      if (!sim.canConvert) return;
+    } else {
+      const blockReason = getSaveBlockReason();
+      if (blockReason) {
+        setLaunchError(blockReason);
+        return;
+      }
     }
-    if (!sim.canConvert) return;
 
     if (!sim.clientId) {
-      if (!sim.clientName.trim() || !sim.clientCnpjCpf.trim()) {
-        setLaunchError("Informe nome e CPF/CNPJ do cliente.");
+      if (!sim.clientName.trim()) {
+        setLaunchError("Informe o nome do cliente.");
         return;
       }
       if (!ensureValidClientDocument()) return;
@@ -223,12 +345,14 @@ export function Simulador() {
       destinoFrete: sim.destinoFrete,
       dataPagamento: sim.dataPagamento || null,
       quarter: sim.quarter,
+      observacoes: sim.observacoes,
       lines: sim.lines.map((l) => ({
         productId: l.productId,
         volume: l.volume,
         precoUnitario: l.precoUnitario,
         proposta: l.proposta,
         cultura: l.cultura,
+        overrides: l.overrides,
       })),
       totalValor: sim.totalValor,
       totalProposta: sim.totalProposta,
@@ -247,10 +371,9 @@ export function Simulador() {
       return;
     }
 
-    if (!sim.clientName.trim() || !sim.clientCnpjCpf.trim()) {
-      setNotifyError(
-        "Informe nome e CPF/CNPJ do cliente antes de notificar o gestor.",
-      );
+    const blockReason = getSaveBlockReason();
+    if (blockReason) {
+      setNotifyError(blockReason);
       return;
     }
 
@@ -264,10 +387,12 @@ export function Simulador() {
         return;
       }
 
+      sim.clearDraft();
+
       const notifyResult = await notifyGestoresSimulationPending({
         simulationId: saveResult.simulationId,
-        title: `Aprovação solicitada — ${sim.clientName.trim()}`,
-        body: `Proposta de ${formatBRL(sim.totalProposta)} abaixo de 97% do valor bruto.`,
+        title: `Revisão solicitada — ${sim.clientName.trim()}`,
+        body: `Proposta de ${formatBRL(sim.totalProposta)} abaixo da margem.`,
       });
 
       if (!notifyResult.ok) {
@@ -276,8 +401,9 @@ export function Simulador() {
       }
 
       sim.lockAsPending();
+      setRemoteStatus("pending");
       sim.showActionBanner(
-        "Solicitação enviada: o gestor será notificado sobre esta simulação pendente de aprovação.",
+        "Revisão solicitada: o gestor será notificado para validar o preço especial desta simulação.",
       );
 
       if (!simulationId) {
@@ -291,10 +417,98 @@ export function Simulador() {
     }
   }
 
-  const cityOptions = getCitiesForState(sim.estado).map((c) => ({
-    id: c,
-    label: c,
-  }));
+  function buildReviewPayload() {
+    return {
+      simulationId,
+      lines: sim.lines.map((l) => ({
+        id: l.id,
+        precoUnitario: l.precoUnitario,
+        proposta: l.proposta,
+        overrides: l.overrides,
+      })),
+      totalValor: sim.totalValor,
+      totalProposta: sim.totalProposta,
+    };
+  }
+
+  async function handleSaveReview() {
+    if (!sim.isGestor || !simulationId) return;
+    setReviewError(null);
+    setReviewSaving(true);
+    try {
+      const result = await saveGestorReview(buildReviewPayload());
+      if (!result.ok) {
+        setReviewError(result.error);
+        return;
+      }
+      sim.showActionBanner("Revisão salva nesta simulação.");
+    } finally {
+      setReviewSaving(false);
+    }
+  }
+
+  async function handleReviewDecision(status) {
+    if (!sim.isGestor || !simulationId) return;
+    setReviewError(null);
+    setReviewDeciding(status);
+    try {
+      const saveResult = await saveGestorReview(buildReviewPayload());
+      if (!saveResult.ok) {
+        setReviewError(saveResult.error);
+        return;
+      }
+      const result = await updateSimulationStatus(simulationId, status, {
+        notifyConsultor: true,
+        clientName: sim.clientName,
+      });
+      if (!result.ok) {
+        setReviewError(result.error);
+        return;
+      }
+      setRemoteStatus(status);
+      sim.showActionBanner(
+        status === "approved"
+          ? "Simulação liberada para o consultor concluir o pedido."
+          : "Simulação reprovada e consultor notificado.",
+      );
+    } finally {
+      setReviewDeciding(null);
+    }
+  }
+
+  async function handleGestorConvertToPedido() {
+    if (!sim.isGestor || !simulationId) return;
+    setReviewError(null);
+    setPersisting(true);
+    try {
+      const saveResult = await saveGestorReview(buildReviewPayload());
+      if (!saveResult.ok) {
+        setReviewError(saveResult.error);
+        return;
+      }
+      const statusResult = await updateSimulationStatus(simulationId, "approved", {
+        notifyConsultor: true,
+        clientName: sim.clientName,
+      });
+      if (!statusResult.ok) {
+        setReviewError(statusResult.error);
+        return;
+      }
+      setRemoteStatus("approved");
+      navigate(`/pedido/${simulationId}`);
+    } finally {
+      setPersisting(false);
+    }
+  }
+
+  const origemOptions = freteOrigens.map((value) => {
+    const known = FRETE_ORIGENS.find((o) => o.value === value);
+    return { value, label: known?.label ?? value };
+  });
+
+  const showGestorReview = sim.isGestor && remoteStatus === "pending";
+
+  const destinoOptions = freteDestinos.map((d) => ({ id: d, label: d }));
 
   const productsForSelect = sim.catalog.map((p) => ({
     id: p.id,
@@ -348,11 +562,9 @@ export function Simulador() {
           {heroContext}
           {catalogLoading
             ? ' · Atualizando catálogo de produtos…'
-            : catalogSource === 'fallback'
-              ? ' · Catálogo de demonstração (lance produtos em Lançamento de Produtos).'
-              : sim.quarter
-                ? ` · ${catalog.length} produto(s) do quarter ${sim.quarter}.`
-                : ` · ${catalog.length} produto(s) no catálogo oficial.`}
+            : !sim.quarter
+              ? ' · Selecione o quarter para carregar os produtos da lista.'
+              : ` · ${catalog.length} produto(s) do quarter ${sim.quarter}.`}
         </PageInfoBanner>
       </div>
 
@@ -385,7 +597,7 @@ export function Simulador() {
           title="Cliente"
           description="Identifique o cliente e o estado da operação."
         >
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4 lg:grid-cols-3">
             <Select
               label="Estado"
               placeholder="Selecione…"
@@ -397,7 +609,7 @@ export function Simulador() {
             <Combobox
               label="Cliente"
               placeholder="Buscar cliente…"
-              value={sim.clientName}
+              value={sim.clientName ?? ""}
               onTextChange={sim.setClientName}
               onSearch={handleClientSearch}
               onSelect={(opt) => sim.selectClient(opt.payload)}
@@ -409,7 +621,7 @@ export function Simulador() {
               format="cpfCnpj"
               label="CPF / CNPJ"
               placeholder="000.000.000-00 ou 00.000.000/0000-00"
-              value={sim.clientCnpjCpf}
+              value={sim.clientCnpjCpf ?? ""}
               onChange={(e) => sim.setClientCnpjCpf(e.target.value)}
               disabled={sim.isReadOnly}
             />
@@ -422,11 +634,10 @@ export function Simulador() {
           description="Defina pagamento, tipo de frete e rotas quando aplicável."
           gradient="from-primary-50/70 via-white to-sky-50/50"
         >
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <Input
+          <div className="grid gap-4 lg:grid-cols-3">
+            <DatePicker
               label="Data de pagamento"
-              type="date"
-              value={sim.dataPagamento}
+              value={sim.dataPagamento ?? ""}
               onChange={(e) => sim.setDataPagamento(e.target.value)}
               disabled={sim.isReadOnly}
             />
@@ -446,37 +657,41 @@ export function Simulador() {
               options={QUARTERS}
               disabled={sim.isReadOnly}
             />
-            {sim.showFreteRotas ? (
-              <>
-                <Combobox
-                  label="Origem do frete"
-                  placeholder={
-                    sim.estado
-                      ? "Cidade de saída…"
-                      : "Selecione um estado primeiro"
-                  }
-                  value={sim.origemFrete}
-                  onTextChange={sim.setOrigemFrete}
-                  onSelect={(opt) => sim.setOrigemFrete(opt.label)}
-                  options={cityOptions}
-                  disabled={sim.isReadOnly || !sim.estado}
-                />
-                <Combobox
-                  label="Destino do frete"
-                  placeholder={
-                    sim.estado
-                      ? "Cidade de destino…"
-                      : "Selecione um estado primeiro"
-                  }
-                  value={sim.destinoFrete}
-                  onTextChange={sim.setDestinoFrete}
-                  onSelect={(opt) => sim.setDestinoFrete(opt.label)}
-                  options={cityOptions}
-                  disabled={sim.isReadOnly || !sim.estado}
-                />
-              </>
-            ) : null}
           </div>
+          {sim.showFreteRotas ? (
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <Select
+                label="Origem do frete"
+                placeholder="Selecione a origem…"
+                value={sim.origemFrete ?? ""}
+                onChange={(e) => {
+                  sim.setOrigemFrete(e.target.value);
+                  sim.setDestinoFrete("");
+                }}
+                options={origemOptions}
+                disabled={sim.isReadOnly}
+              />
+              <Combobox
+                label="Destino do frete"
+                placeholder={
+                  sim.origemFrete
+                    ? "Cidade de destino…"
+                    : "Selecione a origem primeiro"
+                }
+                value={sim.destinoFrete ?? ""}
+                onTextChange={sim.setDestinoFrete}
+                onSelect={(opt) => sim.setDestinoFrete(opt.label)}
+                options={destinoOptions}
+                allowFreeText={false}
+                disabled={sim.isReadOnly || !sim.origemFrete}
+              />
+              {freteLookupError ? (
+                <div className="sm:col-span-2">
+                  <AlertMessage tone="info">{freteLookupError}</AlertMessage>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </SimuladorSectionPanel>
 
         <SimuladorSectionPanel
@@ -513,6 +728,10 @@ export function Simulador() {
                     onCulturaChange={(c) => sim.setLineCultura(row.id, c)}
                     onProductChange={(id) => sim.setLineProduct(row.id, id)}
                     onPropostaChange={(p) => sim.setLineProposta(row.id, p)}
+                    onOverrideChange={(field, value) =>
+                      sim.setLineOverride(row.id, field, value)
+                    }
+                    onClearOverride={() => sim.clearLineOverride(row.id)}
                     onRemove={() => sim.removeLine(row.id)}
                   />
                 ))}
@@ -527,10 +746,37 @@ export function Simulador() {
                 onCulturaChange={sim.setLineCultura}
                 onProductChange={sim.setLineProduct}
                 onPropostaChange={sim.setLineProposta}
+                onOverrideChange={sim.setLineOverride}
+                onClearOverride={sim.clearLineOverride}
                 onRemove={sim.removeLine}
               />
             </>
           )}
+        </SimuladorSectionPanel>
+
+        <SimuladorSectionPanel
+          icon={SIMULADOR_SECTION_ICONS.observacoes}
+          title="Observações"
+          description="Anote condições especiais, prazos e detalhes comerciais."
+          gradient="from-primary-50/70 via-white to-sky-50/40"
+          actions={
+            !sim.isReadOnly ? (
+              <BotaoAssistenteIA
+                onClick={() => observacoesIARef.current?.abrirAssistente()}
+                disabled={!String(sim.observacoes ?? "").trim()}
+              />
+            ) : null
+          }
+        >
+          <CampoTextoComIA
+            ref={observacoesIARef}
+            hideTrigger
+            placeholder="Condições especiais, prazos, observações comerciais…"
+            value={sim.observacoes ?? ""}
+            onChange={sim.setObservacoes}
+            disabled={sim.isReadOnly}
+            rows={4}
+          />
         </SimuladorSectionPanel>
 
         <SimuladorSectionPanel
@@ -578,40 +824,122 @@ export function Simulador() {
           <div className="mt-5 space-y-3 rounded-2xl border border-slate-100 bg-slate-50/50 p-4 sm:p-5">
             {showReadOnlyNotice ? (
               <p className="text-sm text-slate-600">
-                Proposta enviada — aguardando decisão do gestor.
+                Proposta enviada — aguardando revisão do gestor.
               </p>
             ) : null}
-            <div className="flex w-full flex-col gap-2 sm:flex-row">
-              {!sim.isReadOnly &&
-              !sim.isGestor &&
-              sim.globalStatus === "Pendente" ? (
+            {showGestorReview ? (
+              <p className="text-sm text-slate-600">
+                Revisão do gestor: ajuste os fatores de custo por linha para
+                validar o preço especial desta simulação.
+              </p>
+            ) : null}
+            <div className="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap">
+              {!sim.isReadOnly && !sim.isGestor ? (
                 <Button
                   type="button"
                   variant="secondary"
                   className="w-full sm:flex-1"
+                  loading={savingDraft}
+                  onClick={() => void handleSaveSimulation()}
+                >
+                  Salvar simulação
+                </Button>
+              ) : null}
+              {!sim.isReadOnly &&
+              !sim.isGestor &&
+              sim.globalStatus === "Pendente" &&
+              remoteStatus !== "approved" ? (
+                <Button
+                  type="button"
+                  variant="primary"
+                  className="w-full sm:flex-1"
                   loading={notifying}
                   onClick={() => void handleNotifyGestor()}
                 >
-                  Notificar gestor
+                  Solicitar revisão do gestor
                 </Button>
               ) : null}
-              <Button
-                type="button"
-                variant="primary"
-                className="w-full sm:flex-1"
-                loading={persisting}
-                onClick={() => void handleConvertToPedido()}
-              >
-                Converter em pedido
-              </Button>
+              {showGestorReview ? (
+                <>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="w-full sm:flex-1"
+                    loading={reviewSaving}
+                    disabled={Boolean(reviewDeciding) || persisting}
+                    onClick={() => void handleSaveReview()}
+                  >
+                    Salvar revisão
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="danger"
+                    className="w-full sm:flex-1"
+                    loading={reviewDeciding === "rejected"}
+                    disabled={reviewSaving || reviewDeciding === "approved" || persisting}
+                    onClick={() => void handleReviewDecision("rejected")}
+                  >
+                    Reprovar
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="w-full sm:flex-1"
+                    loading={reviewDeciding === "approved"}
+                    disabled={reviewSaving || reviewDeciding === "rejected" || persisting}
+                    onClick={() => void handleReviewDecision("approved")}
+                  >
+                    Liberar para o consultor
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="primary"
+                    className="w-full sm:flex-1"
+                    loading={persisting}
+                    disabled={reviewSaving || Boolean(reviewDeciding)}
+                    onClick={() => void handleGestorConvertToPedido()}
+                  >
+                    Converter em pedido
+                  </Button>
+                </>
+              ) : sim.isGestor && simulationId ? (
+                <Button
+                  type="button"
+                  variant="primary"
+                  className="w-full sm:flex-1"
+                  loading={persisting}
+                  disabled={reviewSaving || Boolean(reviewDeciding)}
+                  onClick={() => void handleGestorConvertToPedido()}
+                >
+                  Converter em pedido
+                </Button>
+              ) : !sim.isGestor &&
+                (sim.globalStatus === "Aprovado" ||
+                  remoteStatus === "approved") ? (
+                <Button
+                  type="button"
+                  variant="primary"
+                  className="w-full sm:flex-1"
+                  loading={persisting}
+                  onClick={() => void handleConvertToPedido()}
+                >
+                  Converter em pedido
+                </Button>
+              ) : null}
             </div>
           </div>
 
           {launchError ? (
             <AlertMessage className="mt-4">{launchError}</AlertMessage>
           ) : null}
+          {saveError ? (
+            <AlertMessage className="mt-4">{saveError}</AlertMessage>
+          ) : null}
           {notifyError ? (
             <AlertMessage className="mt-4">{notifyError}</AlertMessage>
+          ) : null}
+          {reviewError ? (
+            <AlertMessage className="mt-4">{reviewError}</AlertMessage>
           ) : null}
           {persistError ? (
             <AlertMessage className="mt-4">{persistError}</AlertMessage>

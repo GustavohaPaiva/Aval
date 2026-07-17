@@ -1,14 +1,16 @@
-import { memo } from "react";
+import { memo, useState } from "react";
 import { EditableNumber } from "../ui/EditableNumber";
 import { Select } from "../ui/Select";
+import { IconSliders } from "../icons";
 import { RemoveLineButton } from "./RemoveLineButton";
+import { LineCostOverrideEditor } from "./LineCostOverrideEditor";
 import { formatBRL } from "../../utils/money";
 
 function LineStatusBadge({ row, canOverrideFloor }) {
   if (row.isLineBelowFloor && !canOverrideFloor) {
     return (
       <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
-        &lt; 97%
+        Pendente
       </span>
     );
   }
@@ -36,9 +38,13 @@ export const SimulationLineCard = memo(function SimulationLineCard({
   onCulturaChange,
   onProductChange,
   onPropostaChange,
+  onOverrideChange,
+  onClearOverride,
   onRemove,
 }) {
-  const selectClass = "h-9 text-xs";
+  const selectClass = "text-xs";
+  const [overridesOpen, setOverridesOpen] = useState(false);
+  const hasOverride = Boolean(row.overrides);
 
   return (
     <article
@@ -70,12 +76,38 @@ export const SimulationLineCard = memo(function SimulationLineCard({
             {formatBRL(row.propostaTotal)}
           </p>
         </div>
-        <RemoveLineButton onClick={onRemove} disabled={isReadOnly} />
+        <div className="flex shrink-0 items-center gap-0.5">
+          {canOverrideFloor ? (
+            <button
+              type="button"
+              onClick={() => setOverridesOpen((open) => !open)}
+              title="Parâmetros de custo"
+              className={[
+                "relative inline-flex size-9 items-center justify-center rounded-2xl transition-colors",
+                overridesOpen || hasOverride
+                  ? "bg-primary-50 text-primary-700"
+                  : "text-slate-400 hover:bg-slate-100 hover:text-slate-600",
+              ].join(" ")}
+            >
+              <IconSliders className="size-4" />
+              {hasOverride && !overridesOpen ? (
+                <span
+                  className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-primary-500"
+                  aria-hidden
+                />
+              ) : null}
+              <span className="sr-only">Parâmetros</span>
+            </button>
+          ) : null}
+          <RemoveLineButton onClick={onRemove} disabled={isReadOnly} />
+        </div>
       </div>
 
       <div className="mt-2 grid grid-cols-2 gap-2 rounded-xl border border-slate-100 bg-slate-50/70 p-2">
         <Select
           label="Cultura"
+          size="compact"
+          placeholder="Selecione…"
           value={row.cultura ?? ""}
           onChange={(e) => onCulturaChange(e.target.value)}
           options={cultureOptions.map((c) => ({ value: c, label: c }))}
@@ -84,7 +116,9 @@ export const SimulationLineCard = memo(function SimulationLineCard({
         />
         <Select
           label="Produto"
-          value={row.productId}
+          size="compact"
+          placeholder="Selecione…"
+          value={row.productId ?? ""}
           onChange={(e) => onProductChange(e.target.value)}
           options={productOptions.map((p) => ({ value: p.id, label: p.nome }))}
           disabled={isReadOnly}
@@ -113,6 +147,16 @@ export const SimulationLineCard = memo(function SimulationLineCard({
       <p className="finance-text mt-1.5 text-[11px] text-slate-500">
         Tabela {formatBRL(row.precoUnitario)}
       </p>
+
+      {canOverrideFloor && overridesOpen ? (
+        <div className="mt-2">
+          <LineCostOverrideEditor
+            row={row}
+            onOverrideChange={onOverrideChange}
+            onClearOverride={onClearOverride}
+          />
+        </div>
+      ) : null}
     </article>
   );
 });

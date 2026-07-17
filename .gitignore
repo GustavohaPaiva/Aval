@@ -85,3 +85,9 @@ $RECYCLE.BIN/
 *.local
 *~
 ~$*
+# --- Não publicar no GitHub ---
+supabase/
+Planilhas de Fornecedores/
+# --- Não publicar no GitHub ---
+supabase/
+Planilhas de Fornecedores/

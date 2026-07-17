@@ -117,18 +117,13 @@ export function ModalFreteForm({
       <form id={FORM_ID} className="space-y-4" onSubmit={(e) => void handleSubmit(e)}>
         <Select
           label="Origem"
+          placeholder="Selecione a origem"
           value={form.origem}
           onChange={(e) => setField('origem', e.target.value)}
           onBlur={() => void validateDuplicate()}
+          options={FRETE_ORIGENS}
           required
-        >
-          <option value="">Selecione a origem</option>
-          {FRETE_ORIGENS.map((item) => (
-            <option key={item.value} value={item.value}>
-              {item.label}
-            </option>
-          ))}
-        </Select>
+        />
 
         <Input
           label="Destino"

@@ -12,6 +12,7 @@ import { PaginationBar } from '../components/ui/PaginationBar'
 import { useSyncPageLoading } from '../contexts/PageLoadingContext'
 import { useAbortableAsync } from '../hooks/useAbortableAsync'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
+import { usePersistedFilters } from '../hooks/usePersistedFilters'
 import {
   fetchFornecedoresAtivos,
   fetchHistoricoPrecos,
@@ -36,16 +37,26 @@ export function GerenciarProdutos() {
   const [total, setTotal] = useState(0)
   const [totalCount, setTotalCount] = useState(0)
   const [ativosCount, setAtivosCount] = useState(0)
-  const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(null)
   const [actionError, setActionError] = useState(null)
 
-  const [searchQuery, setSearchQuery] = useState('')
-  const [fornecedorFilter, setFornecedorFilter] = useState('')
-  const [estadoFilter, setEstadoFilter] = useState('')
-  const [classeFilter, setClasseFilter] = useState('')
-  const [statusFilter, setStatusFilter] = useState('')
+  const [filters, , patchFilters] = usePersistedFilters('filters:produtos', {
+    searchQuery: '',
+    fornecedorFilter: '',
+    estadoFilter: '',
+    classeFilter: '',
+    statusFilter: '',
+    page: 1,
+  })
+  const {
+    searchQuery,
+    fornecedorFilter,
+    estadoFilter,
+    classeFilter,
+    statusFilter,
+    page,
+  } = filters
   const debouncedSearch = useDebouncedValue(searchQuery, 300)
 
   const [modalOpen, setModalOpen] = useState(false)
@@ -135,12 +146,14 @@ export function GerenciarProdutos() {
   }
 
   function clearFilters() {
-    setSearchQuery('')
-    setFornecedorFilter('')
-    setStatusFilter('')
-    setEstadoFilter('')
-    setClasseFilter('')
-    setPage(1)
+    patchFilters({
+      searchQuery: '',
+      fornecedorFilter: '',
+      statusFilter: '',
+      estadoFilter: '',
+      classeFilter: '',
+      page: 1,
+    })
   }
 
   async function handleSaveProduto(payload) {
@@ -258,24 +271,19 @@ export function GerenciarProdutos() {
         hasFilters={hasFilters}
         onClear={clearFilters}
         onSearchChange={(e) => {
-          setSearchQuery(e.target.value)
-          setPage(1)
+          patchFilters({ searchQuery: e.target.value, page: 1 })
         }}
         onFornecedorChange={(e) => {
-          setFornecedorFilter(e.target.value)
-          setPage(1)
+          patchFilters({ fornecedorFilter: e.target.value, page: 1 })
         }}
         onEstadoChange={(e) => {
-          setEstadoFilter(e.target.value)
-          setPage(1)
+          patchFilters({ estadoFilter: e.target.value, page: 1 })
         }}
         onClasseChange={(e) => {
-          setClasseFilter(e.target.value)
-          setPage(1)
+          patchFilters({ classeFilter: e.target.value, page: 1 })
         }}
         onStatusChange={(e) => {
-          setStatusFilter(e.target.value)
-          setPage(1)
+          patchFilters({ statusFilter: e.target.value, page: 1 })
         }}
       />
 
@@ -300,8 +308,8 @@ export function GerenciarProdutos() {
         total={total}
         loading={loading}
         itemLabel="produtos"
-        onPrev={() => setPage((p) => Math.max(1, p - 1))}
-        onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
+        onPrev={() => patchFilters({ page: Math.max(1, page - 1) })}
+        onNext={() => patchFilters({ page: Math.min(totalPages, page + 1) })}
       />
 
       <ModalProdutoOficialForm

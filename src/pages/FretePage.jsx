@@ -11,6 +11,7 @@ import { PageInfoBanner } from "../components/ui/InfoStatCard";
 import { useSyncPageLoading } from "../contexts/PageLoadingContext";
 import { useAbortableAsync } from "../hooks/useAbortableAsync";
 import { useAuth } from "../hooks/useAuth";
+import { usePersistedFilters } from "../hooks/usePersistedFilters";
 import { deleteFrete, fetchFretesList } from "../services/freteService";
 import { formatBRL } from "../utils/money";
 
@@ -76,11 +77,14 @@ export function FretePage() {
 
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [origemSearch, setOrigemSearch] = useState("");
-  const [destinoSearch, setDestinoSearch] = useState("");
+  const [filters, , patchFilters] = usePersistedFilters("filters:fretes", {
+    origemSearch: "",
+    destinoSearch: "",
+    page: 1,
+  });
+  const { origemSearch, destinoSearch, page } = filters;
   const [modalOpen, setModalOpen] = useState(false);
   const [editingFrete, setEditingFrete] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
@@ -136,14 +140,8 @@ export function FretePage() {
       ? "Nenhum frete cadastrado."
       : "Nenhum resultado para a busca.";
 
-  function resetPage() {
-    setPage(1);
-  }
-
   function clearFilters() {
-    setOrigemSearch("");
-    setDestinoSearch("");
-    setPage(1);
+    patchFilters({ origemSearch: "", destinoSearch: "", page: 1 });
   }
 
   async function handleDelete(frete) {
@@ -237,12 +235,10 @@ export function FretePage() {
         hasFilters={hasFilters}
         onClear={clearFilters}
         onOrigemChange={(e) => {
-          setOrigemSearch(e.target.value);
-          resetPage();
+          patchFilters({ origemSearch: e.target.value, page: 1 });
         }}
         onDestinoChange={(e) => {
-          setDestinoSearch(e.target.value);
-          resetPage();
+          patchFilters({ destinoSearch: e.target.value, page: 1 });
         }}
       />
 
@@ -263,8 +259,8 @@ export function FretePage() {
         rangeEnd={rangeEnd}
         total={total}
         loading={loading}
-        onPrev={() => setPage((p) => Math.max(1, p - 1))}
-        onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
+        onPrev={() => patchFilters({ page: Math.max(1, page - 1) })}
+        onNext={() => patchFilters({ page: Math.min(totalPages, page + 1) })}
       />
 
       {isGestor ? (

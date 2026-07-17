@@ -1,5 +1,6 @@
 import { formatProdutoDisplayNome } from '../../constants/mapeamentoCampos'
-import { Button } from '../ui/Button'
+import { IconBan, IconHistory, IconPencil, IconRotateCw } from '../icons'
+import { IconActionButton } from '../fretes/FreteCard'
 import { DataTable } from '../ui/DataTable'
 import { EmptyState } from '../ui/EmptyState'
 import { formatBRL } from '../../utils/money'
@@ -64,6 +65,38 @@ export function ProdutoTable({
     { key: 'classe', header: 'Classe', cell: (row) => row.classe ?? 'Convencional' },
     { key: 'quarter', header: 'Quarter', cell: (row) => row.quarter },
     {
+      key: 'lista',
+      header: 'Lista',
+      cell: (row) => {
+        if (!row.lista_id && !row.lista_quarter && !row.lista_validade) {
+          return '—'
+        }
+        const parts = [row.lista_quarter, row.lista_validade]
+          .filter((x) => String(x ?? '').trim())
+          .map((x, i) =>
+            i === 1 && /^\d{4}-\d{2}-\d{2}/.test(String(x))
+              ? new Date(`${String(x).slice(0, 10)}T12:00:00`).toLocaleDateString(
+                  'pt-BR',
+                )
+              : x,
+          )
+        const label = parts.join(' · ') || 'Lista'
+        return (
+          <span
+            className={[
+              'inline-flex max-w-[12rem] truncate rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ring-inset',
+              row.lista_ativa === false
+                ? 'bg-slate-100 text-slate-600 ring-slate-200'
+                : 'bg-sky-50 text-sky-800 ring-sky-200',
+            ].join(' ')}
+            title={label}
+          >
+            {label}
+          </span>
+        )
+      },
+    },
+    {
       key: 'preco',
       header: 'Custo R$',
       align: 'right',
@@ -85,45 +118,46 @@ export function ProdutoTable({
       key: 'actions',
       header: '',
       align: 'right',
-      cell: (row) => (
-        <div className="flex justify-end gap-2">
-          <Button
-            type="button"
-            variant="secondary"
-            className="!px-2 !py-1 text-xs"
-            onClick={() => onViewHistorico(row)}
-          >
-            Histórico
-          </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            className="!px-2 !py-1 text-xs"
-            onClick={() => onEdit(row)}
-          >
-            Editar
-          </Button>
-          {row.ativo ? (
-            <Button
-              type="button"
-              variant="secondary"
-              className="!px-2 !py-1 text-xs"
-              onClick={() => onInativar(row.id)}
+      cell: (row) => {
+        const produtoLabel = formatProdutoDisplayNome({
+          nome: row.nome,
+          referencia_complementar: row.referencia_complementar,
+          fornecedor_nome: row.fornecedor_nome,
+        })
+
+        return (
+          <div className="flex justify-end gap-0.5">
+            <IconActionButton
+              label={`Ver histórico de ${produtoLabel}`}
+              onClick={() => onViewHistorico(row)}
             >
-              Inativar
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              variant="secondary"
-              className="!px-2 !py-1 text-xs"
-              onClick={() => onReativar?.(row.id)}
+              <IconHistory className="size-3.5" />
+            </IconActionButton>
+            <IconActionButton
+              label={`Editar ${produtoLabel}`}
+              onClick={() => onEdit(row)}
             >
-              Reativar
-            </Button>
-          )}
-        </div>
-      ),
+              <IconPencil className="size-3.5" />
+            </IconActionButton>
+            {row.ativo ? (
+              <IconActionButton
+                label={`Inativar ${produtoLabel}`}
+                tone="danger"
+                onClick={() => onInativar(row.id)}
+              >
+                <IconBan className="size-3.5" />
+              </IconActionButton>
+            ) : (
+              <IconActionButton
+                label={`Reativar ${produtoLabel}`}
+                onClick={() => onReativar?.(row.id)}
+              >
+                <IconRotateCw className="size-3.5" />
+              </IconActionButton>
+            )}
+          </div>
+        )
+      },
     },
   ]
 

@@ -15,7 +15,7 @@ export function calcFatorAntecipacao(dias) {
   return (100 - (1.7 / 30) * dias) / 100
 }
 
-/** Fator de juros: (100 - (2/30)*dias)/100 — usado quando pagamento atrasa (dias negativos). */
+/** Fator de juros: (100 - (2/30)*dias)/100 — usado quando pagamento atrasa (dias positivos = após o vencimento da lista). */
 export function calcFatorJuros(dias) {
   return (100 - (2 / 30) * dias) / 100
 }
@@ -53,4 +53,10 @@ export function calcPrecoSimulacao({
 export function calcCustoBrlComDesconto(custoUsd, descontoUsd, taxa) {
   const liquido = Math.max(0, Number(custoUsd) - Number(descontoUsd))
   return roundMoney(liquido * Number(taxa))
+}
+
+/** Custo-ICMS a partir dos fatores de custo (desconto antes do câmbio, 4% ICMS). */
+export function calcCustoIcms({ custoUsd, descontoUsd, taxa }) {
+  const custoBrl = calcCustoBrlComDesconto(custoUsd, descontoUsd, taxa)
+  return roundMoney(custoBrl * 0.96)
 }

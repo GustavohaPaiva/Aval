@@ -2,6 +2,7 @@ import {
   IconClipboardList,
   IconDollarSign,
   IconPackage,
+  IconPencil,
   IconTruck,
   IconUser,
 } from '../icons'
@@ -17,7 +18,7 @@ export function SimuladorSectionPanel({
   gradient = 'from-primary-50/70 via-white to-violet-50/40',
 }) {
   return (
-    <section className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm sm:rounded-3xl">
+    <section className="overflow-visible rounded-2xl border border-slate-200/90 bg-white shadow-sm sm:rounded-3xl">
       <div
         className={[
           'border-b border-slate-100 bg-gradient-to-r px-4 py-3.5 sm:px-6 sm:py-4',
@@ -114,5 +115,6 @@ export const SIMULADOR_SECTION_ICONS = {
   cliente: IconUser,
   frete: IconTruck,
   produtos: IconPackage,
+  observacoes: IconPencil,
   consolidacao: IconDollarSign,
 }
