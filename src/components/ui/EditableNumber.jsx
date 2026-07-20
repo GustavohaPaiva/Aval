@@ -11,6 +11,7 @@ export function EditableNumber({
   inputClassName = "",
   ariaLabel,
   centered = false,
+  emphasized = false,
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -69,7 +70,10 @@ export function EditableNumber({
         aria-label={ariaLabel}
         data-no-row-click
         className={[
-          "finance-text h-9 w-full min-w-[4.5rem] rounded-xl border border-primary-300 bg-white px-2 text-base font-semibold text-slate-900 outline-none ring-2 ring-primary-500/20",
+          "finance-text h-9 w-full min-w-[4.5rem] rounded-xl border px-2 text-base font-semibold text-slate-900 outline-none",
+          emphasized
+            ? "border-primary-400 bg-primary-50 ring-2 ring-primary-500/35"
+            : "border-primary-300 bg-white ring-2 ring-primary-500/20",
           centered ? "mx-auto max-w-[6rem] text-center" : "",
           inputClassName,
         ]
@@ -94,7 +98,10 @@ export function EditableNumber({
         ariaLabel ? `${ariaLabel}: ${display}. Clique para editar.` : undefined
       }
       className={[
-        "finance-text cursor-text rounded-lg px-1 text-base font-semibold text-slate-900 underline decoration-dotted decoration-slate-300 underline-offset-4 transition-colors hover:text-primary-800 hover:decoration-primary-400",
+        "finance-text cursor-text rounded-lg px-1 text-base font-semibold underline decoration-dotted underline-offset-4 transition-colors",
+        emphasized
+          ? "border border-primary-200 bg-primary-50 px-2 py-1 text-primary-900 decoration-primary-300 hover:border-primary-300 hover:bg-primary-100/80 hover:decoration-primary-500"
+          : "text-slate-900 decoration-slate-300 hover:text-primary-800 hover:decoration-primary-400",
         centered ? "mx-auto block w-full text-center" : "text-left",
         className,
       ]

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   calcDiasAntecipacao,
   calcFatorAntecipacao,
+  calcMargemLucro,
   calcPrecoSimulacao,
 } from './pricingCalculations'
 
@@ -30,5 +31,12 @@ describe('pricingCalculations', () => {
     })
     expect(result.financeiro).toBe(850)
     expect(result.precoFinal).toBeCloseTo(850 / 0.85, 2)
+  })
+
+  it('calcula margem de lucro da planilha (proposta - 4% - 1% - financeiro)', () => {
+    // (3950 - 3950*0.04 - 3950*0.01 - 3000) / 3950
+    expect(calcMargemLucro(3950, 3000)).toBeCloseTo((3950 * 0.95 - 3000) / 3950, 6)
+    expect(calcMargemLucro(0, 100)).toBeNull()
+    expect(calcMargemLucro(1000, 950)).toBeCloseTo(0, 6)
   })
 })

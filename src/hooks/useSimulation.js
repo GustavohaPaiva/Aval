@@ -6,6 +6,7 @@ import { parseCpfCnpjInput } from '../utils/dataFormatters'
 import {
   calcCustoBrlComDesconto,
   calcDiasAntecipacao,
+  calcMargemLucro,
   calcPrecoSimulacao,
 } from '../utils/pricingCalculations'
 import { roundMoney } from '../utils/roundMoney'
@@ -73,7 +74,7 @@ function resolvePricing(product, context, overrides) {
     custoIcms = Number(product.custoIcms ?? product.custoBrl * 0.96)
   }
 
-  const { precoFinal } = calcPrecoSimulacao({
+  const { precoFinal, financeiro } = calcPrecoSimulacao({
     custoIcms,
     freteUnitario: frete,
     diasAntecipacao: dias,
@@ -88,6 +89,7 @@ function resolvePricing(product, context, overrides) {
       custoBrl,
       custoIcms,
       frete,
+      financeiro,
       hasOverride,
     },
   }
@@ -108,6 +110,9 @@ function buildLineView(line, catalog, context, canOverrideFloor) {
   )
   const valorTotal = roundMoney(line.volume * precoUnitario)
   const propostaTotal = roundMoney(line.volume * proposta)
+  const financeiro = breakdown?.financeiro ?? 0
+  const financeiroTotal = roundMoney(line.volume * financeiro)
+  const margemLucro = calcMargemLucro(proposta, financeiro)
   const floorUnit = FLOOR_RATIO * precoUnitario
   const isLineBelowFloor = proposta < floorUnit
 
@@ -120,6 +125,9 @@ function buildLineView(line, catalog, context, canOverrideFloor) {
     proposta,
     valorTotal,
     propostaTotal,
+    financeiro,
+    financeiroTotal,
+    margemLucro,
     isLineBelowFloor,
     overrides: overrides ?? null,
     custoBreakdown: breakdown,
@@ -196,20 +204,32 @@ export function useSimulation(options = {}) {
     [lines, catalog, pricingContext, canOverrideFloor],
   )
 
-  const { totalValor, totalProposta, globalStatus } = useMemo(() => {
-    const totalValorRaw = lineViews.reduce((acc, row) => acc + row.valorTotal, 0)
-    const totalPropostaRaw = lineViews.reduce(
-      (acc, row) => acc + row.propostaTotal,
-      0,
-    )
-    const tValor = roundMoney(totalValorRaw)
-    const tProposta = roundMoney(totalPropostaRaw)
-    let status
-    if (tValor <= 0) status = 'Rascunho'
-    else if (tProposta >= FLOOR_RATIO * tValor) status = 'Aprovado'
-    else status = 'Pendente'
-    return { totalValor: tValor, totalProposta: tProposta, globalStatus: status }
-  }, [lineViews])
+  const { totalValor, totalProposta, totalFinanceiro, margemLucroTotal, globalStatus } =
+    useMemo(() => {
+      const totalValorRaw = lineViews.reduce((acc, row) => acc + row.valorTotal, 0)
+      const totalPropostaRaw = lineViews.reduce(
+        (acc, row) => acc + row.propostaTotal,
+        0,
+      )
+      const totalFinanceiroRaw = lineViews.reduce(
+        (acc, row) => acc + (row.financeiroTotal ?? 0),
+        0,
+      )
+      const tValor = roundMoney(totalValorRaw)
+      const tProposta = roundMoney(totalPropostaRaw)
+      const tFinanceiro = roundMoney(totalFinanceiroRaw)
+      let status
+      if (tValor <= 0) status = 'Rascunho'
+      else if (tProposta >= FLOOR_RATIO * tValor) status = 'Aprovado'
+      else status = 'Pendente'
+      return {
+        totalValor: tValor,
+        totalProposta: tProposta,
+        totalFinanceiro: tFinanceiro,
+        margemLucroTotal: calcMargemLucro(tProposta, tFinanceiro),
+        globalStatus: status,
+      }
+    }, [lineViews])
 
   const isReadOnly = !isGestor && remotePendingLock
   const canConvert =
@@ -601,6 +621,8 @@ export function useSimulation(options = {}) {
     simulationLines: lines,
     totalValor,
     totalProposta,
+    totalFinanceiro,
+    margemLucroTotal,
     globalStatus,
     isReadOnly,
     isGestor,

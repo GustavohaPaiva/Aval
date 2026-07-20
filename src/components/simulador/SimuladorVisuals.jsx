@@ -7,7 +7,7 @@ import {
   IconUser,
 } from '../icons'
 import { InfoStatCard } from '../ui/InfoStatCard'
-import { formatBRL } from '../../utils/money'
+import { formatBRL, formatPercent } from '../../utils/money'
 
 export function SimuladorSectionPanel({
   icon: Icon,
@@ -58,6 +58,8 @@ export function SimuladorSummaryBar({
   totalValor,
   totalProposta,
   globalStatus,
+  showMargem = false,
+  margemLucroTotal = null,
 }) {
   const statusAccent =
     globalStatus === 'Aprovado'
@@ -88,17 +90,33 @@ export function SimuladorSummaryBar({
       icon: IconDollarSign,
       accent: 'text-violet-700 bg-violet-50',
     },
-    {
-      label: 'Status',
-      value: globalStatus,
-      hint: 'Situação da simulação',
-      icon: IconClipboardList,
-      accent: statusAccent,
-    },
   ]
 
+  if (showMargem) {
+    items.push({
+      label: 'Margem',
+      value: formatPercent(margemLucroTotal),
+      hint: 'Lucro da proposta',
+      icon: IconDollarSign,
+      accent: 'text-emerald-700 bg-emerald-50',
+    })
+  }
+
+  items.push({
+    label: 'Status',
+    value: globalStatus,
+    hint: 'Situação da simulação',
+    icon: IconClipboardList,
+    accent: statusAccent,
+  })
+
+  const cols =
+    items.length >= 5
+      ? 'grid-cols-2 gap-3 lg:grid-cols-5'
+      : 'grid-cols-2 gap-3 lg:grid-cols-4'
+
   return (
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <div className={`grid ${cols}`}>
       {items.map((item) => (
         <InfoStatCard
           key={item.label}

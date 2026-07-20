@@ -9,6 +9,7 @@ import {
 } from "../components/simulador/SimuladorVisuals";
 import { SimulationLineCard } from "../components/simulador/SimulationLineCard";
 import { SimulationLinesTable } from "../components/simulador/SimulationLinesTable";
+import { SimulacaoPdfDocument } from "../components/simulador/SimulacaoPdfDocument";
 import { IconClipboardList } from "../components/icons";
 import { AlertMessage } from "../components/ui/AlertMessage";
 import { Button } from "../components/ui/Button";
@@ -50,7 +51,7 @@ import { displayCpfCnpj, validateCpfCnpj } from "../utils/dataFormatters";
 export function Simulador() {
   const [searchParams] = useSearchParams();
   const simulationId = searchParams.get("simulationId");
-  const { role } = useAuth();
+  const { role, profile } = useAuth();
   const [catalog, setCatalog] = useState([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [freteUnitario, setFreteUnitario] = useState(0);
@@ -66,6 +67,9 @@ export function Simulador() {
   const navigate = useNavigate();
   const { showAlert } = useAlertDialog();
   const wasRemoteSimRef = useRef(Boolean(simulationId));
+  const pdfPrintRef = useRef(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfError, setPdfError] = useState(null);
 
   function ensureValidClientDocument() {
     const validation = validateCpfCnpj(sim.clientCnpjCpf, { required: false });
@@ -290,6 +294,78 @@ export function Simulador() {
       }
     } finally {
       setSavingDraft(false);
+    }
+  }
+
+  const pdfSnapshot = useMemo(
+    () => ({
+      id: simulationId,
+      clientName: sim.clientName,
+      clientCnpjCpf: sim.clientCnpjCpf,
+      dataPagamento: sim.dataPagamento,
+      tipoFrete: sim.tipoFrete,
+      origemFrete: sim.origemFrete,
+      destinoFrete: sim.destinoFrete,
+      quarter: sim.quarter,
+      observacoes: sim.observacoes,
+      totalProposta: sim.totalProposta,
+      lines: sim.lines.map((row) => ({
+        id: row.id,
+        volume: row.volume,
+        proposta: row.proposta,
+        cultura: row.cultura,
+        displayNome: row.displayNome,
+      })),
+    }),
+    [
+      simulationId,
+      sim.clientName,
+      sim.clientCnpjCpf,
+      sim.dataPagamento,
+      sim.tipoFrete,
+      sim.origemFrete,
+      sim.destinoFrete,
+      sim.quarter,
+      sim.observacoes,
+      sim.totalProposta,
+      sim.lines,
+    ],
+  );
+
+  const canGeneratePdf =
+    sim.canConvert && Boolean(sim.clientName.trim()) && sim.lines.length > 0;
+
+  async function handleGerarPdf() {
+    if (!canGeneratePdf || !pdfPrintRef.current) return;
+
+    const blockReason = getSaveBlockReason();
+    if (blockReason) {
+      setPdfError(blockReason);
+      return;
+    }
+    if (!ensureValidClientDocument()) return;
+
+    setPdfError(null);
+    setPdfLoading(true);
+    try {
+      const safeName = (sim.clientName || "cliente")
+        .replace(/[^\w-]+/g, "_")
+        .slice(0, 40);
+      const suffix = simulationId
+        ? String(simulationId).replace(/\D/g, "").slice(-5) || "sim"
+        : "rascunho";
+      const { downloadPedidoPdfFromElement } = await import(
+        "../services/pedidoPdf"
+      );
+      await downloadPedidoPdfFromElement(
+        pdfPrintRef.current,
+        `proposta-syagri-simulacao-${suffix}-${safeName}.pdf`,
+      );
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Falha ao gerar o PDF.";
+      setPdfError(msg);
+    } finally {
+      setPdfLoading(false);
     }
   }
 
@@ -589,6 +665,8 @@ export function Simulador() {
         totalValor={sim.totalValor}
         totalProposta={sim.totalProposta}
         globalStatus={sim.globalStatus}
+        showMargem={sim.isGestor}
+        margemLucroTotal={sim.margemLucroTotal}
       />
 
       <div className="flex flex-col gap-4 sm:gap-6">
@@ -834,6 +912,17 @@ export function Simulador() {
               </p>
             ) : null}
             <div className="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap">
+              {canGeneratePdf ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="w-full sm:flex-1"
+                  loading={pdfLoading}
+                  onClick={() => void handleGerarPdf()}
+                >
+                  Gerar PDF
+                </Button>
+              ) : null}
               {!sim.isReadOnly && !sim.isGestor ? (
                 <Button
                   type="button"
@@ -929,6 +1018,9 @@ export function Simulador() {
             </div>
           </div>
 
+          {pdfError ? (
+            <AlertMessage className="mt-4">{pdfError}</AlertMessage>
+          ) : null}
           {launchError ? (
             <AlertMessage className="mt-4">{launchError}</AlertMessage>
           ) : null}
@@ -962,6 +1054,25 @@ export function Simulador() {
           }
         }}
       />
+
+      {canGeneratePdf ? (
+        <div
+          aria-hidden
+          style={{
+            position: "fixed",
+            left: "-10000px",
+            top: 0,
+            pointerEvents: "none",
+          }}
+        >
+          <div ref={pdfPrintRef}>
+            <SimulacaoPdfDocument
+              snapshot={pdfSnapshot}
+              vendedorNome={profile?.nome ?? ""}
+            />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

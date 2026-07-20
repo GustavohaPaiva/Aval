@@ -7,3 +7,12 @@ export function formatBRL(value) {
         maximumFractionDigits: 2,
     }).format(value);
 }
+
+/** Formata razão (0–1) como percentual pt-BR. */
+export function formatPercent(ratio, decimals = 1) {
+    if (ratio == null || !Number.isFinite(ratio)) return '—'
+    return `${(ratio * 100).toLocaleString('pt-BR', {
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals,
+    })}%`
+}

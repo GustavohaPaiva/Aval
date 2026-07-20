@@ -4,7 +4,7 @@ import { Select } from "../ui/Select";
 import { IconSliders } from "../icons";
 import { RemoveLineButton } from "./RemoveLineButton";
 import { LineCostOverrideEditor } from "./LineCostOverrideEditor";
-import { formatBRL } from "../../utils/money";
+import { formatBRL, formatPercent } from "../../utils/money";
 
 function LineStatusBadge({ row, canOverrideFloor }) {
   if (row.isLineBelowFloor && !canOverrideFloor) {
@@ -124,29 +124,39 @@ export const SimulationLineCard = memo(function SimulationLineCard({
           disabled={isReadOnly}
           className={selectClass}
         />
-        <div className="col-span-2 flex items-end justify-between gap-2">
-          <div className="min-w-0 flex-1">
-            <label className="mb-1 block text-[11px] font-medium text-slate-600">
-              Proposta un.
-            </label>
-            <EditableNumber
-              value={row.proposta}
-              onChange={onPropostaChange}
-              disabled={isReadOnly}
-              min={0}
-              step={0.01}
-              decimals={2}
-              ariaLabel="Proposta unitária"
-              className="text-sm"
-            />
+        <div className="col-span-2 rounded-xl border border-primary-200/80 bg-primary-50/60 p-2">
+          <div className="flex items-end justify-between gap-2">
+            <div className="min-w-0 flex-1">
+              <label className="mb-1 block text-[11px] font-semibold text-primary-800">
+                Proposta un.
+              </label>
+              <EditableNumber
+                value={row.proposta}
+                onChange={onPropostaChange}
+                disabled={isReadOnly}
+                min={0}
+                step={0.01}
+                decimals={2}
+                ariaLabel="Proposta unitária"
+                className="text-sm"
+                emphasized
+              />
+            </div>
+            <LineStatusBadge row={row} canOverrideFloor={canOverrideFloor} />
           </div>
-          <LineStatusBadge row={row} canOverrideFloor={canOverrideFloor} />
         </div>
       </div>
 
-      <p className="finance-text mt-1.5 text-[11px] text-slate-500">
-        Tabela {formatBRL(row.precoUnitario)}
-      </p>
+      <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5">
+        <p className="finance-text text-[11px] text-slate-500">
+          Tabela {formatBRL(row.precoUnitario)}
+        </p>
+        {canOverrideFloor ? (
+          <p className="finance-text text-[11px] font-semibold text-slate-700">
+            Margem {formatPercent(row.margemLucro)}
+          </p>
+        ) : null}
+      </div>
 
       {canOverrideFloor && overridesOpen ? (
         <div className="mt-2">

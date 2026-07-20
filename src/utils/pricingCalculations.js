@@ -23,7 +23,7 @@ export function calcFatorJuros(dias) {
 /**
  * Cadeia de preço por linha (Excel):
  * base = custo_icms + frete
- * financeiro = base * fator (antecipação se dias>0, juros se dias<0, 1 se zero)
+ * financeiro = base * fator (antecipação se dias<0, juros se dias>0, 1 se zero)
  * preço final (margem 15%) = financeiro / 0.85
  */
 export function calcPrecoSimulacao({
@@ -48,6 +48,18 @@ export function calcPrecoSimulacao({
     financeiro,
     precoFinal,
   }
+}
+
+/**
+ * Margem de lucro da planilha (Simulador_Negociação):
+ * (proposta - proposta*0.04 - proposta*0.01 - financeiro) / proposta
+ * = (proposta * 0.95 - financeiro) / proposta
+ */
+export function calcMargemLucro(proposta, financeiro) {
+  const p = Number(proposta)
+  const f = Number(financeiro)
+  if (!Number.isFinite(p) || p <= 0 || !Number.isFinite(f)) return null
+  return (p * 0.95 - f) / p
 }
 
 export function calcCustoBrlComDesconto(custoUsd, descontoUsd, taxa) {

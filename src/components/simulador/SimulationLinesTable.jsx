@@ -4,7 +4,7 @@ import { Select } from "../ui/Select";
 import { IconSliders } from "../icons";
 import { RemoveLineButton } from "./RemoveLineButton";
 import { LineCostOverrideEditor } from "./LineCostOverrideEditor";
-import { formatBRL } from "../../utils/money";
+import { formatBRL, formatPercent } from "../../utils/money";
 
 const SimulationLinesTableRow = memo(function SimulationLinesTableRow({
   row,
@@ -13,6 +13,8 @@ const SimulationLinesTableRow = memo(function SimulationLinesTableRow({
   productOptions,
   isReadOnly,
   canOverrideFloor,
+  showMargem,
+  colSpan,
   onVolumeChange,
   onCulturaChange,
   onProductChange,
@@ -72,7 +74,7 @@ const SimulationLinesTableRow = memo(function SimulationLinesTableRow({
       <td className={`finance-text ${cell} font-medium text-slate-900`}>
         {formatBRL(row.valorTotal)}
       </td>
-      <td className={cell}>
+      <td className={`${cell} bg-primary-50/70`}>
         <EditableNumber
           value={row.proposta}
           onChange={(p) => onPropostaChange(row.id, p)}
@@ -83,11 +85,17 @@ const SimulationLinesTableRow = memo(function SimulationLinesTableRow({
           ariaLabel="Proposta unitária"
           className="text-sm"
           centered
+          emphasized
         />
       </td>
       <td className={`finance-text ${cell} font-medium text-slate-900`}>
         {formatBRL(row.propostaTotal)}
       </td>
+      {showMargem ? (
+        <td className={`finance-text ${cell} font-semibold text-slate-800`}>
+          {formatPercent(row.margemLucro)}
+        </td>
+      ) : null}
       <td className={cell}>
         {row.isLineBelowFloor && !canOverrideFloor ? (
           <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800">
@@ -136,7 +144,7 @@ const SimulationLinesTableRow = memo(function SimulationLinesTableRow({
     </tr>
     {canOverrideFloor && overridesOpen ? (
       <tr className="border-b border-slate-100 bg-slate-50/40">
-        <td colSpan={9} className="px-3 pb-3">
+        <td colSpan={colSpan} className="px-3 pb-3">
           <LineCostOverrideEditor
             row={row}
             onOverrideChange={(field, value) =>
@@ -166,6 +174,8 @@ export function SimulationLinesTable({
   onRemove,
 }) {
   const cell = "px-3 py-2.5 text-center align-middle";
+  const showMargem = canOverrideFloor;
+  const colSpan = showMargem ? 10 : 9;
 
   return (
     <div className="hidden overflow-x-auto rounded-2xl border border-slate-100 lg:block">
@@ -177,8 +187,11 @@ export function SimulationLinesTable({
             <th className={cell}>Produto</th>
             <th className={cell}>Valor unit.</th>
             <th className={cell}>Valor total</th>
-            <th className={cell}>Proposta unit.</th>
+            <th className={`${cell} bg-primary-50/80 text-primary-800`}>
+              Proposta unit.
+            </th>
             <th className={cell}>Proposta total</th>
+            {showMargem ? <th className={cell}>Margem</th> : null}
             <th className={cell}>Status</th>
             <th className={`${cell} w-24`} />
           </tr>
@@ -193,6 +206,8 @@ export function SimulationLinesTable({
               productOptions={productOptions}
               isReadOnly={isReadOnly}
               canOverrideFloor={canOverrideFloor}
+              showMargem={showMargem}
+              colSpan={colSpan}
               onVolumeChange={onVolumeChange}
               onCulturaChange={onCulturaChange}
               onProductChange={onProductChange}
