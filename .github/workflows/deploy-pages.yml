@@ -70,7 +70,8 @@ jobs:
           VITE_APP_URL: ${{ steps.app_env.outputs.app_url }}
           VITE_BASE_PATH: ${{ steps.app_env.outputs.base_path }}
           VITE_AUTH_EMAIL_DOMAIN: ${{ steps.app_env.outputs.email_domain }}
-          VITE_GEMINI_API_KEY: ${{ secrets.VITE_GEMINI_API_KEY }}
+          # Não injeta VITE_GEMINI_API_KEY no build do Pages: a chave entra no JS
+          # e o GitHub Push Protection bloqueia o push em gh-pages.
           VITE_GEMINI_MODEL: ${{ vars.VITE_GEMINI_MODEL }}
 
       - name: Verify build output
