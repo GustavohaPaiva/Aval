@@ -1,11 +1,11 @@
-import html2canvas from 'html2canvas'
+import html2canvas from 'html2canvas-pro'
 import { jsPDF } from 'jspdf'
 
 /**
- * Gera PDF A4 a partir de um elemento HTML (proposta / pedido).
+ * Gera Blob PDF A4 a partir de um elemento HTML (proposta / pedido).
  * Pagina automaticamente quando o conteúdo excede uma página.
  */
-export async function downloadPedidoPdfFromElement(element, filename) {
+export async function buildPedidoPdfBlobFromElement(element) {
   const canvas = await html2canvas(element, {
     scale: 2,
     useCORS: true,
@@ -44,5 +44,5 @@ export async function downloadPedidoPdfFromElement(element, filename) {
     heightLeft -= contentHeight
   }
 
-  pdf.save(filename)
+  return pdf.output('blob')
 }

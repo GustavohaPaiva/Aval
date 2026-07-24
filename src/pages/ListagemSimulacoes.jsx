@@ -149,15 +149,13 @@ export function ListagemSimulacoes() {
           title={isGestor ? "Simulações" : "Minhas simulações"}
           description="Acompanhe rascunhos, aprovações e propostas convertidas."
           actions={
-            !isGestor ? (
-              <Button
-                type="button"
-                className="w-full sm:w-auto"
-                onClick={() => navigate("/simulador")}
-              >
-                Nova simulação
-              </Button>
-            ) : undefined
+            <Button
+              type="button"
+              className="w-full sm:w-auto"
+              onClick={() => navigate("/simulador")}
+            >
+              Nova simulação
+            </Button>
           }
           className="relative mb-0"
         />

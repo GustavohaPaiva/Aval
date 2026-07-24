@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { IconBan, IconEye, IconPackage, IconRotateCw, IconSearch } from '../icons'
+import { IconBan, IconEye, IconPackage, IconRotateCw, IconSearch, IconTrash } from '../icons'
 import { QUARTERS } from '../../constants/simulator'
 import { IconActionButton } from '../fretes/FreteCard'
 import { InfoStatCard } from '../ui/InfoStatCard'
@@ -40,7 +40,7 @@ function StatusBadge({ ativo }) {
 export function ListaStatsBar({ total, filtered, ativas, loading }) {
   const items = [
     {
-      label: 'Listas lançadas',
+      label: 'Listas de produtos',
       value: loading ? '—' : String(total),
       hint: 'Lotes concluídos',
       icon: IconPackage,
@@ -98,7 +98,7 @@ export function ListaFiltersPanel({
               Busca e filtros
             </p>
             <p className="mt-1 text-sm text-slate-600">
-              Filtre listas por fornecedor, quarter ou status.
+              Filtre listas de produtos por fornecedor, quarter ou status.
             </p>
           </div>
           <Button
@@ -124,7 +124,7 @@ export function ListaFiltersPanel({
           </label>
           <SearchInput
             id="lista-filter-busca"
-            ariaLabel="Buscar lista"
+            ariaLabel="Buscar lista de produtos"
             placeholder="Ex.: Q2, MG…"
             value={searchQuery}
             onChange={onSearchChange}
@@ -162,13 +162,14 @@ export function ListaTable({
   emptyMessage,
   onInativar,
   onReativar,
+  onExcluir,
 }) {
   const navigate = useNavigate()
 
   if (loading) {
     return (
       <section className="rounded-2xl border border-slate-200/90 bg-white p-8 text-center text-sm text-slate-500 shadow-sm sm:rounded-3xl">
-        Carregando listas…
+        Carregando listas de produtos…
       </section>
     )
   }
@@ -243,6 +244,13 @@ export function ListaTable({
                 <IconRotateCw className="size-3.5" />
               </IconActionButton>
             )}
+            <IconActionButton
+              label={`Excluir lista de produtos ${label}`}
+              tone="danger"
+              onClick={() => onExcluir(row)}
+            >
+              <IconTrash className="size-3.5" />
+            </IconActionButton>
           </div>
         )
       },

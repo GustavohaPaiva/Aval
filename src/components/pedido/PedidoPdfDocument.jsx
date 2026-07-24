@@ -1,4 +1,3 @@
-import { IconLeaf } from '../icons'
 import { SYAGRI_COMPANY } from '../../constants/company'
 import { displayCpfCnpj, displayPhone } from '../../utils/dataFormatters'
 import { formatBRL } from '../../utils/money'
@@ -73,52 +72,35 @@ export function PedidoPdfDocument({
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 24 }}>
-          <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
-            <div
+          <div>
+            <p
               style={{
-                width: 52,
-                height: 52,
-                borderRadius: 14,
-                background: 'rgba(255,255,255,0.15)',
-                border: '1px solid rgba(255,255,255,0.25)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
+                margin: 0,
+                fontSize: 22,
+                fontWeight: 700,
+                letterSpacing: '-0.02em',
+                lineHeight: 1.15,
               }}
             >
-              <IconLeaf className="size-7 text-white" />
-            </div>
-            <div>
-              <p
-                style={{
-                  margin: 0,
-                  fontSize: 22,
-                  fontWeight: 700,
-                  letterSpacing: '-0.02em',
-                  lineHeight: 1.15,
-                }}
-              >
-                {SYAGRI_COMPANY.brandName}
-                <span style={{ fontWeight: 500, opacity: 0.9 }}>
-                  {' '}
-                  {SYAGRI_COMPANY.brandTagline}
-                </span>
-              </p>
-              <p
-                style={{
-                  margin: '6px 0 0',
-                  fontSize: 10,
-                  letterSpacing: '0.04em',
-                  textTransform: 'uppercase',
-                  opacity: 0.85,
-                  maxWidth: 420,
-                  lineHeight: 1.4,
-                }}
-              >
-                {SYAGRI_COMPANY.legalName}
-              </p>
-            </div>
+              {SYAGRI_COMPANY.brandName}
+              <span style={{ fontWeight: 500, opacity: 0.9 }}>
+                {' '}
+                {SYAGRI_COMPANY.brandTagline}
+              </span>
+            </p>
+            <p
+              style={{
+                margin: '6px 0 0',
+                fontSize: 10,
+                letterSpacing: '0.04em',
+                textTransform: 'uppercase',
+                opacity: 0.85,
+                maxWidth: 420,
+                lineHeight: 1.4,
+              }}
+            >
+              {SYAGRI_COMPANY.legalName}
+            </p>
           </div>
 
           <div style={{ textAlign: 'right', flexShrink: 0 }}>
@@ -535,7 +517,7 @@ export function PedidoPdfDocument({
             letterSpacing: '0.02em',
           }}
         >
-          Documento gerado pelo sistema SyAgri · Proposta nº {docNo} ·{' '}
+          Documento gerado pela SYAGRI · Proposta nº {docNo} ·{' '}
           {formatDateBr(new Date().toISOString())}
         </p>
       </div>

@@ -3,11 +3,14 @@ import { CATALOG_PRODUCTS } from '../constants/catalogProducts'
 import { CULTURES } from '../constants/simulator'
 import { FLOOR_RATIO } from '../types/simulation'
 import { parseCpfCnpjInput } from '../utils/dataFormatters'
+import { calcComissaoLinha } from '../utils/comissaoCalculations'
 import {
   calcCustoBrlComDesconto,
+  calcCustoIcmsFromBrl,
   calcDiasAntecipacao,
   calcMargemLucro,
   calcPrecoSimulacao,
+  DEFAULT_ICMS_PERCENTUAL,
 } from '../utils/pricingCalculations'
 import { roundMoney } from '../utils/roundMoney'
 import { createDraftSaver, loadDraft } from '../utils/uiDraftStorage'
@@ -54,7 +57,8 @@ function resolvePricing(product, context, overrides) {
   if (!product) {
     return { precoUnitario: 0, breakdown: null }
   }
-  const { dataPagamento, freteUnitario = 0 } = context
+  const { dataPagamento, freteUnitario = 0, icmsPercentual = DEFAULT_ICMS_PERCENTUAL } =
+    context
   const dias = calcDiasAntecipacao(dataPagamento, product.vencimentoLista)
   const ov = normalizeOverrides(overrides)
   const hasOverride = Boolean(ov)
@@ -68,13 +72,15 @@ function resolvePricing(product, context, overrides) {
   let custoIcms
   if (hasOverride) {
     custoBrl = calcCustoBrlComDesconto(custoUsd, descontoUsd, taxa)
-    custoIcms = roundMoney(custoBrl * 0.96)
+    custoIcms = calcCustoIcmsFromBrl(custoBrl, icmsPercentual)
   } else {
     custoBrl = roundMoney(Number(product.custoBrl ?? 0))
-    custoIcms = Number(product.custoIcms ?? product.custoBrl * 0.96)
+    custoIcms = Number(
+      product.custoIcms ?? calcCustoIcmsFromBrl(product.custoBrl, icmsPercentual),
+    )
   }
 
-  const { precoFinal, financeiro } = calcPrecoSimulacao({
+  const { precoFinal, financeiro, valorComFrete, fator } = calcPrecoSimulacao({
     custoIcms,
     freteUnitario: frete,
     diasAntecipacao: dias,
@@ -89,6 +95,9 @@ function resolvePricing(product, context, overrides) {
       custoBrl,
       custoIcms,
       frete,
+      valorComFrete,
+      fatorFinanceiro: fator,
+      diasAntecipacao: dias,
       financeiro,
       hasOverride,
     },
@@ -99,7 +108,7 @@ function resolvePrecoUnitario(product, context, overrides) {
   return resolvePricing(product, context, overrides).precoUnitario
 }
 
-function buildLineView(line, catalog, context, canOverrideFloor) {
+function buildLineView(line, catalog, context, canOverrideFloor, comissaoFaixas) {
   const product = catalog.find((p) => p.id === line.productId)
   const overrides = normalizeOverrides(line.overrides)
   const { precoUnitario, breakdown } = resolvePricing(product, context, overrides)
@@ -115,6 +124,13 @@ function buildLineView(line, catalog, context, canOverrideFloor) {
   const margemLucro = calcMargemLucro(proposta, financeiro)
   const floorUnit = FLOOR_RATIO * precoUnitario
   const isLineBelowFloor = proposta < floorUnit
+  const comissao = calcComissaoLinha({
+    margem: margemLucro,
+    classe: product?.classe,
+    volume: line.volume,
+    proposta,
+    faixas: comissaoFaixas,
+  })
 
   return {
     id: line.id,
@@ -128,6 +144,11 @@ function buildLineView(line, catalog, context, canOverrideFloor) {
     financeiro,
     financeiroTotal,
     margemLucro,
+    produtoClasse: comissao.classe,
+    margemPercentual: comissao.margemPercentual,
+    comissaoPercentual: comissao.comissaoPercentual,
+    comissaoValor: comissao.comissaoValor,
+    comissaoBaseCalculo: comissao.baseCalculo,
     isLineBelowFloor,
     overrides: overrides ?? null,
     custoBreakdown: breakdown,
@@ -148,6 +169,11 @@ function createLine() {
 export function useSimulation(options = {}) {
   const catalog = options.catalog ?? CATALOG_PRODUCTS
   const freteUnitario = options.freteUnitario ?? 0
+  const icmsPercentual = options.icmsPercentual ?? DEFAULT_ICMS_PERCENTUAL
+  const comissaoFaixas = useMemo(
+    () => options.comissaoFaixas ?? [],
+    [options.comissaoFaixas],
+  )
   const isGestor = options.role === 'gestor'
   const persistDraft = options.persistDraft === true
 
@@ -190,8 +216,8 @@ export function useSimulation(options = {}) {
   }
 
   const pricingContext = useMemo(
-    () => ({ dataPagamento, freteUnitario }),
-    [dataPagamento, freteUnitario],
+    () => ({ dataPagamento, freteUnitario, icmsPercentual }),
+    [dataPagamento, freteUnitario, icmsPercentual],
   )
 
   const canOverrideFloor = isGestor
@@ -199,12 +225,18 @@ export function useSimulation(options = {}) {
   const lineViews = useMemo(
     () =>
       lines.map((line) =>
-        buildLineView(line, catalog, pricingContext, canOverrideFloor),
+        buildLineView(
+          line,
+          catalog,
+          pricingContext,
+          canOverrideFloor,
+          comissaoFaixas,
+        ),
       ),
-    [lines, catalog, pricingContext, canOverrideFloor],
+    [lines, catalog, pricingContext, canOverrideFloor, comissaoFaixas],
   )
 
-  const { totalValor, totalProposta, totalFinanceiro, margemLucroTotal, globalStatus } =
+  const { totalValor, totalProposta, totalFinanceiro, margemLucroTotal, comissaoValorTotal, globalStatus } =
     useMemo(() => {
       const totalValorRaw = lineViews.reduce((acc, row) => acc + row.valorTotal, 0)
       const totalPropostaRaw = lineViews.reduce(
@@ -213,6 +245,10 @@ export function useSimulation(options = {}) {
       )
       const totalFinanceiroRaw = lineViews.reduce(
         (acc, row) => acc + (row.financeiroTotal ?? 0),
+        0,
+      )
+      const comissaoValorRaw = lineViews.reduce(
+        (acc, row) => acc + (row.comissaoValor ?? 0),
         0,
       )
       const tValor = roundMoney(totalValorRaw)
@@ -227,6 +263,7 @@ export function useSimulation(options = {}) {
         totalProposta: tProposta,
         totalFinanceiro: tFinanceiro,
         margemLucroTotal: calcMargemLucro(tProposta, tFinanceiro),
+        comissaoValorTotal: roundMoney(comissaoValorRaw),
         globalStatus: status,
       }
     }, [lineViews])
@@ -623,6 +660,7 @@ export function useSimulation(options = {}) {
     totalProposta,
     totalFinanceiro,
     margemLucroTotal,
+    comissaoValorTotal,
     globalStatus,
     isReadOnly,
     isGestor,

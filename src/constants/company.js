@@ -1,8 +1,8 @@
 /** Dados institucionais SyAgri para documentos (proposta / pedido). */
 export const SYAGRI_COMPANY = {
   legalName: 'SYAGRI AGRONEGÓCIOS COMÉRCIO E REPRESENTAÇÕES LTDA.',
-  brandName: 'SyAgri',
-  brandTagline: 'Agronegócios',
+  brandName: 'SYAGRI',
+  brandTagline: 'Agronegócios · Fertilizantes',
   sites: [
     {
       label: 'Matriz',

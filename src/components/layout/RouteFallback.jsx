@@ -1,4 +1,4 @@
-import { IconLeaf } from '../icons'
+import { BrandMark } from '../brand/BrandLogo'
 
 export function RouteFallback() {
   return (
@@ -8,8 +8,8 @@ export function RouteFallback() {
       aria-live="polite"
       aria-label="Carregando página"
     >
-      <span className="flex size-10 items-center justify-center rounded-xl bg-primary-50 text-primary-600">
-        <IconLeaf className="size-5" />
+      <span className="flex size-10 items-center justify-center overflow-hidden rounded-xl bg-slate-950 ring-1 ring-slate-800">
+        <BrandMark className="size-7" />
       </span>
       <span
         className="size-5 animate-spin rounded-full border-2 border-primary-200 border-t-primary-600"

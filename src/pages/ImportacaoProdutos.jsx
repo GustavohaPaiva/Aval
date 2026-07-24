@@ -119,7 +119,7 @@ export function ImportacaoProdutos() {
       quarter: payload.quarter,
       preco_original: payload.preco_original,
       desconto_usd: payload.desconto_usd,
-      moeda_origem: 'USD',
+      moeda_origem: payload.moeda_origem,
     })
 
     if (res.ok) {
@@ -143,7 +143,7 @@ export function ImportacaoProdutos() {
         />
 
         <PageHeader
-          eyebrow="Syagri"
+          eyebrow="Aval"
           title="Lançamento de Produtos"
           description="Envie a planilha do fornecedor — o sistema detecta colunas e fornecedor automaticamente."
           actions={

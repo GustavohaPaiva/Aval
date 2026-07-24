@@ -253,7 +253,7 @@ export function LoteDetalhePage() {
   async function handleInativarLista() {
     if (
       !window.confirm(
-        "Inativar esta lista e todos os produtos vinculados a ela no catálogo? Esta ação não restaura a lista anterior automaticamente.",
+        "Inativar esta lista de produtos e todos os produtos vinculados a ela no catálogo? Esta ação não restaura a lista anterior automaticamente.",
       )
     ) {
       return;
@@ -271,7 +271,7 @@ export function LoteDetalhePage() {
 
   async function handleReativarLista() {
     if (
-      !window.confirm("Reativar esta lista e os produtos vinculados a ela?")
+      !window.confirm("Reativar esta lista de produtos e os produtos vinculados a ela?")
     ) {
       return;
     }
@@ -369,7 +369,7 @@ export function LoteDetalhePage() {
                   loading={listaActionLoading}
                   onClick={() => void handleReativarLista()}
                 >
-                  Reativar lista
+                  Reativar lista de produtos
                 </Button>
               ) : (
                 <Button
@@ -378,7 +378,7 @@ export function LoteDetalhePage() {
                   loading={listaActionLoading}
                   onClick={() => void handleInativarLista()}
                 >
-                  Inativar lista
+                  Inativar lista de produtos
                 </Button>
               )}
             </div>
@@ -395,7 +395,7 @@ export function LoteDetalhePage() {
                 ? ` · ${semEstadoCount} sem estado`
                 : ""}
               {readOnly ? " · somente leitura" : ""}
-              {lote.ativo === false ? " · lista inativa" : ""}
+              {lote.ativo === false ? " · lista de produtos inativa" : ""}
             </p>
             {!readOnly ? (
               <ButtonGroup align="stretch">

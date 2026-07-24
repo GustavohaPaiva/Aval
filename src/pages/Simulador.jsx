@@ -10,6 +10,7 @@ import {
 import { SimulationLineCard } from "../components/simulador/SimulationLineCard";
 import { SimulationLinesTable } from "../components/simulador/SimulationLinesTable";
 import { SimulacaoPdfDocument } from "../components/simulador/SimulacaoPdfDocument";
+import { PdfPreviewModal } from "../components/pdf/PdfPreviewModal";
 import { IconClipboardList } from "../components/icons";
 import { AlertMessage } from "../components/ui/AlertMessage";
 import { Button } from "../components/ui/Button";
@@ -37,9 +38,11 @@ import {
   updateSimulationStatus,
 } from "../services/simulationOrderService";
 import { notifyGestoresSimulationPending } from "../services/notificationService";
+import { fetchComissaoFaixas } from "../services/comissaoService";
 import {
   fetchCatalogoSimulador,
 } from "../services/produtoCatalogoService";
+import { fetchParametrosSistema } from "../services/parametrosService";
 import {
   fetchFreteDestinosAtivos,
   fetchFreteOrigensAtivas,
@@ -47,6 +50,7 @@ import {
 } from "../services/freteService";
 import { formatBRL } from "../utils/money";
 import { displayCpfCnpj, validateCpfCnpj } from "../utils/dataFormatters";
+import { DEFAULT_ICMS_PERCENTUAL } from "../utils/pricingCalculations";
 
 export function Simulador() {
   const [searchParams] = useSearchParams();
@@ -54,21 +58,26 @@ export function Simulador() {
   const { role, profile } = useAuth();
   const [catalog, setCatalog] = useState([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogReady, setCatalogReady] = useState(false);
   const [freteUnitario, setFreteUnitario] = useState(0);
   const [freteOrigens, setFreteOrigens] = useState([]);
   const [freteDestinos, setFreteDestinos] = useState([]);
   const [freteLookupError, setFreteLookupError] = useState(null);
+  const [icmsPercentual, setIcmsPercentual] = useState(DEFAULT_ICMS_PERCENTUAL);
+  const [comissaoFaixas, setComissaoFaixas] = useState([]);
   const sim = useSimulation({
     role,
     catalog,
     freteUnitario,
+    icmsPercentual,
+    comissaoFaixas,
     persistDraft: !simulationId,
   });
   const navigate = useNavigate();
   const { showAlert } = useAlertDialog();
   const wasRemoteSimRef = useRef(Boolean(simulationId));
   const pdfPrintRef = useRef(null);
-  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfPreview, setPdfPreview] = useState(null);
   const [pdfError, setPdfError] = useState(null);
 
   function ensureValidClientDocument() {
@@ -101,10 +110,12 @@ export function Simulador() {
     if (!quarter) {
       setCatalog([]);
       setCatalogLoading(false);
+      setCatalogReady(false);
       return;
     }
 
     setCatalogLoading(true);
+    setCatalogReady(false);
     const res = await fetchCatalogoSimulador({
       quarter,
       estado: estado || undefined,
@@ -114,11 +125,35 @@ export function Simulador() {
 
     if (!res.ok) {
       setCatalog([]);
+      setCatalogReady(true);
       return;
     }
 
     setCatalog(res.rows);
+    if (res.icmsPercentual != null) {
+      setIcmsPercentual(Number(res.icmsPercentual));
+    }
+    setCatalogReady(true);
   }, []);
+
+  useAbortableAsync(
+    async (_signal, isActive) => {
+      const [paramRes, faixasRes] = await Promise.all([
+        fetchParametrosSistema(),
+        fetchComissaoFaixas({ apenasAtivas: true }),
+      ]);
+      if (isActive && !isActive()) return;
+      if (paramRes.ok) {
+        setIcmsPercentual(
+          Number(paramRes.row.icms_percentual ?? DEFAULT_ICMS_PERCENTUAL),
+        );
+      }
+      if (faixasRes.ok) {
+        setComissaoFaixas(faixasRes.rows);
+      }
+    },
+    [],
+  );
 
   useAbortableAsync(
     async (_signal, isActive) => {
@@ -128,10 +163,12 @@ export function Simulador() {
   );
 
   useEffect(() => {
+    // Avoid wiping selected products while the catalog is still empty/loading
+    // (e.g. local draft restore before fetchCatalogoSimulador finishes).
+    if (!catalogReady || catalogLoading) return;
     sim.clearOrphanProducts();
-    // Only re-run when catalog identity changes, not when clearOrphanProducts identity changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: catalog-driven cleanup
-  }, [catalog]);
+  }, [catalog, catalogReady, catalogLoading]);
 
   useAbortableAsync(
     async (_signal, isActive) => {
@@ -333,7 +370,31 @@ export function Simulador() {
   );
 
   const canGeneratePdf =
-    sim.canConvert && Boolean(sim.clientName.trim()) && sim.lines.length > 0;
+    sim.isGestor &&
+    sim.canConvert &&
+    Boolean(sim.clientName.trim()) &&
+    sim.lines.length > 0;
+
+  const pdfNomeFallback = useMemo(() => {
+    const safeName = (sim.clientName || "cliente")
+      .replace(/[^\w-]+/g, "_")
+      .slice(0, 40);
+    const suffix = simulationId
+      ? String(simulationId).replace(/\D/g, "").slice(-5) || "sim"
+      : "rascunho";
+    return `proposta-syagri-simulacao-${suffix}-${safeName}.pdf`;
+  }, [sim.clientName, simulationId]);
+
+  const gerarPdfSimulacao = useCallback(async () => {
+    if (!pdfPrintRef.current) {
+      throw new Error("Documento não disponível para geração.");
+    }
+    const { buildPedidoPdfBlobFromElement } = await import(
+      "../services/pedidoPdf"
+    );
+    const blob = await buildPedidoPdfBlobFromElement(pdfPrintRef.current);
+    return { blob, nomePadrao: pdfNomeFallback };
+  }, [pdfNomeFallback]);
 
   async function handleGerarPdf() {
     if (!canGeneratePdf || !pdfPrintRef.current) return;
@@ -346,27 +407,11 @@ export function Simulador() {
     if (!ensureValidClientDocument()) return;
 
     setPdfError(null);
-    setPdfLoading(true);
-    try {
-      const safeName = (sim.clientName || "cliente")
-        .replace(/[^\w-]+/g, "_")
-        .slice(0, 40);
-      const suffix = simulationId
-        ? String(simulationId).replace(/\D/g, "").slice(-5) || "sim"
-        : "rascunho";
-      const { downloadPedidoPdfFromElement } = await import(
-        "../services/pedidoPdf"
-      );
-      await downloadPedidoPdfFromElement(
-        pdfPrintRef.current,
-        `proposta-syagri-simulacao-${suffix}-${safeName}.pdf`,
-      );
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "Falha ao gerar o PDF.";
-      setPdfError(msg);
-    } finally {
-      setPdfLoading(false);
-    }
+    setPdfPreview({
+      titulo: "Proposta comercial",
+      gerador: gerarPdfSimulacao,
+      nomeFallback: pdfNomeFallback,
+    });
   }
 
   async function handleConvertToPedido() {
@@ -429,9 +474,15 @@ export function Simulador() {
         proposta: l.proposta,
         cultura: l.cultura,
         overrides: l.overrides,
+        produtoClasse: l.produtoClasse,
+        margemPercentual: l.margemPercentual,
+        comissaoPercentual: l.comissaoPercentual,
+        comissaoValor: l.comissaoValor,
+        comissaoBaseCalculo: l.comissaoBaseCalculo,
       })),
       totalValor: sim.totalValor,
       totalProposta: sim.totalProposta,
+      comissaoValorTotal: sim.comissaoValorTotal,
     };
   }
 
@@ -501,9 +552,17 @@ export function Simulador() {
         precoUnitario: l.precoUnitario,
         proposta: l.proposta,
         overrides: l.overrides,
+        productId: l.productId,
+        volume: l.volume,
+        produtoClasse: l.produtoClasse,
+        margemPercentual: l.margemPercentual,
+        comissaoPercentual: l.comissaoPercentual,
+        comissaoValor: l.comissaoValor,
+        comissaoBaseCalculo: l.comissaoBaseCalculo,
       })),
       totalValor: sim.totalValor,
       totalProposta: sim.totalProposta,
+      comissaoValorTotal: sim.comissaoValorTotal,
     };
   }
 
@@ -917,13 +976,12 @@ export function Simulador() {
                   type="button"
                   variant="secondary"
                   className="w-full sm:flex-1"
-                  loading={pdfLoading}
                   onClick={() => void handleGerarPdf()}
                 >
                   Gerar PDF
                 </Button>
               ) : null}
-              {!sim.isReadOnly && !sim.isGestor ? (
+              {!sim.isReadOnly && !showGestorReview ? (
                 <Button
                   type="button"
                   variant="secondary"
@@ -1014,6 +1072,16 @@ export function Simulador() {
                 >
                   Converter em pedido
                 </Button>
+              ) : sim.isGestor && !simulationId ? (
+                <Button
+                  type="button"
+                  variant="primary"
+                  className="w-full sm:flex-1"
+                  loading={persisting}
+                  onClick={() => void handleConvertToPedido()}
+                >
+                  Converter em pedido
+                </Button>
               ) : null}
             </div>
           </div>
@@ -1073,6 +1141,14 @@ export function Simulador() {
           </div>
         </div>
       ) : null}
+
+      <PdfPreviewModal
+        open={Boolean(pdfPreview)}
+        onClose={() => setPdfPreview(null)}
+        titulo={pdfPreview?.titulo}
+        gerador={pdfPreview?.gerador}
+        nomeFallback={pdfPreview?.nomeFallback}
+      />
     </div>
   );
 }

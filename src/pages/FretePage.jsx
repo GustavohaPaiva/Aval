@@ -3,6 +3,7 @@ import { FreteTable } from "../components/fretes/FreteTable";
 import { FreteFiltersPanel } from "../components/fretes/FreteFiltersPanel";
 import { FreteStatsBar } from "../components/fretes/FreteVisuals";
 import { ModalFreteForm } from "../components/fretes/ModalFreteForm";
+import { ModalImportacaoFrete } from "../components/fretes/ModalImportacaoFrete";
 import { IconTruck } from "../components/icons";
 import { AlertMessage } from "../components/ui/AlertMessage";
 import { Button } from "../components/ui/Button";
@@ -86,6 +87,7 @@ export function FretePage() {
   });
   const { origemSearch, destinoSearch, page } = filters;
   const [modalOpen, setModalOpen] = useState(false);
+  const [importModalOpen, setImportModalOpen] = useState(false);
   const [editingFrete, setEditingFrete] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
   const [reloadToken, setReloadToken] = useState(0);
@@ -198,13 +200,23 @@ export function FretePage() {
           description="Catálogo de rotas e valores para consulta e gestão comercial."
           actions={
             isGestor ? (
-              <Button
-                type="button"
-                className="w-full sm:w-auto"
-                onClick={openCreateModal}
-              >
-                Novo frete
-              </Button>
+              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="w-full sm:w-auto"
+                  onClick={() => setImportModalOpen(true)}
+                >
+                  Importar Excel
+                </Button>
+                <Button
+                  type="button"
+                  className="w-full sm:w-auto"
+                  onClick={openCreateModal}
+                >
+                  Novo frete
+                </Button>
+              </div>
             ) : null
           }
           className="relative mb-0"
@@ -264,14 +276,21 @@ export function FretePage() {
       />
 
       {isGestor ? (
-        <ModalFreteForm
-          open={modalOpen}
-          mode={editingFrete ? "edit" : "create"}
-          freteId={editingFrete?.id}
-          initial={editingFrete ?? undefined}
-          onClose={closeModal}
-          onSaved={() => reload()}
-        />
+        <>
+          <ModalFreteForm
+            open={modalOpen}
+            mode={editingFrete ? "edit" : "create"}
+            freteId={editingFrete?.id}
+            initial={editingFrete ?? undefined}
+            onClose={closeModal}
+            onSaved={() => reload()}
+          />
+          <ModalImportacaoFrete
+            open={importModalOpen}
+            onClose={() => setImportModalOpen(false)}
+            onImported={() => reload()}
+          />
+        </>
       ) : null}
     </div>
   );

@@ -837,36 +837,55 @@ export async function updateStagingRow(id, patch) {
 }
 
 export async function createStagingRow(loteId, payload) {
+  const nome = String(payload.nome ?? '').trim()
+  if (!isValidFertilizante(nome)) {
+    return { ok: false, error: 'Informe o fertilizante.' }
+  }
+
+  const estado = normalizeEstado(payload.estado)
+  if (!estado) {
+    return { ok: false, error: 'Selecione o estado (MG ou SP).' }
+  }
+
+  const preco = Number(payload.preco_original ?? 0)
+  if (!Number.isFinite(preco) || preco < 0) {
+    return { ok: false, error: 'Informe um preço de custo válido.' }
+  }
+
+  const desconto =
+    payload.desconto_usd !== undefined && payload.desconto_usd !== null
+      ? Math.max(0, Number(payload.desconto_usd) || 0)
+      : null
+  if (desconto !== null && preco - desconto < 0) {
+    return {
+      ok: false,
+      error: 'Desconto USD não pode ser maior que o preço de custo.',
+    }
+  }
+
   const row = {
     lote_id: loteId,
     sku_fornecedor: String(
       payload.referencia_complementar ?? payload.sku_fornecedor ?? '',
     ).trim(),
-    nome: String(payload.nome ?? '').trim(),
+    nome,
     referencia_complementar: String(
       payload.referencia_complementar ?? payload.sku_fornecedor ?? '',
     ).trim(),
-    estado: normalizeEstado(payload.estado),
-    classe: String(payload.classe ?? 'Convencional').trim(),
+    estado,
+    classe: String(payload.classe ?? 'Convencional').trim() || 'Convencional',
     quarter: String(payload.quarter ?? '').trim(),
-    preco_original: Number(payload.preco_original ?? 0),
+    preco_original: preco,
     moeda: String(payload.moeda ?? 'USD').toUpperCase().slice(0, 8),
-    desconto_usd:
-      payload.desconto_usd !== undefined && payload.desconto_usd !== null
-        ? Math.max(0, Number(payload.desconto_usd) || 0)
-        : null,
+    desconto_usd: desconto,
     dados_brutos: {
       ...(payload.dados_brutos ?? {}),
-      _produto: String(payload.nome ?? '').trim(),
+      _produto: nome,
       _referencia_complementar: String(
         payload.referencia_complementar ?? payload.sku_fornecedor ?? '',
       ).trim(),
     },
     status_linha: 'novo',
-  }
-
-  if (!isValidFertilizante(row.nome)) {
-    return { ok: false, error: 'Informe o fertilizante.' }
   }
 
   const insertRow = prepareStagingInsertRows([row])[0]
@@ -1049,12 +1068,36 @@ export async function upsertProdutoOficialManual({
     return { ok: false, error: 'Informe o fertilizante.' }
   }
 
+  const quarterVal = String(quarter ?? '').trim()
+  if (!quarterVal) {
+    return { ok: false, error: 'Informe o quarter.' }
+  }
+
+  const estadoVal = String(estado ?? '').trim().toUpperCase()
+  if (!['MG', 'SP'].includes(estadoVal)) {
+    return { ok: false, error: 'Selecione o estado (MG ou SP).' }
+  }
+
   const referencia = String(
     referencia_complementar ?? sku_fornecedor ?? '',
   ).trim()
   const moeda = String(moeda_origem ?? 'USD').toUpperCase().slice(0, 8)
   const preco = Number(preco_original ?? 0)
+  if (!Number.isFinite(preco) || preco < 0) {
+    return { ok: false, error: 'Informe um preço de custo válido.' }
+  }
+
   const desconto = Math.max(0, Number(desconto_usd ?? 0))
+  if (!Number.isFinite(desconto)) {
+    return { ok: false, error: 'Informe um desconto USD válido.' }
+  }
+  if (preco - desconto < 0) {
+    return {
+      ok: false,
+      error: 'Desconto USD não pode ser maior que o preço de custo.',
+    }
+  }
+
   const taxa = await getTaxaConversao(moeda)
   if (taxa === null) {
     return {
@@ -1069,9 +1112,9 @@ export async function upsertProdutoOficialManual({
     sku_fornecedor: referencia || fertilizante,
     nome: fertilizante,
     referencia_complementar: referencia,
-    estado: String(estado ?? '').trim() || null,
-    classe: String(classe ?? 'Convencional').trim(),
-    quarter: String(quarter ?? '').trim(),
+    estado: estadoVal,
+    classe: String(classe ?? 'Convencional').trim() || 'Convencional',
+    quarter: quarterVal,
     moeda_origem: moeda,
     preco_original: preco,
     desconto_usd: desconto,
@@ -1139,6 +1182,44 @@ export async function inativarListaImportacao(loteId) {
   return { ok: true, result: data }
 }
 
+export async function excluirListaImportacao(loteId) {
+  if (!loteId) return { ok: false, error: 'Lista de produtos não informada.' }
+
+  const { count, error: countError } = await supabase
+    .from('produtos_oficiais')
+    .select('id', { count: 'exact', head: true })
+    .eq('lote_id', loteId)
+
+  if (countError) {
+    return { ok: false, error: formatSupabaseError(countError) }
+  }
+
+  const prodCount = count ?? 0
+  if (prodCount > 0) {
+    return {
+      ok: false,
+      error: `Não é possível excluir: esta lista de produtos possui ${prodCount} produto${prodCount === 1 ? '' : 's'} vinculado${prodCount === 1 ? '' : 's'}. Inative a lista em vez de excluir.`,
+    }
+  }
+
+  const { error } = await supabase
+    .from('lotes_importacao')
+    .delete()
+    .eq('id', loteId)
+
+  if (error) {
+    return {
+      ok: false,
+      error:
+        error.code === '23503'
+          ? 'Não é possível excluir: esta lista de produtos possui registros vinculados.'
+          : formatSupabaseError(error),
+    }
+  }
+
+  return { ok: true }
+}
+
 export async function reativarListaImportacao(loteId) {
   const { data, error } = await supabase.rpc('reativar_lista_importacao', {
     p_lote_id: loteId,
@@ -1198,6 +1279,12 @@ export async function criarCotacao({ moeda_origem, taxa_conversao }) {
   const taxa = Number(taxa_conversao)
 
   if (!moeda) return { ok: false, error: 'Informe a moeda.' }
+  if (moeda !== 'USD') {
+    return {
+      ok: false,
+      error: 'Apenas a cotação do dólar (USD) é aceita em Parâmetros.',
+    }
+  }
   if (!Number.isFinite(taxa) || taxa <= 0) {
     return { ok: false, error: 'Informe uma taxa válida maior que zero.' }
   }

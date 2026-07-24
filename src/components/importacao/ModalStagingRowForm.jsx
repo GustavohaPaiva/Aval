@@ -4,6 +4,7 @@ import { Input } from '../ui/Input'
 import { Modal } from '../ui/Modal'
 import { ModalFormFooter } from '../ui/ModalFormFooter'
 import { Select } from '../ui/Select'
+import { parsePrecoValue } from '../../utils/spreadsheetAnalyzer'
 
 const EMPTY = {
   nome: '',
@@ -43,15 +44,19 @@ export function ModalStagingRowForm({
     e.preventDefault()
     setError(null)
 
-    const preco = Number.parseFloat(
-      String(form.preco_original).replace(/\./g, '').replace(',', '.'),
-    )
-
     if (!form.nome.trim()) {
       setError('Informe o fertilizante.')
       return
     }
-    if (!Number.isFinite(preco) || preco < 0) {
+
+    const estado = form.estado.trim() || String(loteEstado ?? '').trim()
+    if (!['MG', 'SP'].includes(estado)) {
+      setError('Selecione o estado (MG ou SP).')
+      return
+    }
+
+    const preco = parsePrecoValue(form.preco_original)
+    if (preco === null) {
       setError('Informe um preço de custo válido.')
       return
     }
@@ -61,7 +66,7 @@ export function ModalStagingRowForm({
       sku_fornecedor: form.referencia_complementar.trim(),
       referencia_complementar: form.referencia_complementar.trim(),
       nome: form.nome.trim(),
-      estado: form.estado.trim() || loteEstado,
+      estado,
       classe: form.classe,
       quarter: loteQuarter,
       preco_original: preco,

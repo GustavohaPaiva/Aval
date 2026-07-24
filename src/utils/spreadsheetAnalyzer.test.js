@@ -175,7 +175,8 @@ describe('spreadsheetAnalyzer', () => {
     expect(byTarget.produto).toMatch(/descri/i)
     expect(byTarget.codigo_produto).toMatch(/^produto$/i)
     expect(byTarget.referencia_complementar).toMatch(/refer/i)
-    expect(byTarget.preco_custo).toBeTruthy()
+    // Deve preferir Revenda (USD), não "Custo R$ FOB" (já em BRL).
+    expect(byTarget.preco_custo).toMatch(/revenda/i)
     expect(autoMap.missingRequired).toHaveLength(0)
     expect(['high', 'medium']).toContain(autoMap.confidence.produto)
     expect(['high', 'medium']).toContain(autoMap.confidence.preco_custo)

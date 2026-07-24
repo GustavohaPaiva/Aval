@@ -3,10 +3,12 @@ import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { PageTransition } from "../components/layout/PageTransition";
 import { SidebarUserMenu } from "../components/layout/SidebarUserMenu";
 import { ProfileModal } from "../components/layout/ProfileModal";
+import { BrandMark } from "../components/brand/BrandLogo";
 import {
   IconBell,
   IconChevronsLeft,
   IconClipboardList,
+  IconDollarSign,
   IconFileSpreadsheet,
   IconLayoutDashboard,
   IconLeaf,
@@ -84,7 +86,7 @@ function navItemsForRole(role) {
       },
       {
         to: "/admin/listas",
-        label: "Listas",
+        label: "Listas de produtos",
         icon: IconFileSpreadsheet,
       },
       { to: "/clientes", label: "Clientes", icon: IconUser },
@@ -96,6 +98,7 @@ function navItemsForRole(role) {
         label: "Gestão de Consultores",
         icon: IconUsers,
       },
+      { to: "/comissao", label: "Comissão", icon: IconDollarSign },
       { to: "/parametros", label: "Parâmetros", icon: IconSliders },
     ];
   }
@@ -226,8 +229,8 @@ export function MainLayout() {
                 collapsed ? "justify-center" : "gap-2.5",
               ].join(" ")}
             >
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-2xl bg-primary-600 text-white">
-                <IconLeaf className="size-4" />
+              <span className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-slate-950 ring-1 ring-slate-200">
+                <BrandMark className="size-6" />
               </span>
               <span
                 className={[
@@ -236,10 +239,10 @@ export function MainLayout() {
                 ].join(" ")}
               >
                 <span className="block text-sm font-semibold leading-tight text-slate-900">
-                  Syagri
+                  Aval
                 </span>
-                <span className="block text-[0.6rem] font-semibold uppercase tracking-[0.18em] text-primary-600">
-                  Precificação
+                <span className="block text-[0.6rem] font-semibold uppercase tracking-[0.14em] text-primary-600">
+                  Fechamento
                 </span>
               </span>
             </div>
@@ -381,10 +384,10 @@ export function MainLayout() {
               <MenuIcon />
             </button>
             <span className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <span className="flex size-7 items-center justify-center rounded-xl bg-primary-600 text-white">
-                <IconLeaf className="size-3.5" />
+              <span className="flex size-7 items-center justify-center overflow-hidden rounded-xl bg-slate-950 ring-1 ring-slate-200">
+                <BrandMark className="size-5" />
               </span>
-              Syagri
+              Aval
             </span>
           </header>
 

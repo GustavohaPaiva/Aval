@@ -14,6 +14,7 @@ import { useAbortableAsync } from '../hooks/useAbortableAsync'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { usePersistedFilters } from '../hooks/usePersistedFilters'
 import {
+  excluirListaImportacao,
   fetchFornecedoresAtivos,
   fetchLotesList,
   fetchLotesTotalCount,
@@ -133,7 +134,7 @@ export function GerenciarListas() {
     setActionError(null)
     if (
       !window.confirm(
-        `Inativar a lista de ${lista.fornecedor_nome}${lista.quarter_calculado ? ` (${lista.quarter_calculado})` : ''} e todos os produtos vinculados?`,
+        `Inativar a lista de produtos de ${lista.fornecedor_nome}${lista.quarter_calculado ? ` (${lista.quarter_calculado})` : ''} e todos os produtos vinculados?`,
       )
     ) {
       return
@@ -150,7 +151,7 @@ export function GerenciarListas() {
     setActionError(null)
     if (
       !window.confirm(
-        `Reativar a lista de ${lista.fornecedor_nome}${lista.quarter_calculado ? ` (${lista.quarter_calculado})` : ''} e os produtos vinculados?`,
+        `Reativar a lista de produtos de ${lista.fornecedor_nome}${lista.quarter_calculado ? ` (${lista.quarter_calculado})` : ''} e os produtos vinculados?`,
       )
     ) {
       return
@@ -163,9 +164,26 @@ export function GerenciarListas() {
     reload()
   }
 
+  async function handleExcluir(lista) {
+    setActionError(null)
+    if (
+      !window.confirm(
+        'Tem certeza que deseja excluir esta lista de produtos?',
+      )
+    ) {
+      return
+    }
+    const res = await excluirListaImportacao(lista.id)
+    if (!res.ok) {
+      setActionError(res.error)
+      return
+    }
+    reload()
+  }
+
   const emptyMessage = hasFilters
-    ? 'Nenhuma lista encontrada com esses filtros.'
-    : 'Nenhuma lista lançada ainda.'
+    ? 'Nenhuma lista de produtos encontrada com esses filtros.'
+    : 'Nenhuma lista de produtos lançada ainda.'
 
   return (
     <div className="w-full min-w-0 space-y-4 sm:space-y-6">
@@ -181,17 +199,17 @@ export function GerenciarListas() {
 
         <PageHeader
           eyebrow="Administração"
-          title="Listas de preços"
-          description="Gerencie as listas lançadas: inative para desativar todos os produtos vinculados de uma vez."
+          title="Listas de produtos"
+          description="Gerencie as listas de produtos lançadas: inative para desativar todos os produtos vinculados de uma vez, ou exclua listas sem vínculos."
           className="relative mb-0"
         />
 
         <PageInfoBanner icon={IconClipboardList}>
           {loading
-            ? 'Carregando listas…'
+            ? 'Carregando listas de produtos…'
             : hasFilters
-              ? `${total.toLocaleString('pt-BR')} lista(s) encontrada(s) na busca.`
-              : `${totalCount.toLocaleString('pt-BR')} lista(s) lançada(s).`}
+              ? `${total.toLocaleString('pt-BR')} lista(s) de produtos encontrada(s) na busca.`
+              : `${totalCount.toLocaleString('pt-BR')} lista(s) de produtos lançada(s).`}
         </PageInfoBanner>
       </div>
 
@@ -233,6 +251,7 @@ export function GerenciarListas() {
         emptyMessage={emptyMessage}
         onInativar={handleInativar}
         onReativar={handleReativar}
+        onExcluir={handleExcluir}
       />
 
       <PaginationBar
@@ -242,7 +261,7 @@ export function GerenciarListas() {
         rangeEnd={rangeEnd}
         total={total}
         loading={loading}
-        itemLabel="listas"
+        itemLabel="listas de produtos"
         onPrev={() => patchFilters({ page: Math.max(1, page - 1) })}
         onNext={() => patchFilters({ page: Math.min(totalPages, page + 1) })}
       />

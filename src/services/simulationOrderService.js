@@ -1,6 +1,10 @@
 import { roundMoney } from '../utils/roundMoney';
 import { parseCpfCnpjInput } from '../utils/dataFormatters';
 import { notifyConsultorSimulationDecision } from './notificationService';
+import {
+    syncComissaoRegistroFromSimulation,
+    upsertComissaoRegistro,
+} from './comissaoService';
 import { supabase } from './supabase';
 
 async function resolveClientId(input) {
@@ -59,7 +63,7 @@ async function resolveClientId(input) {
 }
 
 function buildSimulationFields(input, status) {
-    return {
+    const fields = {
         total_bruto: roundMoney(input.totalValor),
         total_proposta: roundMoney(input.totalProposta),
         status,
@@ -70,6 +74,10 @@ function buildSimulationFields(input, status) {
         quarter: input.quarter ?? null,
         observacoes: input.observacoes?.trim() || null,
     };
+    if (input.comissaoValorTotal != null) {
+        fields.comissao_valor_total = roundMoney(input.comissaoValorTotal);
+    }
+    return fields;
 }
 
 function buildOverrideFields(overrides, userId) {
@@ -89,6 +97,77 @@ async function deleteSimulationById(simulationId) {
     await supabase.from('simulations').delete().eq('id', simulationId);
 }
 
+function mapLinesToItemsPayload(simulationId, lines, statusLinha, userId) {
+    return lines.map((line) => ({
+        simulation_id: simulationId,
+        product_id: line.productId,
+        volume: line.volume,
+        preco_unitario: roundMoney(line.precoUnitario),
+        proposta: roundMoney(line.proposta),
+        cultura: line.cultura ?? null,
+        status_linha: statusLinha,
+        produto_classe: line.produtoClasse ?? line.classe ?? null,
+        margem_percentual:
+            line.margemPercentual != null ? Number(line.margemPercentual) : null,
+        comissao_percentual:
+            line.comissaoPercentual != null
+                ? Number(line.comissaoPercentual)
+                : null,
+        comissao_valor:
+            line.comissaoValor != null ? roundMoney(line.comissaoValor) : null,
+        ...buildOverrideFields(line.overrides, userId),
+    }));
+}
+
+async function syncComissaoForSimulation(simulationId, consultorId, status, lines) {
+    if (!simulationId || !consultorId) return { ok: true };
+    if (status !== 'approved' && status !== 'converted') return { ok: true };
+
+    const hasSnapshot = (lines ?? []).some(
+        (line) =>
+            line.comissaoPercentual != null || line.comissaoValor != null,
+    );
+
+    if (hasSnapshot) {
+        return upsertComissaoRegistro({
+            simulationId,
+            consultorId,
+            status: status === 'converted' ? 'confirmada' : 'calculada',
+            itens: (lines ?? []).map((line) => ({
+                productId: line.productId,
+                classe: line.produtoClasse ?? line.classe,
+                volume: line.volume,
+                proposta: line.proposta,
+                margemPercentual: line.margemPercentual,
+                comissaoPercentual: line.comissaoPercentual,
+                comissaoValor: line.comissaoValor,
+                baseCalculo: line.comissaoBaseCalculo,
+            })),
+        });
+    }
+
+    return syncComissaoRegistroFromSimulation(simulationId, {
+        status: status === 'converted' ? 'confirmada' : 'calculada',
+    });
+}
+
+function parseItemsInsertError(itemsError) {
+    const msg = itemsError?.message ?? '';
+    if (
+        itemsError?.code === '23503' ||
+        /foreign key|violates foreign key/i.test(msg)
+    ) {
+        return 'Produto inválido no catálogo. Recarregue o quarter e tente novamente.';
+    }
+    if (
+        itemsError?.code === '42501' ||
+        /row-level security|violates row-level security/i.test(msg)
+    ) {
+        return 'Sem permissão para salvar os produtos desta simulação. Faça login novamente e tente outra vez.';
+    }
+    return msg || 'Não foi possível salvar os itens da simulação.';
+}
+
 async function insertSimulationItems(simulationId, lines, statusLinha, userId) {
     const invalid = lines.find(
         (line) => !line.productId || String(line.productId).startsWith('demo-'),
@@ -99,33 +178,93 @@ async function insertSimulationItems(simulationId, lines, statusLinha, userId) {
             error: 'Selecione produtos do catálogo oficial (quarter e estado) antes de lançar.',
         };
     }
-    const itemsPayload = lines.map((line) => ({
-        simulation_id: simulationId,
-        product_id: line.productId,
-        volume: line.volume,
-        preco_unitario: roundMoney(line.precoUnitario),
-        proposta: roundMoney(line.proposta),
-        cultura: line.cultura ?? null,
-        status_linha: statusLinha,
-        ...buildOverrideFields(line.overrides, userId),
-    }));
+    const itemsPayload = mapLinesToItemsPayload(
+        simulationId,
+        lines,
+        statusLinha,
+        userId,
+    );
     const { error: itemsError } = await supabase
         .from('simulation_items')
         .insert(itemsPayload);
     if (itemsError) {
-        const msg = itemsError.message ?? '';
-        if (
-            itemsError.code === '23503' ||
-            /foreign key|violates foreign key/i.test(msg)
-        ) {
-            return {
-                ok: false,
-                error: 'Produto inválido no catálogo. Recarregue o quarter e tente novamente.',
-            };
-        }
-        return { ok: false, error: msg || 'Não foi possível salvar os itens da simulação.' };
+        return { ok: false, error: parseItemsInsertError(itemsError) };
     }
     return { ok: true };
+}
+
+/**
+ * Replace all items for a simulation without leaving it empty on insert failure:
+ * snapshot → delete → insert; restore snapshot if insert fails.
+ */
+async function replaceSimulationItems(simulationId, lines, statusLinha, userId) {
+    const invalid = lines.find(
+        (line) => !line.productId || String(line.productId).startsWith('demo-'),
+    );
+    if (invalid) {
+        return {
+            ok: false,
+            error: 'Selecione produtos do catálogo oficial (quarter e estado) antes de lançar.',
+        };
+    }
+
+    const { data: previousItems, error: snapshotError } = await supabase
+        .from('simulation_items')
+        .select(
+            'simulation_id, product_id, volume, preco_unitario, proposta, cultura, status_linha, produto_classe, margem_percentual, comissao_percentual, comissao_valor, override_custo_usd, override_desconto_usd, override_taxa, override_frete, override_por, override_em',
+        )
+        .eq('simulation_id', simulationId);
+    if (snapshotError) {
+        return { ok: false, error: snapshotError.message };
+    }
+
+    const { error: deleteError } = await supabase
+        .from('simulation_items')
+        .delete()
+        .eq('simulation_id', simulationId);
+    if (deleteError) {
+        return { ok: false, error: deleteError.message };
+    }
+
+    const itemsPayload = mapLinesToItemsPayload(
+        simulationId,
+        lines,
+        statusLinha,
+        userId,
+    );
+    const { error: itemsError } = await supabase
+        .from('simulation_items')
+        .insert(itemsPayload);
+    if (!itemsError) {
+        return { ok: true };
+    }
+
+    if (previousItems?.length) {
+        await supabase.from('simulation_items').insert(previousItems);
+    }
+    return { ok: false, error: parseItemsInsertError(itemsError) };
+}
+
+function parseSimulationWriteError(error, fallback) {
+    const msg = error?.message ?? '';
+    if (
+        error?.code === '42501' ||
+        /row-level security|violates row-level security/i.test(msg)
+    ) {
+        return 'Sem permissão para salvar a simulação. Faça login novamente e tente outra vez.';
+    }
+    return msg || fallback;
+}
+
+async function requireAuthUser() {
+    const {
+        data: { user },
+        error,
+    } = await supabase.auth.getUser();
+    if (error || !user) {
+        return { ok: false, error: 'Sessão expirada. Faça login novamente.' };
+    }
+    return { ok: true, user };
 }
 
 /**
@@ -141,11 +280,10 @@ async function upsertSimulationWithItems(input, status, userId) {
     };
 
     let simulationId = input.simulationId ?? null;
-    let createdNew = false;
 
     if (simulationId) {
-        // Consultor: only own rows. Gestor should not call this upsert for others'
-        // simulations (uses saveGestorReview instead); filter keeps ownership safe.
+        // Own rows only (consultor or gestor creating/editing their own drafts).
+        // Gestor review of others' sims uses saveGestorReview instead.
         const { data: updatedRow, error: simError } = await supabase
             .from('simulations')
             .update(simulationFields)
@@ -154,7 +292,13 @@ async function upsertSimulationWithItems(input, status, userId) {
             .select('id')
             .maybeSingle();
         if (simError) {
-            return { ok: false, error: simError.message };
+            return {
+                ok: false,
+                error: parseSimulationWriteError(
+                    simError,
+                    'Não foi possível atualizar a simulação.',
+                ),
+            };
         }
         if (!updatedRow) {
             return {
@@ -162,31 +306,41 @@ async function upsertSimulationWithItems(input, status, userId) {
                 error: 'Simulação não encontrada ou sem permissão para alterar.',
             };
         }
-        const { error: deleteError } = await supabase
-            .from('simulation_items')
-            .delete()
-            .eq('simulation_id', simulationId);
-        if (deleteError) {
-            return { ok: false, error: deleteError.message };
-        }
-    } else {
-        const { data: simRow, error: simError } = await supabase
-            .from('simulations')
-            .insert({
-                user_id: userId,
-                ...simulationFields,
-            })
-            .select('id')
-            .single();
-        if (simError || !simRow) {
-            return {
-                ok: false,
-                error: simError?.message ?? 'Não foi possível salvar a simulação.',
-            };
-        }
-        simulationId = simRow.id;
-        createdNew = true;
+        const itemsResult = await replaceSimulationItems(
+            simulationId,
+            input.lines,
+            status,
+            userId,
+        );
+        if (!itemsResult.ok) return itemsResult;
+        const comissaoResult = await syncComissaoForSimulation(
+            simulationId,
+            userId,
+            status,
+            input.lines,
+        );
+        if (!comissaoResult.ok) return comissaoResult;
+        return { ok: true, simulationId };
     }
+
+    const { data: simRow, error: simError } = await supabase
+        .from('simulations')
+        .insert({
+            user_id: userId,
+            ...simulationFields,
+        })
+        .select('id')
+        .single();
+    if (simError || !simRow) {
+        return {
+            ok: false,
+            error: parseSimulationWriteError(
+                simError,
+                'Não foi possível salvar a simulação.',
+            ),
+        };
+    }
+    simulationId = simRow.id;
 
     const itemsResult = await insertSimulationItems(
         simulationId,
@@ -195,10 +349,18 @@ async function upsertSimulationWithItems(input, status, userId) {
         userId,
     );
     if (!itemsResult.ok) {
-        if (createdNew) {
-            await deleteSimulationById(simulationId);
-        }
+        await deleteSimulationById(simulationId);
         return itemsResult;
+    }
+    const comissaoResult = await syncComissaoForSimulation(
+        simulationId,
+        userId,
+        status,
+        input.lines,
+    );
+    if (!comissaoResult.ok) {
+        await deleteSimulationById(simulationId);
+        return comissaoResult;
     }
     return { ok: true, simulationId };
 }
@@ -348,52 +510,66 @@ export async function searchClients(query, signal) {
 }
 
 export async function saveDraftSimulation(input) {
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-    if (sessionError || !session?.user) {
-        return { ok: false, error: 'Sessão expirada. Faça login novamente.' };
-    }
+    const auth = await requireAuthUser();
+    if (!auth.ok) return auth;
     if (input.lines.length === 0) {
         return { ok: false, error: 'Inclua ao menos um produto na simulação.' };
     }
-    return upsertSimulationWithItems(input, 'draft', session.user.id);
+    if (input.lines.some((line) => !line.productId)) {
+        return { ok: false, error: 'Selecione o produto em todas as linhas.' };
+    }
+    return upsertSimulationWithItems(input, 'draft', auth.user.id);
 }
 
 export async function persistApprovedSimulation(input) {
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-    if (sessionError || !session?.user) {
-        return { ok: false, error: 'Sessão expirada. Faça login novamente.' };
-    }
+    const auth = await requireAuthUser();
+    if (!auth.ok) return auth;
     if (input.lines.length === 0) {
         return { ok: false, error: 'Inclua ao menos um produto na simulação.' };
     }
-    return upsertSimulationWithItems(input, 'approved', session.user.id);
+    if (input.lines.some((line) => !line.productId)) {
+        return { ok: false, error: 'Selecione o produto em todas as linhas.' };
+    }
+    return upsertSimulationWithItems(input, 'approved', auth.user.id);
 }
 
 export async function savePendingSimulation(input) {
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-    if (sessionError || !session?.user) {
-        return { ok: false, error: 'Sessão expirada. Faça login novamente.' };
-    }
+    const auth = await requireAuthUser();
+    if (!auth.ok) return auth;
     if (input.lines.length === 0) {
         return { ok: false, error: 'Inclua ao menos um produto na simulação.' };
     }
-    return upsertSimulationWithItems(input, 'pending', session.user.id);
+    if (input.lines.some((line) => !line.productId)) {
+        return { ok: false, error: 'Selecione o produto em todas as linhas.' };
+    }
+    return upsertSimulationWithItems(input, 'pending', auth.user.id);
 }
 
 export async function saveGestorReview(input) {
-    const { data: { session }, error: sessionError, } = await supabase.auth.getSession();
-    if (sessionError || !session?.user) {
-        return { ok: false, error: 'Sessão expirada. Faça login novamente.' };
-    }
+    const auth = await requireAuthUser();
+    if (!auth.ok) return auth;
     if (!input.simulationId) {
         return { ok: false, error: 'Simulação inválida.' };
     }
-    const { error: simError } = await supabase
+    const { data: simRow, error: simFetchError } = await supabase
         .from('simulations')
-        .update({
+        .select('id, user_id, status')
+        .eq('id', input.simulationId)
+        .maybeSingle();
+    if (simFetchError) return { ok: false, error: simFetchError.message };
+    if (!simRow) return { ok: false, error: 'Simulação não encontrada.' };
+
+    const simUpdate = {
         total_bruto: roundMoney(input.totalValor),
         total_proposta: roundMoney(input.totalProposta),
-    })
+    };
+    if (input.comissaoValorTotal != null) {
+        simUpdate.comissao_valor_total = roundMoney(input.comissaoValorTotal);
+    }
+
+    const { error: simError } = await supabase
+        .from('simulations')
+        .update(simUpdate)
         .eq('id', input.simulationId);
     if (simError) {
         return { ok: false, error: simError.message };
@@ -405,7 +581,20 @@ export async function saveGestorReview(input) {
             .update({
             preco_unitario: roundMoney(line.precoUnitario),
             proposta: roundMoney(line.proposta),
-            ...buildOverrideFields(line.overrides, session.user.id),
+            produto_classe: line.produtoClasse ?? line.classe ?? null,
+            margem_percentual:
+                line.margemPercentual != null
+                    ? Number(line.margemPercentual)
+                    : null,
+            comissao_percentual:
+                line.comissaoPercentual != null
+                    ? Number(line.comissaoPercentual)
+                    : null,
+            comissao_valor:
+                line.comissaoValor != null
+                    ? roundMoney(line.comissaoValor)
+                    : null,
+            ...buildOverrideFields(line.overrides, auth.user.id),
         })
             .eq('id', line.id)
             .eq('simulation_id', input.simulationId);
@@ -413,6 +602,15 @@ export async function saveGestorReview(input) {
             return { ok: false, error: itemError.message };
         }
     }
+
+    const comissaoResult = await syncComissaoForSimulation(
+        input.simulationId,
+        simRow.user_id,
+        simRow.status === 'converted' ? 'converted' : 'approved',
+        input.lines,
+    );
+    if (!comissaoResult.ok) return comissaoResult;
+
     return { ok: true, simulationId: input.simulationId };
 }
 
@@ -437,6 +635,13 @@ export async function updateSimulationStatus(simulationId, status, options = {})
         });
         if (!notifyResult.ok)
             return notifyResult;
+    }
+    if (status === 'converted' || status === 'approved') {
+        const comissaoResult = await syncComissaoRegistroFromSimulation(
+            simulationId,
+            { status: status === 'converted' ? 'confirmada' : 'calculada' },
+        );
+        if (!comissaoResult.ok) return comissaoResult;
     }
     return { ok: true };
 }

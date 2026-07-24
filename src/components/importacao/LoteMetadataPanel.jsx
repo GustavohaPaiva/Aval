@@ -2,11 +2,17 @@ import { useState } from 'react'
 import { ESTADOS_PRODUTO } from '../../constants/mapeamentoCampos'
 import { Input } from '../ui/Input'
 import { Select } from '../ui/Select'
-import { dateToQuarter } from '../../utils/spreadsheetAnalyzer'
+import { dateToQuarter, parsePrecoValue } from '../../utils/spreadsheetAnalyzer'
 
 function formatValidade(value) {
   if (!value) return ''
   return String(value).slice(0, 10)
+}
+
+function parseDescontoUsd(value) {
+  const raw = String(value ?? '').trim()
+  if (!raw) return 0
+  return parsePrecoValue(raw) ?? 0
 }
 
 export function LoteMetadataPanel({
@@ -37,10 +43,7 @@ export function LoteMetadataPanel({
     await savePatch({
       data_validade: dataValidade || null,
       quarter_calculado: quarter,
-      desconto_usd:
-        Number.parseFloat(
-          String(descontoUsd).replace(/\./g, '').replace(',', '.'),
-        ) || 0,
+      desconto_usd: parseDescontoUsd(descontoUsd),
       estado_padrao: estadoPadrao || null,
     })
   }
@@ -62,10 +65,7 @@ export function LoteMetadataPanel({
 
   async function handleDescontoBlur() {
     await savePatch({
-      desconto_usd:
-        Number.parseFloat(
-          String(descontoUsd).replace(/\./g, '').replace(',', '.'),
-        ) || 0,
+      desconto_usd: parseDescontoUsd(descontoUsd),
     })
   }
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { PedidoPdfDocument } from '../components/pedido/PedidoPdfDocument'
+import { PdfPreviewModal } from '../components/pdf/PdfPreviewModal'
 import { AlertMessage } from '../components/ui/AlertMessage'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
@@ -35,7 +36,7 @@ export function Pedido({ simulationId }) {
   const [cepLookupLoading, setCepLookupLoading] = useState(false)
   const [cepLookupError, setCepLookupError] = useState(null)
 
-  const [pdfLoading, setPdfLoading] = useState(false)
+  const [pdfPreview, setPdfPreview] = useState(null)
   const [convertLoading, setConvertLoading] = useState(false)
   const [actionError, setActionError] = useState(null)
 
@@ -117,57 +118,73 @@ export function Pedido({ simulationId }) {
         }
       : bundle
 
+  const pdfNomeFallback = pdfBundle
+    ? `proposta-syagri-${formatDocSuffix(pdfBundle.simulation.id)}-${(pdfBundle.client.nome || 'cliente')
+        .replace(/[^\w-]+/g, '_')
+        .slice(0, 40)}.pdf`
+    : 'proposta-syagri.pdf'
+
+  const gerarPdfPedido = useCallback(async () => {
+    if (!printRef.current) {
+      throw new Error('Documento não disponível para geração.')
+    }
+    const { buildPedidoPdfBlobFromElement } = await import(
+      '../services/pedidoPdf'
+    )
+    const blob = await buildPedidoPdfBlobFromElement(printRef.current)
+    return { blob, nomePadrao: pdfNomeFallback }
+  }, [pdfNomeFallback])
+
   const handleGerarPdf = useCallback(async () => {
     if (!bundle || !printRef.current) return
 
     setActionError(null)
-    setPdfLoading(true)
-    try {
-      const safeName = (bundle.client.nome || 'cliente')
-        .replace(/[^\w-]+/g, '_')
-        .slice(0, 40)
-      const { downloadPedidoPdfFromElement } = await import('../services/pedidoPdf')
-      await downloadPedidoPdfFromElement(
-        printRef.current,
-        `proposta-syagri-${formatDocSuffix(bundle.simulation.id)}-${safeName}.pdf`,
-      )
+    setPdfPreview({
+      titulo: 'Proposta comercial',
+      gerador: gerarPdfPedido,
+      nomeFallback: pdfNomeFallback,
+    })
 
-      if (isCif) {
-        const addr = await updateClientDeliveryFields({
-          clientId: bundle.client.id,
-          cep: parseCepInput(cep) || null,
-          logradouro: logradouro.trim() || null,
-          bairro: bairro.trim() || null,
-          municipio: municipio.trim() || null,
-          uf: uf.trim().toUpperCase().slice(0, 2) || null,
-        })
-        if (!addr.ok) {
-          setActionError(addr.error)
-          return
-        }
-        setBundle((prev) =>
-          prev
-            ? {
-                ...prev,
-                client: {
-                  ...prev.client,
-                  cep: parseCepInput(cep) || null,
-                  logradouro: logradouro.trim() || null,
-                  bairro: bairro.trim() || null,
-                  municipio: municipio.trim() || null,
-                  uf: uf.trim().toUpperCase().slice(0, 2) || null,
-                },
-              }
-            : prev,
-        )
+    if (isCif) {
+      const addr = await updateClientDeliveryFields({
+        clientId: bundle.client.id,
+        cep: parseCepInput(cep) || null,
+        logradouro: logradouro.trim() || null,
+        bairro: bairro.trim() || null,
+        municipio: municipio.trim() || null,
+        uf: uf.trim().toUpperCase().slice(0, 2) || null,
+      })
+      if (!addr.ok) {
+        setActionError(addr.error)
+        return
       }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Falha ao gerar o PDF.'
-      setActionError(msg)
-    } finally {
-      setPdfLoading(false)
+      setBundle((prev) =>
+        prev
+          ? {
+              ...prev,
+              client: {
+                ...prev.client,
+                cep: parseCepInput(cep) || null,
+                logradouro: logradouro.trim() || null,
+                bairro: bairro.trim() || null,
+                municipio: municipio.trim() || null,
+                uf: uf.trim().toUpperCase().slice(0, 2) || null,
+              },
+            }
+          : prev,
+      )
     }
-  }, [bairro, bundle, cep, isCif, logradouro, municipio, uf])
+  }, [
+    bairro,
+    bundle,
+    cep,
+    gerarPdfPedido,
+    isCif,
+    logradouro,
+    municipio,
+    pdfNomeFallback,
+    uf,
+  ])
 
   const handleMarcarConvertida = useCallback(async () => {
     if (!bundle || bundle.simulation.status !== 'approved') return
@@ -229,7 +246,7 @@ export function Pedido({ simulationId }) {
       <PageBackLink to="/simulacoes">Voltar para simulações</PageBackLink>
 
       <PageHeader
-        eyebrow="SyAgri"
+        eyebrow="Aval"
         title="Proposta comercial"
         description="Documento para envio ao cliente com base nesta simulação."
         actions={
@@ -341,7 +358,6 @@ export function Pedido({ simulationId }) {
           type="button"
           variant="primary"
           className="w-full"
-          loading={pdfLoading}
           onClick={() => void handleGerarPdf()}
         >
           Gerar PDF para o cliente
@@ -358,6 +374,14 @@ export function Pedido({ simulationId }) {
           </Button>
         ) : null}
       </div>
+
+      <PdfPreviewModal
+        open={Boolean(pdfPreview)}
+        onClose={() => setPdfPreview(null)}
+        titulo={pdfPreview?.titulo}
+        gerador={pdfPreview?.gerador}
+        nomeFallback={pdfPreview?.nomeFallback}
+      />
     </div>
   )
 }

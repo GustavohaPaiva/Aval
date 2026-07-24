@@ -145,11 +145,11 @@ export function DashboardPage() {
           title="Dashboard"
           description={
             isGestor
-              ? 'Acompanhe revisões pendentes, aprovações e a carteira operacional.'
+              ? 'Acompanhe revisões pendentes e lance novas simulações quando necessário.'
               : 'Resumo das suas simulações e atalho para novas propostas.'
           }
           actions={
-            !isGestor ? (
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
               <Button
                 type="button"
                 className="w-full sm:w-auto"
@@ -157,16 +157,17 @@ export function DashboardPage() {
               >
                 Nova simulação
               </Button>
-            ) : (
-              <Button
-                type="button"
-                variant="secondary"
-                className="w-full sm:w-auto"
-                onClick={() => navigate('/simulacoes?status=pending')}
-              >
-                Ver pendentes
-              </Button>
-            )
+              {isGestor ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="w-full sm:w-auto"
+                  onClick={() => navigate('/simulacoes?status=pending')}
+                >
+                  Ver pendentes
+                </Button>
+              ) : null}
+            </div>
           }
           className="relative mb-0"
         />

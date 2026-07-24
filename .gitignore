@@ -1,5 +1,5 @@
 # =============================================================================
-# Syagri — .gitignore para repositório público + GitHub Pages
+# Aval — .gitignore para repositório público + GitHub Pages
 # O site é publicado a partir do build (dist/) gerado no CI, não do código-fonte.
 # =============================================================================
 
@@ -85,9 +85,10 @@ $RECYCLE.BIN/
 *.local
 *~
 ~$*
+
 # --- Não publicar no GitHub ---
 supabase/
 Planilhas de Fornecedores/
-# --- Não publicar no GitHub ---
-supabase/
-Planilhas de Fornecedores/
+
+# --- Local tool venvs ---
+.venv*/

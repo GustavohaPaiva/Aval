@@ -47,9 +47,11 @@ const COLUMN_TARGET_KEYWORDS = {
   preco_custo: [
     { pattern: /custo.*usd/i, score: 16 },
     { pattern: /pre[çc]o.*usd/i, score: 16 },
-    { pattern: /custo.*fob/i, score: 14 },
-    { pattern: /^revenda\b/i, score: 13 },
+    // YARA e similares: "Revenda" é o preço de lista em USD (entrada correta do sistema).
+    { pattern: /^revenda\b/i, score: 18 },
     { pattern: /pre[çc]o\s*m[ií]nimo/i, score: 12 },
+    // "Custo FOB" é ambíguo — em UBA costuma ser a coluna já convertida em R$.
+    { pattern: /custo.*fob/i, score: 6 },
     { pattern: /custo/i, score: 10 },
     { pattern: /pre[çc]o/i, score: 9 },
     { pattern: /valor/i, score: 7 },
@@ -612,6 +614,9 @@ export function autoMapColumns(matrix, headerRowIndex) {
       if (target === 'preco_custo') {
         if (isMostlyNumericColumn(matrix, col.index, headerRowIndex)) score += 5
         else score -= 6
+        // Campo do sistema é USD: evitar colunas já em BRL (ex.: "Custo R$ FOB"),
+        // que depois seriam multiplicadas de novo pela taxa do dólar.
+        if (/r\$|\bbrl\b|\breal(?:is)?\b/i.test(col.label)) score -= 14
       }
       if (target === 'codigo_produto') {
         if (isMostlyCodeColumn(matrix, col.index, headerRowIndex)) score += 10

@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { PageLoadingProvider } from "../../contexts/PageLoadingContext";
-import { IconLeaf } from "../icons";
+import { BrandMark } from "../brand/BrandLogo";
 
 const OVERLAY_FADE_MS = 150;
 
@@ -19,12 +19,12 @@ function PageLoadingOverlay({ leaving }) {
     >
       <div className="page-loading-backdrop absolute inset-0" aria-hidden />
       <div className="relative z-10 flex flex-col items-center gap-3 rounded-2xl border border-slate-200/80 bg-white/95 px-6 py-5 shadow-sm">
-        <span className="relative flex size-11 items-center justify-center rounded-xl bg-primary-50 text-primary-600">
+        <span className="relative flex size-11 items-center justify-center overflow-hidden rounded-xl bg-slate-950 ring-1 ring-slate-800">
           <span
             className="page-loading-pulse absolute -inset-2 rounded-xl bg-primary-400/20"
             aria-hidden
           />
-          <IconLeaf className="relative size-5" />
+          <BrandMark className="relative size-7" />
         </span>
         <p className="text-sm font-medium text-slate-600">
           Carregando informações…

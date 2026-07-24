@@ -4,6 +4,7 @@ import { Input } from '../ui/Input'
 import { Modal } from '../ui/Modal'
 import { ModalFormFooter } from '../ui/ModalFormFooter'
 import { Select } from '../ui/Select'
+import { parsePrecoValue } from '../../utils/spreadsheetAnalyzer'
 
 const MOEDA_OPTIONS = [
   { value: 'BRL', label: 'BRL' },
@@ -63,13 +64,6 @@ export function ModalProdutoOficialForm({
       return
     }
 
-    const preco = Number.parseFloat(
-      String(form.preco_original).replace(/\./g, '').replace(',', '.'),
-    )
-    const desconto = Number.parseFloat(
-      String(form.desconto_usd).replace(/\./g, '').replace(',', '.'),
-    )
-
     if (!form.nome.trim() || !form.quarter.trim()) {
       setError('Preencha fertilizante e quarter.')
       return
@@ -78,8 +72,22 @@ export function ModalProdutoOficialForm({
       setError('Selecione o estado (MG ou SP).')
       return
     }
-    if (!Number.isFinite(preco) || preco < 0) {
+
+    const preco = parsePrecoValue(form.preco_original)
+    if (preco === null) {
       setError('Informe um preço de custo válido.')
+      return
+    }
+
+    const descontoRaw = String(form.desconto_usd ?? '').trim()
+    const desconto =
+      descontoRaw === '' ? 0 : parsePrecoValue(descontoRaw)
+    if (desconto === null) {
+      setError('Informe um desconto USD válido (maior ou igual a zero).')
+      return
+    }
+    if (preco - desconto < 0) {
+      setError('Desconto USD não pode ser maior que o preço de custo.')
       return
     }
 
@@ -94,7 +102,7 @@ export function ModalProdutoOficialForm({
       classe: form.classe,
       quarter: form.quarter.trim(),
       preco_original: preco,
-      desconto_usd: Number.isFinite(desconto) ? desconto : 0,
+      desconto_usd: desconto,
       moeda_origem: form.moeda_origem,
     })
     setSaving(false)

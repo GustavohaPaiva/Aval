@@ -9,6 +9,7 @@ import {
   IconShield,
   IconUser,
 } from "../components/icons";
+import { BrandLogoFull, BrandMark } from "../components/brand/BrandLogo";
 import { Button } from "../components/ui/Button";
 import { useAuth } from "../hooks/useAuth";
 import { supabase } from "../services/supabase";
@@ -56,8 +57,8 @@ function LoginSuccessTransition({ active }) {
         aria-hidden
       />
       <div className="login-exit-content relative z-10 flex flex-col items-center gap-5 px-6 text-white">
-        <span className="flex size-16 items-center justify-center rounded-2xl bg-white/15 shadow-lg ring-1 ring-white/20 backdrop-blur-sm">
-          <IconLeaf className="size-8" />
+        <span className="flex size-16 items-center justify-center overflow-hidden rounded-2xl bg-black/40 shadow-lg ring-1 ring-white/20 backdrop-blur-sm">
+          <BrandMark className="size-12" />
         </span>
         <div className="text-center">
           <p className="text-lg font-semibold tracking-tight">
@@ -89,8 +90,8 @@ function LoginLoadingScreen({ message }) {
             className="login-loader-pulse absolute -inset-3 rounded-2xl bg-primary-400/30"
             aria-hidden
           />
-          <span className="relative flex size-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-500 to-primary-700 text-white shadow-lg shadow-primary-600/25">
-            <IconLeaf className="size-7" />
+          <span className="relative flex size-14 items-center justify-center overflow-hidden rounded-2xl bg-slate-950 shadow-lg shadow-slate-900/25 ring-1 ring-slate-800">
+            <BrandMark className="size-10" />
           </span>
         </div>
         <p className="text-sm font-medium text-slate-600">{message}</p>
@@ -149,17 +150,7 @@ function BrandPanel() {
       <div className="relative z-10 flex h-full flex-col justify-between p-10 xl:p-14">
         <div className="login-fade-up">
           <div className="flex items-center gap-3">
-            <span className="flex size-11 items-center justify-center rounded-xl bg-white/10 text-white ring-1 ring-white/20 backdrop-blur-sm">
-              <IconLeaf className="size-6" />
-            </span>
-            <div>
-              <p className="text-lg font-semibold tracking-tight text-white">
-                Syagri
-              </p>
-              <p className="text-[0.65rem] font-semibold uppercase tracking-[0.22em] text-primary-200">
-                Precificação
-              </p>
-            </div>
+            <BrandLogoFull className="h-12 w-auto max-w-[220px]" />
           </div>
 
           <h1 className="mt-10 max-w-md text-3xl font-semibold leading-[1.15] tracking-tight text-white xl:text-[2.15rem]">
@@ -196,7 +187,7 @@ function BrandPanel() {
         </ul>
 
         <p className="login-fade-up login-fade-up-delay-4 text-xs text-primary-200/70">
-          © {new Date().getFullYear()} Syagri. Todos os direitos reservados.
+          © {new Date().getFullYear()} Aval. Todos os direitos reservados.
         </p>
       </div>
     </div>
@@ -250,17 +241,7 @@ function MobileLoginHero({ showLoggedInCard }) {
       <div className="relative px-6 pb-14 pt-10 sm:px-10 sm:pt-12 md:px-12">
         <div className="login-fade-up mx-auto max-w-lg sm:text-center">
           <div className="flex items-center gap-3 sm:justify-center">
-            <span className="flex size-12 items-center justify-center rounded-2xl bg-white/10 text-white ring-1 ring-white/25 shadow-lg shadow-black/10 backdrop-blur-sm">
-              <IconLeaf className="size-6" />
-            </span>
-            <div className="text-left sm:text-center">
-              <p className="text-xl font-semibold tracking-tight text-white">
-                Syagri
-              </p>
-              <p className="text-[0.65rem] font-semibold uppercase tracking-[0.22em] text-primary-200">
-                Precificação
-              </p>
-            </div>
+            <BrandLogoFull className="h-11 w-auto max-w-[200px] sm:mx-auto" />
           </div>
 
           <div className="login-fade-up login-fade-up-delay-1 mt-8 sm:mx-auto sm:max-w-md">
@@ -302,7 +283,7 @@ function MobileFeatureStrip() {
   return (
     <div className="login-fade-up login-fade-up-delay-4 mt-6 w-full lg:hidden">
       <p className="mb-3 text-center text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-primary-700/80">
-        Por que Syagri
+        Por que Aval
       </p>
       <ul className="mx-auto grid w-full max-w-md gap-2.5 sm:max-w-2xl sm:grid-cols-3 sm:gap-3 md:max-w-3xl">
         {BRAND_FEATURES.map((item) => {
@@ -411,12 +392,12 @@ function DesktopWelcomePanel({ showLoggedInCard }) {
         aria-hidden
       />
       <div className="relative flex items-center gap-4">
-        <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary-500 to-primary-700 text-white shadow-md shadow-primary-600/20">
-          <IconLeaf className="size-5" />
+        <span className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-slate-950 shadow-md ring-1 ring-slate-800">
+          <BrandMark className="size-8" />
         </span>
         <div className="min-w-0 flex-1 border-l border-primary-100/80 pl-4">
           <p className="text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-primary-600">
-            Syagri · Precificação
+            Aval · Fechamento
           </p>
           <h2 className="mt-1.5 text-xl font-semibold tracking-tight text-slate-900">
             {showLoggedInCard ? "Sessão ativa" : "Bem-vindo de volta"}

@@ -2,55 +2,33 @@
 <html lang="pt-br">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Syagri</title>
+    <title>Aval</title>
+    <meta
+      name="description"
+      content="Aval — Fechamento e fertilizantes. Gestão comercial, simulações e pedidos."
+    />
+    <meta name="application-name" content="Aval" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Aval" />
+    <meta property="og:title" content="Aval" />
+    <meta
+      property="og:description"
+      content="Aval — Fechamento e fertilizantes. Gestão comercial, simulações e pedidos."
+    />
+    <meta property="og:image" content="/og-image.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Aval" />
+    <meta
+      name="twitter:description"
+      content="Aval — Fechamento e fertilizantes. Gestão comercial, simulações e pedidos."
+    />
+    <meta name="twitter:image" content="/og-image.png" />
   </head>
   <body>
-    <script>
-      (function () {
-        if (!location.hostname.endsWith("github.io")) return;
-
-        var base = "/Syagri/";
-        if (!location.pathname.startsWith(base)) {
-          location.replace(base + location.search + location.hash);
-          return;
-        }
-
-        var devScript = document.querySelector(
-          'script[type="module"][src*="main.jsx"]',
-        );
-        if (!devScript) return;
-
-        var message =
-          '<div style="padding:2rem;font-family:system-ui,sans-serif;max-width:32rem;margin:2rem auto;line-height:1.5;color:#1a1a1a">' +
-          '<h1 style="font-size:1.25rem;margin:0 0 0.75rem">Deploy incorreto no GitHub Pages</h1>' +
-          '<p style="margin:0 0 0.75rem">O site está servindo o código-fonte (<code>/src/main.jsx</code>) em vez do build de produção.</p>' +
-          '<p style="margin:0 0 0.75rem">Em <strong>Settings → Pages</strong>, use uma destas opções:</p>' +
-          '<ul style="margin:0;padding-left:1.25rem">' +
-          "<li><strong>GitHub Actions</strong> (recomendado), ou</li>" +
-          "<li><strong>Deploy from a branch</strong> → branch <strong>gh-pages</strong>, pasta <strong>/ (root)</strong></li>" +
-          "</ul>" +
-          '<p style="margin:0.75rem 0 0">Não use a branch <strong>main</strong> como origem do Pages.</p>' +
-          "</div>";
-
-        function showDeployError() {
-          var root = document.getElementById("root");
-          if (root) root.innerHTML = message;
-        }
-
-        window.addEventListener(
-          "error",
-          function (event) {
-            if (String(event.filename || "").indexOf("main.jsx") !== -1)
-              showDeployError();
-          },
-          true,
-        );
-
-        setTimeout(showDeployError, 3000);
-      })();
-    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

@@ -2,6 +2,7 @@ import { IconClipboardList, IconDollarSign, IconUser, IconUsers } from '../icons
 import { InfoStatCard } from '../ui/InfoStatCard'
 import { Button } from '../ui/Button'
 import { formatShortDate } from '../../utils/formatShortDate'
+import { formatCorporateEmail } from '../../utils/syagriEmail'
 
 function consultorInitial(nome) {
   const trimmed = (nome ?? '').trim()
@@ -61,7 +62,7 @@ export function ConsultorProfileHero({ nome, email, usuario }) {
             {nome}
           </h1>
           <p className="mt-2 text-sm text-slate-600">
-            {usuario ? `${usuario}@syagri.com.br` : email || 'Usuário não informado'}
+            {usuario ? formatCorporateEmail(usuario) : email || 'Usuário não informado'}
           </p>
         </div>
       </div>
@@ -72,7 +73,7 @@ export function ConsultorProfileHero({ nome, email, usuario }) {
 export function ConsultorInfoPanel({ profile, usuario, onEdit, onTrocarCredenciais }) {
   const rows = [
     { label: 'Cadastro', value: formatShortDate(profile.created_at) },
-    { label: 'Usuário', value: usuario ? `${usuario}@syagri.com.br` : '—' },
+    { label: 'Usuário', value: usuario ? formatCorporateEmail(usuario) : '—' },
     { label: 'Perfil', value: profile.role },
   ]
 

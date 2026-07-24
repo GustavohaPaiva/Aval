@@ -1,6 +1,11 @@
 import { supabase } from './supabase'
 import { CATALOG_PRODUCTS } from '../constants/catalogProducts'
 import { lookupFreteValor } from './freteService'
+import {
+  calcCustoIcmsFromBrl,
+  DEFAULT_ICMS_PERCENTUAL,
+} from '../utils/pricingCalculations'
+import { fetchParametrosSistema } from './parametrosService'
 
 /**
  * Busca produtos oficiais ativos para o simulador.
@@ -28,6 +33,11 @@ export async function fetchCatalogoSimulador({ quarter, estado } = {}) {
 
   if (error) return { ok: false, error: error.message }
 
+  const parametrosRes = await fetchParametrosSistema()
+  const icmsPercentual = parametrosRes.ok
+    ? Number(parametrosRes.row.icms_percentual ?? DEFAULT_ICMS_PERCENTUAL)
+    : DEFAULT_ICMS_PERCENTUAL
+
   const rows = (data ?? []).map((p) => {
     const fornecedorNome = p.fornecedores?.nome ?? ''
     const displayNome = [p.nome, p.referencia_complementar, fornecedorNome]
@@ -54,16 +64,18 @@ export async function fetchCatalogoSimulador({ quarter, estado } = {}) {
       descontoUsd,
       taxa,
       custoBrl,
-      custoIcms: Number(p.custo_icms ?? p.preco_interno_calculado * 0.96),
+      custoIcms: Number(
+        p.custo_icms ?? calcCustoIcmsFromBrl(custoBrl, icmsPercentual),
+      ),
       vencimentoLista: p.vencimento_lista ?? '',
     }
   })
 
-  return { ok: true, rows }
+  return { ok: true, rows, icmsPercentual }
 }
 
 /** Fallback para dev quando não há produtos lançados. */
-export function getFallbackCatalog() {
+export function getFallbackCatalog(icmsPercentual = DEFAULT_ICMS_PERCENTUAL) {
   return CATALOG_PRODUCTS.map((p) => ({
     ...p,
     displayNome: p.nome,
@@ -76,7 +88,7 @@ export function getFallbackCatalog() {
     descontoUsd: 0,
     taxa: 1,
     custoBrl: p.precoBase,
-    custoIcms: p.precoBase * 0.96,
+    custoIcms: calcCustoIcmsFromBrl(p.precoBase, icmsPercentual),
     vencimentoLista: '',
   }))
 }

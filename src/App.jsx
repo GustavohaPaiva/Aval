@@ -82,6 +82,9 @@ const NotificacoesPage = lazy(() =>
 const ParametrosPage = lazy(() =>
   import("./pages/ParametrosPage").then((m) => ({ default: m.ParametrosPage })),
 );
+const ComissaoPage = lazy(() =>
+  import("./pages/ComissaoPage").then((m) => ({ default: m.ComissaoPage })),
+);
 const PedidoPage = lazy(() =>
   import("./pages/PedidoPage").then((m) => ({ default: m.PedidoPage })),
 );
@@ -199,6 +202,16 @@ export default function App() {
                   <ProtectedRoute roles={["gestor"]}>
                     <LazyPage>
                       <ParametrosPage />
+                    </LazyPage>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="comissao"
+                element={
+                  <ProtectedRoute roles={["gestor"]}>
+                    <LazyPage>
+                      <ComissaoPage />
                     </LazyPage>
                   </ProtectedRoute>
                 }

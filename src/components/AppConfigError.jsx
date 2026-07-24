@@ -3,7 +3,7 @@ export function AppConfigError({ message }) {
     <div className="flex min-h-svh items-center justify-center bg-slate-50 p-6">
       <div className="w-full max-w-lg rounded-3xl border border-amber-200 bg-white p-8 shadow-sm">
         <p className="text-xs font-semibold uppercase tracking-[0.14em] text-amber-700">
-          Syagri
+          Aval
         </p>
         <h1 className="mt-2 text-xl font-semibold text-slate-900">
           Configuração necessária
