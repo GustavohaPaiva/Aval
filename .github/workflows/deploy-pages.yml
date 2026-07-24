@@ -38,10 +38,10 @@ jobs:
           EMAIL_DOMAIN="${{ vars.VITE_AUTH_EMAIL_DOMAIN }}"
 
           if [ -z "$APP_URL" ]; then
-            APP_URL="https://gustavohapaiva.github.io/Syagri"
+            APP_URL="https://aval-fertilizantes.online"
           fi
           if [ -z "$BASE_PATH" ]; then
-            BASE_PATH="/Syagri/"
+            BASE_PATH="/"
           fi
           if [ -z "$EMAIL_DOMAIN" ]; then
             EMAIL_DOMAIN="syagri.com.br"
@@ -121,7 +121,7 @@ jobs:
     if: github.event_name != 'pull_request'
     environment:
       name: github-pages
-      url: ${{ vars.VITE_APP_URL || 'https://gustavohapaiva.github.io/Syagri' }}
+      url: ${{ vars.VITE_APP_URL || 'https://aval-fertilizantes.online' }}
     steps:
       - name: Deploy to GitHub Pages
         id: deployment

@@ -6,12 +6,13 @@ import tailwindcss from '@tailwindcss/vite'
 
 /**
  * Normaliza base path do Vite (sempre começa e termina com /).
- * Produção padrão (GitHub Pages projeto): /Syagri/
  * Domínio próprio na raiz: /
+ * Projeto GitHub Pages sem domínio: /NomeDoRepo/
  */
 function normalizeBasePath(raw, mode) {
-  const fallback = mode === 'production' ? '/Syagri/' : '/'
-  let base = String(raw || fallback).trim() || fallback
+  const fallback = mode === 'production' ? '/' : '/'
+  let base = String(raw ?? fallback).trim()
+  if (!base) base = fallback
   if (!base.startsWith('/')) base = `/${base}`
   if (!base.endsWith('/')) base = `${base}/`
   return base === '//' ? '/' : base
