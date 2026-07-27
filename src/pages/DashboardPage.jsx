@@ -130,7 +130,7 @@ export function DashboardPage() {
           hint: 'Pedidos fechados',
           icon: IconClipboardList,
           accent: 'text-primary-600 bg-primary-50',
-          to: '/simulacoes?status=converted',
+          to: '/pedidos',
         },
       ]
     : []

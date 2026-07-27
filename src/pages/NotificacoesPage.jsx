@@ -85,11 +85,9 @@ export function NotificacoesPage() {
         );
       }
       if (notification.simulation_id) {
-        const path =
-          notification.type === "simulation_approved"
-            ? `/pedido/${encodeURIComponent(notification.simulation_id)}`
-            : `/simulador?simulationId=${encodeURIComponent(notification.simulation_id)}`;
-        navigate(path);
+        navigate(
+          `/simulador?simulationId=${encodeURIComponent(notification.simulation_id)}`,
+        );
       }
     } finally {
       setOpeningId(null);

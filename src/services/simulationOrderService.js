@@ -412,6 +412,12 @@ function parseBundle(data) {
             data_pagamento: row.data_pagamento != null ? String(row.data_pagamento) : null,
             quarter: row.quarter != null ? String(row.quarter) : null,
             observacoes: row.observacoes != null ? String(row.observacoes) : null,
+            fazenda: row.fazenda != null ? String(row.fazenda) : null,
+            pedido_municipio:
+                row.pedido_municipio != null ? String(row.pedido_municipio) : null,
+            pedido_uf: row.pedido_uf != null ? String(row.pedido_uf) : null,
+            prazo_dias:
+                row.prazo_dias != null ? Number(row.prazo_dias) : 14,
             created_at: String(row.created_at),
             updated_at: String(row.updated_at),
         },
@@ -436,6 +442,10 @@ export async function fetchSimulationOrderBundle(simulationId) {
       data_pagamento,
       quarter,
       observacoes,
+      fazenda,
+      pedido_municipio,
+      pedido_uf,
+      prazo_dias,
       created_at,
       updated_at,
       clients (
@@ -533,6 +543,29 @@ export async function persistApprovedSimulation(input) {
     return upsertSimulationWithItems(input, 'approved', auth.user.id);
 }
 
+export async function persistConvertedSimulation(input) {
+    const auth = await requireAuthUser();
+    if (!auth.ok) return auth;
+    if (input.lines.length === 0) {
+        return { ok: false, error: 'Inclua ao menos um produto na simulação.' };
+    }
+    if (input.lines.some((line) => !line.productId)) {
+        return { ok: false, error: 'Selecione o produto em todas as linhas.' };
+    }
+    if (input.simulationId) {
+        const { data: existing, error: fetchError } = await supabase
+            .from('simulations')
+            .select('id, status')
+            .eq('id', input.simulationId)
+            .maybeSingle();
+        if (fetchError) return { ok: false, error: fetchError.message };
+        if (existing?.status === 'converted') {
+            return { ok: true, simulationId: input.simulationId, alreadyConverted: true };
+        }
+    }
+    return upsertSimulationWithItems(input, 'converted', auth.user.id);
+}
+
 export async function savePendingSimulation(input) {
     const auth = await requireAuthUser();
     if (!auth.ok) return auth;
@@ -615,6 +648,21 @@ export async function saveGestorReview(input) {
 }
 
 export async function updateSimulationStatus(simulationId, status, options = {}) {
+    const { data: existing, error: fetchError } = await supabase
+        .from('simulations')
+        .select('id, status')
+        .eq('id', simulationId)
+        .maybeSingle();
+    if (fetchError) return { ok: false, error: fetchError.message };
+    if (!existing) return { ok: false, error: 'Simulação não encontrada.' };
+
+    if (existing.status === 'converted') {
+        return { ok: true, alreadyConverted: true };
+    }
+    if (existing.status === status) {
+        return { ok: true };
+    }
+
     const { error } = await supabase
         .from('simulations')
         .update({ status })
@@ -670,6 +718,8 @@ export async function fetchSimulationsList(params) {
     }
     if (params.statusFilter) {
         q = q.eq('status', params.statusFilter)
+    } else if (params.excludeConverted) {
+        q = q.neq('status', 'converted')
     }
 
     if (search) {
@@ -800,4 +850,48 @@ export async function updateClientDeliveryFields(input) {
     if (error)
         return { ok: false, error: error.message };
     return { ok: true };
+}
+
+/**
+ * Persiste os dados obrigatórios da tela de pedido.
+ * @param {{
+ *   simulationId: string,
+ *   fazenda: string,
+ *   pedidoMunicipio: string,
+ *   pedidoUf: string,
+ *   prazoDias: number,
+ * }} input
+ */
+export async function updatePedidoFields(input) {
+    const fazenda = String(input.fazenda ?? '').trim()
+    const pedidoMunicipio = String(input.pedidoMunicipio ?? '').trim()
+    const pedidoUf = String(input.pedidoUf ?? '').trim().toUpperCase()
+    const prazoDias = Number(input.prazoDias)
+
+    if (!fazenda) {
+        return { ok: false, error: 'Informe o nome da fazenda.' }
+    }
+    if (!pedidoMunicipio) {
+        return { ok: false, error: 'Selecione o município.' }
+    }
+    if (!['MG', 'SP'].includes(pedidoUf)) {
+        return { ok: false, error: 'Selecione o estado (MG ou SP).' }
+    }
+    if (![7, 14, 21].includes(prazoDias)) {
+        return { ok: false, error: 'Prazo inválido. Use 7, 14 ou 21 dias.' }
+    }
+
+    const { error } = await supabase
+        .from('simulations')
+        .update({
+            fazenda,
+            pedido_municipio: pedidoMunicipio,
+            pedido_uf: pedidoUf,
+            prazo_dias: prazoDias,
+            updated_at: new Date().toISOString(),
+        })
+        .eq('id', input.simulationId)
+
+    if (error) return { ok: false, error: error.message }
+    return { ok: true }
 }

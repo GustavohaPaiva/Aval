@@ -52,7 +52,13 @@ export function PedidoPdfDocument({
   const { simulation, client, items } = bundle
   const docNo = formatDocNumber(simulation.id)
   const deliveryAddress = buildDeliveryAddress(client, delivery.complemento)
-  const municipioUf = [client.municipio, client.uf].filter(Boolean).join(' / ') || '—'
+  const municipioUf =
+    [simulation.pedido_municipio, simulation.pedido_uf].filter(Boolean).join(' / ') ||
+    [client.municipio, client.uf].filter(Boolean).join(' / ') ||
+    '—'
+  const prazoLabel = simulation.prazo_dias
+    ? `${simulation.prazo_dias} dias`
+    : '14 dias'
 
   return (
     <div
@@ -184,7 +190,7 @@ export function PedidoPdfDocument({
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(4, 1fr)',
+            gridTemplateColumns: 'repeat(3, 1fr)',
             gap: 10,
             marginBottom: 18,
           }}
@@ -193,7 +199,9 @@ export function PedidoPdfDocument({
             { label: 'Data', value: formatDateBr(simulation.created_at) },
             { label: 'Vendedor', value: vendedorNome || '—' },
             { label: 'Validade / Pagamento', value: formatDateBr(simulation.data_pagamento) },
+            { label: 'Prazo', value: prazoLabel },
             { label: 'Frete', value: freightLabel(simulation.tipo_frete) },
+            { label: 'Fazenda', value: simulation.fazenda?.trim() || '—' },
           ].map((field) => (
             <div
               key={field.label}

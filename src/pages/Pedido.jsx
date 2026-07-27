@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { PedidoPdfDocument } from '../components/pedido/PedidoPdfDocument'
 import { PdfPreviewModal } from '../components/pdf/PdfPreviewModal'
 import { AlertMessage } from '../components/ui/AlertMessage'
@@ -8,23 +8,45 @@ import { FormattedInput } from '../components/ui/FormattedInput'
 import { Input } from '../components/ui/Input'
 import { PageBackLink } from '../components/ui/PageBackLink'
 import { PageHeader } from '../components/ui/PageHeader'
+import { Select } from '../components/ui/Select'
+import {
+  PRAZO_DIAS_DEFAULT,
+  PRAZO_OPTIONS,
+  STATES,
+  normalizePrazoDias,
+} from '../constants/simulator'
+import { useAuth } from '../hooks/useAuth'
 import { useSyncPageLoading } from '../contexts/PageLoadingContext'
 import { useAbortableAsync } from '../hooks/useAbortableAsync'
+import { fetchMunicipiosBrasil } from '../services/ibgeLocalidades'
 import {
   fetchSimulationOrderBundle,
   updateClientDeliveryFields,
-  updateSimulationStatus,
+  updatePedidoFields,
 } from '../services/simulationOrderService'
 import { fetchViaCepAddress } from '../services/viaCep'
 import { parseCepInput } from '../utils/dataFormatters'
 
 export function Pedido({ simulationId }) {
   const printRef = useRef(null)
+  const { role } = useAuth()
+  const isGestor = role === 'gestor'
+
   const [loadState, setLoadState] = useState('idle')
   const [loadError, setLoadError] = useState(null)
   const [bundle, setBundle] = useState(null)
 
   useSyncPageLoading(loadState === 'loading' || loadState === 'idle')
+
+  const [fazenda, setFazenda] = useState('')
+  const [pedidoMunicipio, setPedidoMunicipio] = useState('')
+  const [pedidoUf, setPedidoUf] = useState('')
+  const [prazoDias, setPrazoDias] = useState(PRAZO_DIAS_DEFAULT)
+  const [fieldErrors, setFieldErrors] = useState({})
+
+  const [municipioOptions, setMunicipioOptions] = useState([])
+  const [municipiosLoading, setMunicipiosLoading] = useState(false)
+  const [municipiosError, setMunicipiosError] = useState(null)
 
   const [cep, setCep] = useState('')
   const [logradouro, setLogradouro] = useState('')
@@ -37,13 +59,14 @@ export function Pedido({ simulationId }) {
   const [cepLookupError, setCepLookupError] = useState(null)
 
   const [pdfPreview, setPdfPreview] = useState(null)
-  const [convertLoading, setConvertLoading] = useState(false)
   const [actionError, setActionError] = useState(null)
+  const [savingPedido, setSavingPedido] = useState(false)
 
   const isConverted = bundle?.simulation.status === 'converted'
   const isApproved = bundle?.simulation.status === 'approved'
   const isCif = bundle?.simulation.tipo_frete === 'CIF'
-  const formLocked = isConverted
+  const backTo = isConverted ? '/pedidos' : '/simulacoes'
+  const backLabel = isConverted ? 'Voltar para pedidos' : 'Voltar para simulações'
 
   useAbortableAsync(
     async (_signal, isActive) => {
@@ -58,7 +81,12 @@ export function Pedido({ simulationId }) {
         return
       }
       setBundle(res.data)
+      const sim = res.data.simulation
       const c = res.data.client
+      setFazenda(sim.fazenda ?? '')
+      setPedidoMunicipio(sim.pedido_municipio ?? '')
+      setPedidoUf(sim.pedido_uf ?? '')
+      setPrazoDias(normalizePrazoDias(sim.prazo_dias))
       setCep(parseCepInput(c.cep ?? ''))
       setLogradouro(c.logradouro ?? '')
       setBairro(c.bairro ?? '')
@@ -69,9 +97,64 @@ export function Pedido({ simulationId }) {
     [simulationId],
   )
 
+  useAbortableAsync(
+    async (_signal, isActive) => {
+      setMunicipiosLoading(true)
+      setMunicipiosError(null)
+      const res = await fetchMunicipiosBrasil()
+      if (!isActive()) return
+      setMunicipiosLoading(false)
+      if (!res.ok) {
+        setMunicipiosError(res.error)
+        setMunicipioOptions([])
+        return
+      }
+      setMunicipioOptions(res.options)
+    },
+    [],
+  )
+
+  const municipioSelectValue = useMemo(() => {
+    if (!pedidoMunicipio) return ''
+    const match =
+      municipioOptions.find(
+        (o) =>
+          o.nome === pedidoMunicipio &&
+          (!pedidoUf || o.uf === pedidoUf),
+      ) ?? municipioOptions.find((o) => o.nome === pedidoMunicipio)
+    return match?.value ?? pedidoMunicipio
+  }, [municipioOptions, pedidoMunicipio, pedidoUf])
+
+  const municipioSelectOptions = useMemo(() => {
+    const list = municipioOptions.map((o) => ({
+      value: o.value,
+      label: o.label,
+    }))
+    if (
+      municipioSelectValue &&
+      !list.some((o) => o.value === municipioSelectValue)
+    ) {
+      return [
+        {
+          value: municipioSelectValue,
+          label: pedidoUf
+            ? `${pedidoMunicipio} — ${pedidoUf}`
+            : pedidoMunicipio,
+        },
+        ...list,
+      ]
+    }
+    return list
+  }, [
+    municipioOptions,
+    municipioSelectValue,
+    pedidoMunicipio,
+    pedidoUf,
+  ])
+
   const lookupCep = useCallback(
     async (digits) => {
-      if (formLocked || !isCif || digits.length !== 8) return
+      if (!isCif || digits.length !== 8) return
       setCepLookupLoading(true)
       setCepLookupError(null)
       const res = await fetchViaCepAddress(digits)
@@ -85,11 +168,11 @@ export function Pedido({ simulationId }) {
       setMunicipio(res.data.municipio)
       setUf(res.data.uf)
     },
-    [formLocked, isCif],
+    [isCif],
   )
 
   useEffect(() => {
-    if (formLocked || !isCif) return
+    if (!isCif) return
     const digits = parseCepInput(cep)
     if (digits.length !== 8) return
 
@@ -97,26 +180,64 @@ export function Pedido({ simulationId }) {
       void lookupCep(digits)
     }, 450)
     return () => window.clearTimeout(handle)
-  }, [cep, formLocked, isCif, lookupCep])
+  }, [cep, isCif, lookupCep])
 
   const cepDigits = parseCepInput(cep)
   const displayedCepLookupError =
     isCif && cepDigits.length === 8 ? cepLookupError : null
 
+  function clearFieldError(key) {
+    setFieldErrors((prev) => {
+      if (!prev[key]) return prev
+      const next = { ...prev }
+      delete next[key]
+      return next
+    })
+  }
+
+  function validatePedidoFields() {
+    /** @type {Record<string, string>} */
+    const errors = {}
+    if (!fazenda.trim()) {
+      errors.fazenda = 'Informe o nome da fazenda.'
+    }
+    if (!pedidoMunicipio.trim()) {
+      errors.pedidoMunicipio = 'Selecione o município.'
+    }
+    if (!['MG', 'SP'].includes(pedidoUf)) {
+      errors.pedidoUf = 'Selecione o estado (MG ou SP).'
+    }
+    const prazo = normalizePrazoDias(prazoDias)
+    if (![7, 14, 21].includes(prazo)) {
+      errors.prazoDias = 'Prazo inválido.'
+    }
+    setFieldErrors(errors)
+    return Object.keys(errors).length === 0
+  }
+
   const pdfBundle =
-    bundle && isCif
+    bundle
       ? {
           ...bundle,
-          client: {
-            ...bundle.client,
-            cep: parseCepInput(cep) || null,
-            logradouro: logradouro.trim() || null,
-            bairro: bairro.trim() || null,
-            municipio: municipio.trim() || null,
-            uf: uf.trim().toUpperCase().slice(0, 2) || null,
+          simulation: {
+            ...bundle.simulation,
+            fazenda: fazenda.trim() || null,
+            pedido_municipio: pedidoMunicipio.trim() || null,
+            pedido_uf: pedidoUf || null,
+            prazo_dias: normalizePrazoDias(prazoDias),
           },
+          client: isCif
+            ? {
+                ...bundle.client,
+                cep: parseCepInput(cep) || null,
+                logradouro: logradouro.trim() || null,
+                bairro: bairro.trim() || null,
+                municipio: municipio.trim() || null,
+                uf: uf.trim().toUpperCase().slice(0, 2) || null,
+              }
+            : bundle.client,
         }
-      : bundle
+      : null
 
   const pdfNomeFallback = pdfBundle
     ? `proposta-syagri-${formatDocSuffix(pdfBundle.simulation.id)}-${(pdfBundle.client.nome || 'cliente')
@@ -139,11 +260,45 @@ export function Pedido({ simulationId }) {
     if (!bundle || !printRef.current) return
 
     setActionError(null)
-    setPdfPreview({
-      titulo: 'Proposta comercial',
-      gerador: gerarPdfPedido,
-      nomeFallback: pdfNomeFallback,
+
+    if (!validatePedidoFields()) {
+      setActionError('Preencha os dados obrigatórios do pedido antes de gerar o PDF.')
+      return
+    }
+
+    const prazo = isGestor
+      ? normalizePrazoDias(prazoDias)
+      : normalizePrazoDias(bundle.simulation.prazo_dias ?? PRAZO_DIAS_DEFAULT)
+
+    setSavingPedido(true)
+    const pedidoRes = await updatePedidoFields({
+      simulationId: bundle.simulation.id,
+      fazenda: fazenda.trim(),
+      pedidoMunicipio: pedidoMunicipio.trim(),
+      pedidoUf,
+      prazoDias: prazo,
     })
+    if (!pedidoRes.ok) {
+      setSavingPedido(false)
+      setActionError(pedidoRes.error)
+      return
+    }
+
+    setBundle((prev) =>
+      prev
+        ? {
+            ...prev,
+            simulation: {
+              ...prev.simulation,
+              fazenda: fazenda.trim(),
+              pedido_municipio: pedidoMunicipio.trim(),
+              pedido_uf: pedidoUf,
+              prazo_dias: prazo,
+            },
+          }
+        : prev,
+    )
+    setPrazoDias(prazo)
 
     if (isCif) {
       const addr = await updateClientDeliveryFields({
@@ -155,6 +310,7 @@ export function Pedido({ simulationId }) {
         uf: uf.trim().toUpperCase().slice(0, 2) || null,
       })
       if (!addr.ok) {
+        setSavingPedido(false)
         setActionError(addr.error)
         return
       }
@@ -174,41 +330,29 @@ export function Pedido({ simulationId }) {
           : prev,
       )
     }
+
+    setSavingPedido(false)
+    setPdfPreview({
+      titulo: 'Proposta comercial',
+      gerador: gerarPdfPedido,
+      nomeFallback: pdfNomeFallback,
+    })
   }, [
     bairro,
     bundle,
     cep,
+    fazenda,
     gerarPdfPedido,
     isCif,
+    isGestor,
     logradouro,
     municipio,
     pdfNomeFallback,
+    pedidoMunicipio,
+    pedidoUf,
+    prazoDias,
     uf,
   ])
-
-  const handleMarcarConvertida = useCallback(async () => {
-    if (!bundle || bundle.simulation.status !== 'approved') return
-
-    setActionError(null)
-    setConvertLoading(true)
-    try {
-      const st = await updateSimulationStatus(bundle.simulation.id, 'converted')
-      if (!st.ok) {
-        setActionError(st.error)
-        return
-      }
-      setBundle((prev) =>
-        prev
-          ? {
-              ...prev,
-              simulation: { ...prev.simulation, status: 'converted' },
-            }
-          : prev,
-      )
-    } finally {
-      setConvertLoading(false)
-    }
-  }, [bundle])
 
   if (loadState === 'loading' || loadState === 'idle') {
     return (
@@ -221,9 +365,9 @@ export function Pedido({ simulationId }) {
   if (loadState === 'error' || !bundle) {
     return (
       <div className="w-full py-8">
-        <PageBackLink to="/simulacoes">Voltar para simulações</PageBackLink>
+        <PageBackLink to="/pedidos">Voltar para pedidos</PageBackLink>
         <AlertMessage className="mt-4">
-          {loadError ?? 'Simulação inválida.'}
+          {loadError ?? 'Pedido inválido.'}
         </AlertMessage>
       </div>
     )
@@ -234,8 +378,8 @@ export function Pedido({ simulationId }) {
       <div className="w-full py-8">
         <PageBackLink to="/simulacoes">Voltar para simulações</PageBackLink>
         <AlertMessage className="mt-4">
-          Apenas simulações aprovadas podem ser visualizadas como pedido. Status
-          atual: {bundle.simulation.status}
+          Apenas simulações aprovadas ou convertidas podem ser visualizadas como
+          pedido. Status atual: {bundle.simulation.status}
         </AlertMessage>
       </div>
     )
@@ -243,27 +387,102 @@ export function Pedido({ simulationId }) {
 
   return (
     <div className="w-full py-2">
-      <PageBackLink to="/simulacoes">Voltar para simulações</PageBackLink>
+      <PageBackLink to={backTo}>{backLabel}</PageBackLink>
 
       <PageHeader
-        eyebrow="Aval"
+        eyebrow="Pedido"
         title="Proposta comercial"
-        description="Documento para envio ao cliente com base nesta simulação."
+        description="Informe fazenda, município, estado e prazo antes de gerar o documento."
         actions={
           isConverted ? (
             <span className="inline-flex rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-800 ring-1 ring-emerald-200">
               Convertido
             </span>
-          ) : (
+          ) : isApproved ? (
             <span className="inline-flex rounded-full bg-primary-50 px-3 py-1 text-sm font-semibold text-primary-800 ring-1 ring-primary-200">
               Aprovado
             </span>
-          )
+          ) : null
         }
         className="mb-6"
       />
 
       {actionError ? <AlertMessage className="mb-4">{actionError}</AlertMessage> : null}
+
+      <Card className="mb-6 rounded-3xl">
+        <h2 className="mb-4 text-sm font-semibold text-primary-800">
+          Dados do pedido
+        </h2>
+        <div className="grid gap-6 sm:grid-cols-2">
+          <Input
+            label="Fazenda"
+            placeholder="Nome da fazenda"
+            value={fazenda}
+            onChange={(e) => {
+              setFazenda(e.target.value)
+              clearFieldError('fazenda')
+            }}
+            error={fieldErrors.fazenda}
+            required
+          />
+          <Select
+            label="Estado"
+            placeholder="Selecione…"
+            value={pedidoUf}
+            onChange={(e) => {
+              setPedidoUf(e.target.value)
+              clearFieldError('pedidoUf')
+            }}
+            options={STATES}
+            error={fieldErrors.pedidoUf}
+            required
+          />
+          <Select
+            label="Município"
+            placeholder={
+              municipiosLoading
+                ? 'Carregando municípios…'
+                : 'Buscar município…'
+            }
+            value={municipioSelectValue}
+            onChange={(e) => {
+              const raw = e.target.value
+              const [nome, ufFromCity] = String(raw).split('|')
+              setPedidoMunicipio((nome || raw).trim())
+              if (['MG', 'SP'].includes(ufFromCity)) {
+                setPedidoUf(ufFromCity)
+                clearFieldError('pedidoUf')
+              }
+              clearFieldError('pedidoMunicipio')
+            }}
+            options={municipioSelectOptions}
+            searchable
+            searchPlaceholder="Digite o nome da cidade…"
+            disabled={municipiosLoading}
+            error={fieldErrors.pedidoMunicipio || municipiosError}
+            required
+          />
+          {isGestor ? (
+            <Select
+              label="Prazo"
+              value={String(prazoDias)}
+              onChange={(e) => {
+                setPrazoDias(normalizePrazoDias(e.target.value))
+                clearFieldError('prazoDias')
+              }}
+              options={PRAZO_OPTIONS}
+              error={fieldErrors.prazoDias}
+            />
+          ) : (
+            <Input
+              label="Prazo"
+              value={`${normalizePrazoDias(prazoDias)} dias`}
+              disabled
+              readOnly
+            />
+          )}
+        </div>
+      </Card>
 
       {isCif ? (
         <Card className="mb-6 rounded-3xl">
@@ -278,7 +497,6 @@ export function Pedido({ simulationId }) {
                 placeholder="00000-000"
                 value={cep}
                 onChange={(e) => setCep(e.target.value)}
-                disabled={formLocked}
                 className="finance-text"
               />
               {cepLookupLoading ? (
@@ -294,32 +512,16 @@ export function Pedido({ simulationId }) {
               label="Complemento (opcional)"
               value={complemento}
               onChange={(e) => setComplemento(e.target.value)}
-              disabled={formLocked}
             />
             <Input
               label="Logradouro"
               value={logradouro}
               onChange={(e) => setLogradouro(e.target.value)}
-              disabled={formLocked}
             />
             <Input
               label="Bairro"
               value={bairro}
               onChange={(e) => setBairro(e.target.value)}
-              disabled={formLocked}
-            />
-            <Input
-              label="Município"
-              value={municipio}
-              onChange={(e) => setMunicipio(e.target.value)}
-              disabled={formLocked}
-            />
-            <Input
-              label="UF"
-              value={uf}
-              maxLength={2}
-              onChange={(e) => setUf(e.target.value.toUpperCase().slice(0, 2))}
-              disabled={formLocked}
             />
           </div>
         </Card>
@@ -358,21 +560,11 @@ export function Pedido({ simulationId }) {
           type="button"
           variant="primary"
           className="w-full"
+          disabled={savingPedido}
           onClick={() => void handleGerarPdf()}
         >
-          Gerar PDF para o cliente
+          {savingPedido ? 'Salvando…' : 'Gerar PDF para o cliente'}
         </Button>
-        {isApproved ? (
-          <Button
-            type="button"
-            variant="secondary"
-            className="w-full"
-            loading={convertLoading}
-            onClick={() => void handleMarcarConvertida()}
-          >
-            Marcar como convertida
-          </Button>
-        ) : null}
       </div>
 
       <PdfPreviewModal

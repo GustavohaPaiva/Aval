@@ -91,6 +91,7 @@ function navItemsForRole(role) {
       },
       { to: "/clientes", label: "Clientes", icon: IconUser },
       { to: "/simulacoes", label: "Todas Simulações", icon: IconClipboardList },
+      { to: "/pedidos", label: "Pedidos", icon: IconPackage },
       { to: "/notificacoes", label: "Notificações", icon: IconBell },
       { to: "/frete", label: "Fretes", icon: IconTruck },
       {
@@ -105,6 +106,7 @@ function navItemsForRole(role) {
   return [
     { to: "/dashboard", label: "Dashboard", icon: IconLayoutDashboard },
     { to: "/simulacoes", label: "Minhas Simulações", icon: IconClipboardList },
+    { to: "/pedidos", label: "Pedidos", icon: IconPackage },
     { to: "/clientes", label: "Clientes", icon: IconUser },
     { to: "/notificacoes", label: "Notificações", icon: IconBell },
   ];

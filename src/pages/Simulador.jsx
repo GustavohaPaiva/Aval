@@ -30,7 +30,7 @@ import { useAuth } from "../hooks/useAuth";
 import { useSimulation } from "../hooks/useSimulation";
 import {
   fetchSimulationOrderBundle,
-  persistApprovedSimulation,
+  persistConvertedSimulation,
   saveDraftSimulation,
   savePendingSimulation,
   saveGestorReview,
@@ -233,6 +233,10 @@ export function Simulador() {
         navigate("/simulacoes", { replace: true });
         return;
       }
+      if (result.data.simulation.status === "converted") {
+        navigate(`/pedido/${encodeURIComponent(simulationId)}`, { replace: true });
+        return;
+      }
       sim.hydrateFromBundle(result.data);
       setRemoteStatus(result.data.simulation.status ?? null);
     },
@@ -263,7 +267,7 @@ export function Simulador() {
   async function persistAndNavigate(overrideClientId) {
     setPersisting(true);
     try {
-      const result = await persistApprovedSimulation({
+      const result = await persistConvertedSimulation({
         ...buildSimulationPayload(),
         clientId: overrideClientId ?? sim.clientId,
       });
@@ -272,6 +276,7 @@ export function Simulador() {
         return;
       }
       sim.clearDraft();
+      setRemoteStatus("converted");
       navigate(`/pedido/${result.simulationId}`);
     } finally {
       setPersisting(false);
@@ -418,6 +423,11 @@ export function Simulador() {
     setPersistError(null);
     setLaunchError(null);
 
+    if (remoteStatus === "converted") {
+      if (simulationId) navigate(`/pedido/${simulationId}`);
+      return;
+    }
+
     const liberatedByGestor = remoteStatus === "approved";
     if (!liberatedByGestor) {
       const blockReason = sim.getLaunchBlockReason();
@@ -448,8 +458,6 @@ export function Simulador() {
       setClientModalOpen(true);
       return;
     }
-
-    if (!ensureValidClientDocument()) return;
 
     await persistAndNavigate();
   }
@@ -613,6 +621,10 @@ export function Simulador() {
 
   async function handleGestorConvertToPedido() {
     if (!sim.isGestor || !simulationId) return;
+    if (remoteStatus === "converted") {
+      navigate(`/pedido/${simulationId}`);
+      return;
+    }
     setReviewError(null);
     setPersisting(true);
     try {
@@ -621,15 +633,12 @@ export function Simulador() {
         setReviewError(saveResult.error);
         return;
       }
-      const statusResult = await updateSimulationStatus(simulationId, "approved", {
-        notifyConsultor: true,
-        clientName: sim.clientName,
-      });
+      const statusResult = await updateSimulationStatus(simulationId, "converted");
       if (!statusResult.ok) {
         setReviewError(statusResult.error);
         return;
       }
-      setRemoteStatus("approved");
+      setRemoteStatus("converted");
       navigate(`/pedido/${simulationId}`);
     } finally {
       setPersisting(false);
@@ -1049,7 +1058,7 @@ export function Simulador() {
                     Converter em pedido
                   </Button>
                 </>
-              ) : sim.isGestor && simulationId ? (
+              ) : sim.isGestor && simulationId && remoteStatus !== "converted" ? (
                 <Button
                   type="button"
                   variant="primary"
@@ -1061,6 +1070,7 @@ export function Simulador() {
                   Converter em pedido
                 </Button>
               ) : !sim.isGestor &&
+                remoteStatus !== "converted" &&
                 (sim.globalStatus === "Aprovado" ||
                   remoteStatus === "approved") ? (
                 <Button

@@ -3,6 +3,21 @@ export const STATES = [
   { value: 'SP', label: 'São Paulo' },
 ]
 
+/** Prazo de validade da proposta (dias) — padrão 14. */
+export const PRAZO_DIAS_DEFAULT = 14
+
+export const PRAZO_OPTIONS = [
+  { value: '7', label: '7 dias' },
+  { value: '14', label: '14 dias' },
+  { value: '21', label: '21 dias' },
+]
+
+export function normalizePrazoDias(value) {
+  const n = Number(value)
+  if (n === 7 || n === 14 || n === 21) return n
+  return PRAZO_DIAS_DEFAULT
+}
+
 export const QUARTERS = [
   { value: 'Q1', label: 'Q1 — Jan/Fev/Mar' },
   { value: 'Q2', label: 'Q2 — Abr/Mai/Jun' },

@@ -27,7 +27,6 @@ const SIMULACAO_STATUS_FILTERS = [
   { key: "pending", label: "Pendentes" },
   { key: "approved", label: "Aprovados" },
   { key: "rejected", label: "Reprovados" },
-  { key: "converted", label: "Convertidos" },
 ];
 
 const VALID_STATUS_KEYS = new Set(
@@ -52,7 +51,16 @@ export function ListagemSimulacoes() {
   const debouncedSearch = useDebouncedValue(searchQuery, 300);
 
   useEffect(() => {
+    if (quickFilter === "converted") {
+      patchFilters({ quickFilter: "all", page: 1 });
+      navigate("/pedidos", { replace: true });
+      return;
+    }
     const statusParam = searchParams.get("status");
+    if (statusParam === "converted") {
+      navigate("/pedidos", { replace: true });
+      return;
+    }
     if (statusParam && VALID_STATUS_KEYS.has(statusParam)) {
       if (quickFilter !== statusParam) {
         patchFilters({ quickFilter: statusParam, page: 1 });
@@ -66,7 +74,7 @@ export function ListagemSimulacoes() {
         { replace: true },
       );
     }
-  }, [searchParams, quickFilter, patchFilters, setSearchParams]);
+  }, [searchParams, quickFilter, patchFilters, setSearchParams, navigate]);
 
   useSyncPageLoading(loading || initializing);
 
@@ -94,6 +102,7 @@ export function ListagemSimulacoes() {
         userId: user.id,
         role,
         statusFilter: statusForQuery,
+        excludeConverted: !statusForQuery,
         search: debouncedSearch,
         page,
         pageSize: PAGE_SIZE,
@@ -147,7 +156,7 @@ export function ListagemSimulacoes() {
         <PageHeader
           eyebrow={isGestor ? "Gestão comercial" : "Operação"}
           title={isGestor ? "Simulações" : "Minhas simulações"}
-          description="Acompanhe rascunhos, aprovações e propostas convertidas."
+          description="Acompanhe rascunhos, aprovações e propostas em andamento."
           actions={
             <Button
               type="button"

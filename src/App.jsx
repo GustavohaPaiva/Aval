@@ -74,6 +74,11 @@ const ListagemSimulacoes = lazy(() =>
     default: m.ListagemSimulacoes,
   })),
 );
+const ListagemPedidos = lazy(() =>
+  import("./pages/ListagemPedidos").then((m) => ({
+    default: m.ListagemPedidos,
+  })),
+);
 const NotificacoesPage = lazy(() =>
   import("./pages/NotificacoesPage").then((m) => ({
     default: m.NotificacoesPage,
@@ -190,7 +195,11 @@ export default function App() {
               />
               <Route
                 path="pedidos"
-                element={<Navigate to="/simulacoes?status=converted" replace />}
+                element={
+                  <LazyPage>
+                    <ListagemPedidos />
+                  </LazyPage>
+                }
               />
               <Route
                 path="gestor"

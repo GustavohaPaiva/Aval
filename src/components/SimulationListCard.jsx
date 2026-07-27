@@ -122,7 +122,7 @@ export function SimulationListCard({
             className="w-full"
             onClick={() => onViewDetails(row.id)}
           >
-            Ver detalhes
+            {row.status === 'converted' ? 'Ver pedido' : 'Ver detalhes'}
           </Button>
         )}
       </footer>
