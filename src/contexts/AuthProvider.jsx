@@ -7,7 +7,7 @@ async function fetchProfile(userId) {
   const supabase = requireSupabase()
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, nome, role')
+    .select('id, nome, role, filial')
     .eq('id', userId)
     .maybeSingle()
 
@@ -18,6 +18,7 @@ async function fetchProfile(userId) {
     id: data.id,
     nome: data.nome,
     role: data.role,
+    filial: data.filial ?? null,
   }
 }
 

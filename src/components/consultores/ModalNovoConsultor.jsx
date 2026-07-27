@@ -6,23 +6,36 @@ import { Modal } from "../ui/Modal";
 import { ModalFormFooter } from "../ui/ModalFormFooter";
 import { useAbortableAsync } from "../../hooks/useAbortableAsync";
 import { supabase } from "../../services/supabase";
+import {
+  buildFirstLastUsername,
+  isValidDocumentPassword,
+  normalizeDocumentDigits,
+} from "../../utils/consultantLogin";
 import { buildSyagriEmail } from "../../utils/syagriEmail";
 
 const FORM_ID = "form-novo-consultor";
 
 export function ModalNovoConsultor({ open, onClose, onCreated }) {
   const [nome, setNome] = useState("");
-  const [usuario, setUsuario] = useState("");
-  const [senha, setSenha] = useState("");
+  const [usuarioManual, setUsuarioManual] = useState("");
+  const [usuarioTouched, setUsuarioTouched] = useState(false);
+  const [cpf, setCpf] = useState("");
+  const [filial, setFilial] = useState("");
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState(null);
+
+  const usuario = usuarioTouched
+    ? usuarioManual
+    : buildFirstLastUsername(nome);
 
   useAbortableAsync(
     async (_signal, isActive) => {
       if (!isActive()) return;
       setNome("");
-      setUsuario("");
-      setSenha("");
+      setUsuarioManual("");
+      setUsuarioTouched(false);
+      setCpf("");
+      setFilial("");
       setFormError(null);
       setSaving(false);
     },
@@ -41,25 +54,28 @@ export function ModalNovoConsultor({ open, onClose, onCreated }) {
 
     const p_nome = nome.trim();
     const p_email = buildSyagriEmail(usuario);
+    const p_password = normalizeDocumentDigits(cpf);
+    const p_filial = filial.trim() || null;
 
     if (!p_nome) {
       setFormError("Informe o nome do consultor.");
       return;
     }
     if (!p_email) {
-      setFormError("Informe um usuário válido.");
+      setFormError("Informe um usuário válido (ex.: joao.silva).");
       return;
     }
-    if (!senha || senha.length < 8) {
-      setFormError("A senha deve ter pelo menos 8 caracteres.");
+    if (!isValidDocumentPassword(p_password)) {
+      setFormError("Informe o CPF (11 dígitos) ou CNPJ (14 dígitos), só números.");
       return;
     }
 
     setSaving(true);
     const { data, error } = await supabase.rpc("create_consultant", {
       p_email,
-      p_password: senha,
+      p_password,
       p_nome,
+      p_filial,
     });
     setSaving(false);
 
@@ -98,36 +114,53 @@ export function ModalNovoConsultor({ open, onClose, onCreated }) {
         noValidate
       >
         <FormSection>
-          <Input
-            label="Nome completo"
-            name="nome"
-            autoComplete="name"
-            placeholder="Ex.: João Silva"
-            value={nome}
-            onChange={(e) => setNome(e.target.value)}
-            disabled={saving}
-          />
+          <div className="flex flex-col gap-4">
+            <Input
+              label="Nome completo"
+              name="nome"
+              autoComplete="name"
+              placeholder="Ex.: João Silva"
+              value={nome}
+              onChange={(e) => setNome(e.target.value)}
+              disabled={saving}
+            />
+            <Input
+              label="Filial"
+              name="filial"
+              autoComplete="off"
+              placeholder="Opcional — ex.: Uberaba"
+              value={filial}
+              onChange={(e) => setFilial(e.target.value)}
+              disabled={saving}
+            />
+          </div>
         </FormSection>
 
-        <FormSection>
+        <FormSection
+          title="Acesso"
+          description="Usuário = primeiro.último nome. Senha = CPF/CNPJ só com números."
+        >
           <div className="flex flex-col gap-4">
             <Input
               label="Usuário"
               name="usuario"
               autoComplete="off"
-              placeholder="ex.: joao"
+              placeholder="ex.: joao.silva"
               value={usuario}
-              onChange={(e) => setUsuario(e.target.value)}
+              onChange={(e) => {
+                setUsuarioTouched(true);
+                setUsuarioManual(e.target.value);
+              }}
               disabled={saving}
             />
             <Input
-              label="Senha"
-              name="senha"
-              type="password"
-              autoComplete="new-password"
-              placeholder="Mínimo de 8 caracteres"
-              value={senha}
-              onChange={(e) => setSenha(e.target.value)}
+              label="CPF / CNPJ (senha)"
+              name="cpf"
+              autoComplete="off"
+              inputMode="numeric"
+              placeholder="Somente números"
+              value={cpf}
+              onChange={(e) => setCpf(normalizeDocumentDigits(e.target.value))}
               disabled={saving}
             />
           </div>

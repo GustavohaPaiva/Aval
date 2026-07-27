@@ -18,8 +18,14 @@ import { useAbortableAsync } from "../hooks/useAbortableAsync";
 import {
   lookupOrCreateFornecedor,
   processLoteAuto,
+  processLotesPorQuarter,
 } from "../services/produtoImportacaoService";
-import { filterDataRows, findEmbalagemColumnIndex } from "../utils/spreadsheetAnalyzer";
+import {
+  filterDataRows,
+  findCatalogColumnIndex,
+  findEmbalagemColumnIndex,
+  groupDataRowsByQuarter,
+} from "../utils/spreadsheetAnalyzer";
 import { parseSpreadsheetFile } from "../utils/spreadsheetParser";
 
 const CONFIDENCE_LABEL = {
@@ -61,6 +67,8 @@ export function ImportacaoPreviewPage() {
   const [mapConfidence, setMapConfidence] = useState({});
   const [loading, setLoading] = useState(Boolean(file));
   const [confirming, setConfirming] = useState(false);
+  const [quarterGroups, setQuarterGroups] = useState([]);
+  const [activeGroupIndex, setActiveGroupIndex] = useState(0);
 
   useSyncPageLoading(loading);
 
@@ -86,6 +94,8 @@ export function ImportacaoPreviewPage() {
       setFornecedorNome(result.fornecedorDetectado?.fornecedorNome ?? "");
       setColumnMapRecord(mappingsToRecord(result.autoMappings));
       setMapConfidence(result.autoMapConfidence ?? {});
+      setQuarterGroups(result.quarterGroups ?? []);
+      setActiveGroupIndex(0);
       setParseState(result);
       setLoading(false);
       setProcessError(null);
@@ -146,6 +156,68 @@ export function ImportacaoPreviewPage() {
     });
   }, [parseState, headerRowIndex, columnMappings]);
 
+  const derivedQuarterGroups = useMemo(() => {
+    if (!parseState?.matrix?.length) return quarterGroups;
+    const catalogIndex = findCatalogColumnIndex(
+      parseState.matrix,
+      headerRowIndex,
+    );
+    const regrouped = groupDataRowsByQuarter(previewRows, {
+      catalogIndex,
+      matrix: parseState.matrix,
+      headerRowIndex,
+      fallbackQuarter: quarterCalculado,
+      fallbackValidade: dataValidade,
+    });
+
+    // Preserve user edits to validade/quarter when regrouping.
+    return regrouped.map((group) => {
+      const edited = quarterGroups.find((g) => g.quarter === group.quarter);
+      if (!edited) return group;
+      return {
+        ...group,
+        dataValidade: edited.dataValidade || group.dataValidade,
+        quarter: edited.quarter || group.quarter,
+        catalogCode: edited.catalogCode || group.catalogCode,
+      };
+    });
+  }, [
+    parseState,
+    headerRowIndex,
+    previewRows,
+    quarterCalculado,
+    dataValidade,
+    quarterGroups,
+  ]);
+
+  const multiQuarter = derivedQuarterGroups.length > 1;
+  const totalPreviewRows = multiQuarter
+    ? derivedQuarterGroups.reduce(
+        (sum, g) => sum + (g.dataRows?.length ?? 0),
+        0,
+      )
+    : previewRows.length;
+
+  function handleGroupFieldChange(index, patch) {
+    setQuarterGroups((prev) => {
+      const base =
+        prev.length === derivedQuarterGroups.length
+          ? prev
+          : derivedQuarterGroups;
+      return base.map((group, i) =>
+        i === index
+          ? {
+              ...group,
+              ...patch,
+              ...(patch.quarter !== undefined
+                ? { quarter: patch.quarter }
+                : {}),
+            }
+          : group,
+      );
+    });
+  }
+
   async function handleConfirm() {
     if (!file) {
       setProcessError("Sessão de importação inválida.");
@@ -155,7 +227,15 @@ export function ImportacaoPreviewPage() {
       setProcessError("Informe o fornecedor detectado na planilha.");
       return;
     }
-    if (!quarterCalculado.trim()) {
+    if (multiQuarter) {
+      const missingQuarter = derivedQuarterGroups.some(
+        (g) => !String(g.quarter ?? "").trim(),
+      );
+      if (missingQuarter) {
+        setProcessError("Informe o quarter de cada grupo detectado.");
+        return;
+      }
+    } else if (!quarterCalculado.trim()) {
       setProcessError("Informe o quarter (revise a data de validade).");
       return;
     }
@@ -193,6 +273,36 @@ export function ImportacaoPreviewPage() {
       return;
     }
 
+    if (multiQuarter) {
+      const res = await processLotesPorQuarter({
+        fornecedorId: fornRes.row.id,
+        columnMappings: parseOptions.columnMappings,
+        file,
+        parseOptions,
+        quarterGroups: derivedQuarterGroups,
+      });
+      setConfirming(false);
+
+      if (!res.ok) {
+        setProcessError(res.error);
+        return;
+      }
+
+      const siblingLotes = (res.lotes ?? []).slice(1);
+      const labels = (res.lotes ?? [])
+        .map((l) => l.quarter)
+        .filter(Boolean)
+        .join(", ");
+
+      navigate(`/admin/importacao/lote/${res.loteId}`, {
+        state: {
+          siblingLotes,
+          successMessage: `Criados ${res.lotes?.length ?? 0} lançamentos separados (${labels}). Valide e promova cada um.`,
+        },
+      });
+      return;
+    }
+
     const res = await processLoteAuto({
       fornecedorId: fornRes.row.id,
       columnMappings: parseOptions.columnMappings,
@@ -220,6 +330,10 @@ export function ImportacaoPreviewPage() {
     );
   }
 
+  const confirmLabel = multiQuarter
+    ? `Processar ${derivedQuarterGroups.length} lançamentos`
+    : "Processar lote";
+
   return (
     <div className="w-full min-w-0 space-y-4 sm:space-y-6">
       <PageBackLink to="/admin/importacao">Voltar ao lançamento</PageBackLink>
@@ -244,7 +358,7 @@ export function ImportacaoPreviewPage() {
               disabled={loading || !parseState}
               onClick={() => void handleConfirm()}
             >
-              Processar lote
+              {confirmLabel}
             </Button>
           </ButtonGroup>
         }
@@ -280,6 +394,10 @@ export function ImportacaoPreviewPage() {
             quarterCalculado={quarterCalculado}
             onQuarterChange={setQuarterCalculado}
             previewRows={previewRows}
+            quarterGroups={derivedQuarterGroups}
+            activeGroupIndex={activeGroupIndex}
+            onActiveGroupIndexChange={setActiveGroupIndex}
+            onGroupFieldChange={handleGroupFieldChange}
           />
 
           {lowConfidenceFields.length > 0 ? (
@@ -295,8 +413,11 @@ export function ImportacaoPreviewPage() {
                 Mapeamento automático das colunas
               </h3>
               <p className="mt-1 text-xs text-slate-600">
-                {previewRows.length} linha(s) serão importadas (somente
-                embalagem 1000KG, quando a coluna existir na planilha).
+                {totalPreviewRows} linha(s) serão importadas
+                {multiQuarter
+                  ? ` em ${derivedQuarterGroups.length} lançamentos separados`
+                  : ""}{" "}
+                (embalagem 1000KG / Big bag liner, quando a coluna existir).
               </p>
             </div>
 
@@ -341,7 +462,7 @@ export function ImportacaoPreviewPage() {
             })}
           </section>
 
-          <div className="sticky bottom-0 -mx-4 border-t border-slate-100 bg-white/95 px-4 py-4 backdrop-blur-sm sm:-mx-0 sm:rounded-2xl sm:border sm:px-6">
+          <div className="sticky bottom-0 -mx-4 border-t border-slate-100 bg-white/95 px-4 py-4 backdrop-blur-sm sm:mx-0 sm:rounded-2xl sm:border sm:px-6">
             <ButtonGroup>
               <Button
                 type="button"
@@ -357,7 +478,7 @@ export function ImportacaoPreviewPage() {
                 disabled={loading || !parseState}
                 onClick={() => void handleConfirm()}
               >
-                Processar lote
+                {confirmLabel}
               </Button>
             </ButtonGroup>
           </div>

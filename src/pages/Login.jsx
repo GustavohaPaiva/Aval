@@ -687,7 +687,7 @@ export function Login() {
                   name="username"
                   icon={IconUser}
                   autoComplete="username"
-                  placeholder="ex.: joao"
+                  placeholder="ex.: joao.silva"
                   value={username}
                   onChange={(ev) => setUsername(ev.target.value)}
                   disabled={submitting || pendingRedirect}

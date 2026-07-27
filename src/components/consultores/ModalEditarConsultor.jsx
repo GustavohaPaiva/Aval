@@ -9,8 +9,16 @@ import { supabase } from '../../services/supabase'
 
 const FORM_ID = 'form-editar-consultor'
 
-export function ModalEditarConsultor({ open, consultorId, initialNome, onClose, onSaved }) {
+export function ModalEditarConsultor({
+  open,
+  consultorId,
+  initialNome,
+  initialFilial = '',
+  onClose,
+  onSaved,
+}) {
   const [nome, setNome] = useState('')
+  const [filial, setFilial] = useState('')
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState(null)
 
@@ -18,10 +26,11 @@ export function ModalEditarConsultor({ open, consultorId, initialNome, onClose, 
     async (_signal, isActive) => {
       if (!isActive()) return
       setNome(initialNome ?? '')
+      setFilial(initialFilial ?? '')
       setFormError(null)
       setSaving(false)
     },
-    [open, initialNome],
+    [open, initialNome, initialFilial],
     open,
   )
 
@@ -44,6 +53,7 @@ export function ModalEditarConsultor({ open, consultorId, initialNome, onClose, 
     const { error } = await supabase.rpc('update_consultant', {
       p_consultor_id: consultorId,
       p_nome,
+      p_filial: filial.trim(),
     })
     setSaving(false)
 
@@ -52,7 +62,7 @@ export function ModalEditarConsultor({ open, consultorId, initialNome, onClose, 
       return
     }
 
-    onSaved?.(p_nome)
+    onSaved?.({ nome: p_nome, filial: filial.trim() || null })
     onClose()
   }
 
@@ -72,15 +82,26 @@ export function ModalEditarConsultor({ open, consultorId, initialNome, onClose, 
     >
       <form id={FORM_ID} className="flex flex-col gap-6" onSubmit={handleSubmit} noValidate>
         <FormSection title="Identificação">
-          <Input
-            label="Nome completo"
-            name="nome"
-            autoComplete="name"
-            placeholder="Ex.: João Silva"
-            value={nome}
-            onChange={(e) => setNome(e.target.value)}
-            disabled={saving}
-          />
+          <div className="flex flex-col gap-4">
+            <Input
+              label="Nome completo"
+              name="nome"
+              autoComplete="name"
+              placeholder="Ex.: João Silva"
+              value={nome}
+              onChange={(e) => setNome(e.target.value)}
+              disabled={saving}
+            />
+            <Input
+              label="Filial"
+              name="filial"
+              autoComplete="off"
+              placeholder="Ex.: Uberaba, Nova Ponte, Ituverava"
+              value={filial}
+              onChange={(e) => setFilial(e.target.value)}
+              disabled={saving}
+            />
+          </div>
         </FormSection>
         {formError ? <AlertMessage>{formError}</AlertMessage> : null}
       </form>

@@ -51,6 +51,9 @@ export function ConsultorTable({ rows, loading, emptyMessage, onViewDetails }) {
               Nome
             </th>
             <th className="px-4 py-3.5 text-center text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+              Filial
+            </th>
+            <th className="px-4 py-3.5 text-center text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
               Cadastro
             </th>
             <th className="w-16 px-4 py-3.5 text-center text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
@@ -75,6 +78,13 @@ export function ConsultorTable({ rows, loading, emptyMessage, onViewDetails }) {
                 <div className="flex justify-end md:justify-center">
                   <ConsultorNameBadge nome={row.nome} />
                 </div>
+              </td>
+
+              <td className="flex items-center justify-between gap-3 border-b border-slate-100/80 py-2.5 md:table-cell md:border-0 md:px-4 md:py-4 md:text-center">
+                <MobileCellLabel>Filial</MobileCellLabel>
+                <span className="text-sm text-slate-700">
+                  {row.filial?.trim() || '—'}
+                </span>
               </td>
 
               <td className="flex items-center justify-between gap-3 border-b border-slate-100/80 py-2.5 md:table-cell md:border-0 md:px-4 md:py-4 md:text-center">

@@ -228,20 +228,23 @@ describe('spreadsheetAnalyzer', () => {
     expect(result.moedaDetectada).toBe('USD')
   })
 
-  it('isEmbalagem1000Kg aceita apenas label literal 1000KG', () => {
+  it('isEmbalagem1000Kg aceita 1000KG e Big bag liner', () => {
     expect(isEmbalagem1000Kg('1000KG')).toBe(true)
     expect(isEmbalagem1000Kg('1000 KG')).toBe(true)
+    expect(isEmbalagem1000Kg('Big bag liner')).toBe(true)
+    expect(isEmbalagem1000Kg('BIG BAG LINER')).toBe(true)
     expect(isEmbalagem1000Kg('Pallet 1000KG (Saco 25KG)')).toBe(false)
     expect(isEmbalagem1000Kg('Pallet 2000KG (Saco 50KG)')).toBe(false)
     expect(isEmbalagem1000Kg('25KG')).toBe(false)
   })
 
-  it('filterDataRows exclui embalagens diferentes de 1000KG', () => {
+  it('filterDataRows exclui embalagens diferentes de 1000KG / Big bag liner', () => {
     const matrix = [
       ['Produto', 'Descrição', 'Embalagem', 'Preço'],
       ['1', 'Prod A', '1000KG', '10'],
       ['2', 'Prod B', 'Pallet 2000KG (Saco 50KG)', '20'],
       ['3', 'Prod C', '25KG', '5'],
+      ['4', 'Prod D', 'Big bag liner', '15'],
     ]
 
     const rows = filterDataRows(matrix, 0, {
@@ -250,8 +253,9 @@ describe('spreadsheetAnalyzer', () => {
       embalagemIndex: 2,
     })
 
-    expect(rows).toHaveLength(1)
+    expect(rows).toHaveLength(2)
     expect(normalizeEmbalagemLabel(rows[0][2])).toBe('1000kg')
+    expect(normalizeEmbalagemLabel(rows[1][2])).toBe('bigbagliner')
   })
 
   it('analyzeSpreadsheet YARA CBT importa só linhas 1000KG', async () => {
@@ -273,11 +277,145 @@ describe('spreadsheetAnalyzer', () => {
     expect(parsed.ok).toBe(true)
     expect(parsed.dataRows.length).toBeLessThan(60)
     expect(parsed.dataRows.length).toBeGreaterThan(0)
+    expect(parsed.quarterGroups).toHaveLength(1)
 
     const embIdx = findEmbalagemColumnIndex(parsed.matrix, parsed.headerRowIndex)
     expect(embIdx).toBeDefined()
     for (const row of parsed.dataRows) {
       expect(isEmbalagem1000Kg(row[embIdx])).toBe(true)
     }
+  })
+
+  it('parseQuarterFromText lê códigos BRL_Qx_YYYY', async () => {
+    const { parseQuarterFromText } = await import('./spreadsheetAnalyzer')
+    expect(parseQuarterFromText('BRL_Q4_2026')?.value).toBe('Q4 2026')
+    expect(parseQuarterFromText('BRL_Q3_2026')?.value).toBe('Q3 2026')
+    expect(parseQuarterFromText('Q2 2026')?.value).toBe('Q2 2026')
+  })
+
+  it('detectFornecedor identifica CIBRA pelo nome do arquivo', () => {
+    const fromFile = detectFornecedor({
+      fileName: '3 Lista_fertilizates_CIBRA_URA_27_07_26.xlsx',
+      matrix: [['Lista de Preços - Emissão 27/07/2026']],
+    })
+    expect(fromFile.fornecedorNome).toBe('CIBRA')
+  })
+
+  it('agrupa planilha Cibra em Q3 e Q4 com Big bag liner', () => {
+    const matrix = [
+      ['Lista de Preços - CIBRA'],
+      [
+        'Nome do catálogo de preços',
+        'Código',
+        'Nome do produto',
+        'Teores referencia',
+        'Embalagem',
+        'Preço USD/ton',
+        'Entrega até',
+        'Vencimento Financeiro',
+      ],
+      [
+        'BRL_Q4_2026',
+        '10026552',
+        'BASEFORT DUO',
+        '03-28-06',
+        'Big bag liner',
+        '739.73',
+        '31/12/2026',
+        '31/10/2026',
+      ],
+      [
+        'BRL_Q4_2026',
+        '10026553',
+        'UREIA',
+        '',
+        'Big bag liner',
+        '400.00',
+        '31/12/2026',
+        '31/10/2026',
+      ],
+      [
+        'BRL_Q3_2026',
+        '10026552',
+        'BASEFORT DUO',
+        '03-28-06',
+        'Big bag liner',
+        '720.00',
+        '30/09/2026',
+        '23/08/2026',
+      ],
+      [
+        'BRL_Q3_2026',
+        '10029999',
+        'KCL',
+        '',
+        '25KG',
+        '100.00',
+        '30/09/2026',
+        '23/08/2026',
+      ],
+    ]
+
+    const result = analyzeSpreadsheet(matrix)
+    expect(result.ok).toBe(true)
+    expect(result.dataRows.length).toBe(3)
+    expect(result.quarterGroups).toHaveLength(2)
+
+    const q3 = result.quarterGroups.find((g) => g.quarter === 'Q3 2026')
+    const q4 = result.quarterGroups.find((g) => g.quarter === 'Q4 2026')
+    expect(q3?.dataRows).toHaveLength(1)
+    expect(q4?.dataRows).toHaveLength(2)
+    expect(q3?.dataValidade).toBe('2026-09-30')
+    expect(q4?.dataValidade).toBe('2026-12-31')
+    expect(q3?.catalogCode).toBe('BRL_Q3_2026')
+    expect(q4?.catalogCode).toBe('BRL_Q4_2026')
+  })
+
+  it('analyzeSpreadsheet Cibra real separa Q3 e Q4', async () => {
+    const { readFileSync } = await import('fs')
+    const { parseSpreadsheetFile } = await import('./spreadsheetParser')
+    const buffer = readFileSync(
+      './Planilhas de Fornecedores/3 Lista_fertilizates_CIBRA_URA_27_07_26.xlsx',
+    )
+    const file = {
+      name: '3 Lista_fertilizates_CIBRA_URA_27_07_26.xlsx',
+      arrayBuffer: async () =>
+        buffer.buffer.slice(
+          buffer.byteOffset,
+          buffer.byteOffset + buffer.byteLength,
+        ),
+    }
+
+    const parsed = await parseSpreadsheetFile(file)
+    expect(parsed.ok).toBe(true)
+    expect(parsed.fornecedorDetectado?.fornecedorNome).toBe('CIBRA')
+    expect(parsed.dataRows.length).toBeGreaterThan(0)
+    expect(parsed.quarterGroups.length).toBe(2)
+
+    const quarters = parsed.quarterGroups.map((g) => g.quarter).sort()
+    expect(quarters).toEqual(['Q3 2026', 'Q4 2026'])
+
+    const totalGrouped = parsed.quarterGroups.reduce(
+      (sum, g) => sum + g.dataRows.length,
+      0,
+    )
+    expect(totalGrouped).toBe(parsed.dataRows.length)
+
+    // Mesmo SKU pode aparecer em Q3 e Q4 — grupos distintos, sem colisão entre eles.
+    const q3Codes = new Set(
+      parsed.quarterGroups
+        .find((g) => g.quarter === 'Q3 2026')
+        ?.dataRows.map((r) => String(r[1])) ?? [],
+    )
+    const q4Codes = new Set(
+      parsed.quarterGroups
+        .find((g) => g.quarter === 'Q4 2026')
+        ?.dataRows.map((r) => String(r[1])) ?? [],
+    )
+    let overlap = 0
+    for (const code of q3Codes) {
+      if (q4Codes.has(code)) overlap += 1
+    }
+    expect(overlap).toBeGreaterThan(0)
   })
 })

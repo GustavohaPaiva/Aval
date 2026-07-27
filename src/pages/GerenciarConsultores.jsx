@@ -32,7 +32,7 @@ export function GerenciarConsultores() {
 
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, nome, created_at')
+      .select('id, nome, filial, created_at')
       .eq('role', 'consultor')
       .order('nome', { ascending: true })
 
@@ -59,7 +59,11 @@ export function GerenciarConsultores() {
   const filteredRows = useMemo(() => {
     const q = searchQuery.trim().toLowerCase()
     if (!q) return rows
-    return rows.filter((row) => row.nome.toLowerCase().includes(q))
+    return rows.filter((row) => {
+      const nome = (row.nome ?? '').toLowerCase()
+      const filial = (row.filial ?? '').toLowerCase()
+      return nome.includes(q) || filial.includes(q)
+    })
   }, [rows, searchQuery])
 
   const hasFilters = Boolean(searchQuery.trim())

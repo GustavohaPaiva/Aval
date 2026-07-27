@@ -711,14 +711,17 @@ export async function computeStagingMatch(
 
   const { data: oficiais, error } = await supabase
     .from('produtos_oficiais')
-    .select('id, nome')
+    .select('id, nome, quarter')
     .eq('fornecedor_id', fornecedorId)
 
   if (error) return { ok: false, error: error.message }
 
-  const catalogByNome = new Map()
+  const catalogByNomeQuarter = new Map()
   for (const p of oficiais ?? []) {
-    catalogByNome.set(normalizeFertilizante(p.nome), p.id)
+    const key = `${normalizeFertilizante(p.nome)}|${String(p.quarter ?? '')
+      .trim()
+      .toLowerCase()}`
+    catalogByNomeQuarter.set(key, p.id)
   }
 
   const identityCounts = buildStagingIdentityCounts(stagingRows)
@@ -735,11 +738,18 @@ export async function computeStagingMatch(
     if (rowErrors.length > 0) {
       status_linha = 'erro'
       erros += 1
-    } else if (catalogByNome.has(normalizeFertilizante(row.nome))) {
-      status_linha = 'atualizacao'
-      atualizacoes += 1
     } else {
-      novos += 1
+      const matchKey = `${normalizeFertilizante(row.nome)}|${String(
+        row.quarter ?? '',
+      )
+        .trim()
+        .toLowerCase()}`
+      if (catalogByNomeQuarter.has(matchKey)) {
+        status_linha = 'atualizacao'
+        atualizacoes += 1
+      } else {
+        novos += 1
+      }
     }
 
     return { ...row, status_linha, staging_erros: rowErrors }
@@ -1156,7 +1166,7 @@ export async function upsertProdutoOficialManual({
   if (error) {
     const message =
       error.code === '23505'
-        ? 'Já existe um produto com esse fertilizante para este fornecedor.'
+        ? 'Já existe um produto com esse fertilizante e quarter para este fornecedor.'
         : formatSupabaseError(error)
     return { ok: false, error: message }
   }
@@ -1305,12 +1315,14 @@ export async function criarCotacao({ moeda_origem, taxa_conversao }) {
 
 /**
  * Processa planilha com mapeamento automático (sem template salvo).
+ * Aceita `dataRowsOverride` para lançar só um subconjunto (ex.: um quarter Cibra).
  */
 export async function processLoteAuto({
   fornecedorId,
   columnMappings,
   file,
   parseOptions = {},
+  dataRowsOverride,
 }) {
   const {
     data: { session },
@@ -1352,6 +1364,9 @@ export async function processLoteAuto({
   const dataValidade = parseOptions.dataValidade ?? parsed.dataValidade ?? null
   const quarterCalculado =
     parseOptions.quarterCalculado ?? parsed.quarterCalculado ?? ''
+  const dataRows = Array.isArray(dataRowsOverride)
+    ? dataRowsOverride
+    : parsed.dataRows
 
   const loteInsert = {
     usuario_id: session.user.id,
@@ -1361,7 +1376,10 @@ export async function processLoteAuto({
       moedaDetectada,
       dataValidade,
       quarterCalculado,
-      metadataPlanilha: parsed.metadataPlanilha ?? {},
+      metadataPlanilha: {
+        ...(parsed.metadataPlanilha ?? {}),
+        ...(parseOptions.metadataPlanilha ?? {}),
+      },
     }),
   }
 
@@ -1385,7 +1403,7 @@ export async function processLoteAuto({
     buildStagingRows({
       loteId: loteRow.id,
       columnMappings: mappings,
-      dataRows: parsed.dataRows,
+      dataRows,
       loteMoeda: moedaDetectada,
       loteQuarter: quarterCalculado,
       loteEstado: parseOptions.estadoPadrao ?? '',
@@ -1422,6 +1440,78 @@ export async function processLoteAuto({
     ok: true,
     loteId: loteRow.id,
     rowsProcessed: stagingPayload.length,
+    quarter: quarterCalculado,
     parseResult: parsed,
+  }
+}
+
+/**
+ * Cria um lote independente por grupo de quarter (ex.: Cibra Q3 + Q4).
+ */
+export async function processLotesPorQuarter({
+  fornecedorId,
+  columnMappings,
+  file,
+  parseOptions = {},
+  quarterGroups = [],
+}) {
+  const groups = Array.isArray(quarterGroups) ? quarterGroups : []
+  if (groups.length === 0) {
+    return processLoteAuto({
+      fornecedorId,
+      columnMappings,
+      file,
+      parseOptions,
+    })
+  }
+
+  const lotes = []
+  for (const group of groups) {
+    const quarter = String(group.quarter ?? '').trim()
+    if (!quarter) {
+      return {
+        ok: false,
+        error: 'Grupo de quarter sem identificação. Revise a planilha.',
+      }
+    }
+
+    const res = await processLoteAuto({
+      fornecedorId,
+      columnMappings,
+      file,
+      parseOptions: {
+        ...parseOptions,
+        quarterCalculado: quarter,
+        dataValidade: group.dataValidade || parseOptions.dataValidade,
+        metadataPlanilha: {
+          ...(parseOptions.metadataPlanilha ?? {}),
+          catalogCode: group.catalogCode ?? '',
+          quarterGroup: quarter,
+        },
+      },
+      dataRowsOverride: group.dataRows ?? [],
+    })
+
+    if (!res.ok) {
+      return {
+        ok: false,
+        error: `Falha ao criar lote ${quarter}: ${res.error}`,
+        lotes,
+      }
+    }
+
+    lotes.push({
+      loteId: res.loteId,
+      quarter,
+      rowsProcessed: res.rowsProcessed,
+      catalogCode: group.catalogCode ?? '',
+    })
+  }
+
+  return {
+    ok: true,
+    loteId: lotes[0]?.loteId,
+    lotes,
+    rowsProcessed: lotes.reduce((sum, l) => sum + (l.rowsProcessed ?? 0), 0),
   }
 }

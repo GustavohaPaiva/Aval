@@ -74,6 +74,7 @@ export function ConsultorInfoPanel({ profile, usuario, onEdit, onTrocarCredencia
   const rows = [
     { label: 'Cadastro', value: formatShortDate(profile.created_at) },
     { label: 'Usuário', value: usuario ? formatCorporateEmail(usuario) : '—' },
+    { label: 'Filial', value: profile.filial?.trim() || '—' },
     { label: 'Perfil', value: profile.role },
   ]
 
@@ -101,7 +102,7 @@ export function ConsultorInfoPanel({ profile, usuario, onEdit, onTrocarCredencia
               className="h-9 w-full px-3 sm:w-auto"
               onClick={onEdit}
             >
-              Editar nome
+              Editar cadastro
             </Button>
             <Button
               type="button"

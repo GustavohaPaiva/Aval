@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { LoteMetadataPanel } from "../components/importacao/LoteMetadataPanel";
 import { ModalStagingRowForm } from "../components/importacao/ModalStagingRowForm";
 import {
@@ -38,6 +38,9 @@ import { formatLoteDate } from "../utils/importacaoVisuals";
 export function LoteDetalhePage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const siblingLotes = location.state?.siblingLotes ?? [];
+  const routeSuccessMessage = location.state?.successMessage ?? null;
 
   const [lote, setLote] = useState(null);
   const [rows, setRows] = useState([]);
@@ -45,6 +48,7 @@ export function LoteDetalhePage() {
   const [loading, setLoading] = useState(Boolean(id));
   const [error, setError] = useState(null);
   const [actionError, setActionError] = useState(null);
+  const [successMessage, setSuccessMessage] = useState(routeSuccessMessage);
   const [launching, setLaunching] = useState(false);
   const [confirmLaunchOpen, setConfirmLaunchOpen] = useState(false);
   const [rowModalOpen, setRowModalOpen] = useState(false);
@@ -352,6 +356,26 @@ export function LoteDetalhePage() {
 
           {error ? <AlertMessage>{error}</AlertMessage> : null}
           {actionError ? <AlertMessage>{actionError}</AlertMessage> : null}
+          {successMessage ? (
+            <AlertMessage tone="info">{successMessage}</AlertMessage>
+          ) : null}
+          {siblingLotes.length > 0 ? (
+            <AlertMessage tone="info">
+              Outros lançamentos desta planilha:{' '}
+              {siblingLotes.map((sibling, index) => (
+                <span key={sibling.loteId}>
+                  {index > 0 ? ', ' : null}
+                  <Link
+                    className="font-semibold text-primary-700 underline decoration-primary-200 underline-offset-2 hover:text-primary-800"
+                    to={`/admin/importacao/lote/${sibling.loteId}`}
+                  >
+                    {sibling.quarter || 'Lote'}
+                  </Link>
+                </span>
+              ))}
+              . Valide e promova cada um independentemente.
+            </AlertMessage>
+          ) : null}
 
           <LoteMetadataPanel
             key={`${lote.id}-${lote.moeda_detectada}-${lote.data_validade}-${lote.quarter_calculado}-${lote.desconto_usd}-${lote.estado_padrao}`}

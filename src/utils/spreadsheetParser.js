@@ -7,7 +7,9 @@ import {
   buildColumnsFromHeader,
   detectFornecedor,
   filterDataRows,
+  findCatalogColumnIndex,
   findEmbalagemColumnIndex,
+  groupDataRowsByQuarter,
 } from './spreadsheetAnalyzer'
 
 export async function parseSpreadsheetFile(file, options = {}) {
@@ -63,6 +65,23 @@ export async function parseSpreadsheetFile(file, options = {}) {
       (m) => m.target === 'referencia_complementar',
     )?.sourceIndex
     const embalagemIdx = findEmbalagemColumnIndex(matrix, headerRowIndex)
+    const dataRows = filterDataRows(matrix, headerRowIndex, {
+      produtoIndex: produtoIdx,
+      referenciaIndex: referenciaIdx,
+      precoIndex: precoIdx,
+      embalagemIndex: embalagemIdx,
+    })
+    const dataValidade = options.dataValidade ?? base.dataValidade ?? ''
+    const quarterCalculado =
+      options.quarterCalculado ?? base.quarterCalculado ?? ''
+    const catalogIndex = findCatalogColumnIndex(matrix, headerRowIndex)
+    const quarterGroups = groupDataRowsByQuarter(dataRows, {
+      catalogIndex,
+      matrix,
+      headerRowIndex,
+      fallbackQuarter: quarterCalculado,
+      fallbackValidade: dataValidade,
+    })
 
     analysis = {
       ok: true,
@@ -70,16 +89,12 @@ export async function parseSpreadsheetFile(file, options = {}) {
       headerConfidence: 'manual',
       headerScore: null,
       columns,
-      dataRows: filterDataRows(matrix, headerRowIndex, {
-        produtoIndex: produtoIdx,
-        referenciaIndex: referenciaIdx,
-        precoIndex: precoIdx,
-        embalagemIndex: embalagemIdx,
-      }),
+      dataRows,
+      quarterGroups,
+      catalogColumnIndex: catalogIndex,
       moedaDetectada: 'USD',
-      dataValidade: options.dataValidade ?? base.dataValidade ?? '',
-      quarterCalculado:
-        options.quarterCalculado ?? base.quarterCalculado ?? '',
+      dataValidade,
+      quarterCalculado,
       autoMappings: autoMap.mappings,
       autoMapConfidence: autoMap.confidence,
       autoMapMissingRequired: autoMap.missingRequired,
@@ -91,6 +106,8 @@ export async function parseSpreadsheetFile(file, options = {}) {
         autoMapConfidence: autoMap.confidence,
         autoMapMissingRequired: autoMap.missingRequired,
         fornecedorDetectado,
+        catalogColumnIndex: catalogIndex,
+        quarterGroupCount: quarterGroups.length,
       },
     }
   } else {

@@ -60,9 +60,30 @@ const COLUMN_TARGET_KEYWORDS = {
 }
 
 const COLUMN_TARGET_PENALTIES = {
-  codigo_produto: [/descri/i, /embalagem/i, /grupo/i, /fam[ií]lia/i, /caracter/i, /refer/i],
-  produto: [/c[oó]digo\s*lista/i, /grupo/i, /embalagem/i, /caracter/i, /fam[ií]lia/i],
-  referencia_complementar: [/embalagem/i, /grupo/i, /fam[ií]lia/i, /caracter/i],
+  codigo_produto: [
+    /descri/i,
+    /embalagem/i,
+    /grupo/i,
+    /fam[ií]lia/i,
+    /caracter/i,
+    /refer/i,
+    /catalogo|cat[aá]logo/i,
+  ],
+  produto: [
+    /c[oó]digo\s*lista/i,
+    /grupo/i,
+    /embalagem/i,
+    /caracter/i,
+    /fam[ií]lia/i,
+    /catalogo|cat[aá]logo/i,
+  ],
+  referencia_complementar: [
+    /embalagem/i,
+    /grupo/i,
+    /fam[ií]lia/i,
+    /caracter/i,
+    /catalogo|cat[aá]logo/i,
+  ],
   preco_custo: [
     /c[oó]digo/i,
     /embalagem/i,
@@ -75,12 +96,14 @@ const COLUMN_TARGET_PENALTIES = {
     /d[oó]lar/i,
     /financeiro/i,
     /antecipa/i,
+    /catalogo|cat[aá]logo/i,
   ],
 }
 
 /** Nomes conhecidos de fornecedores (extraídos de planilhas-modelo). */
 const KNOWN_FORNECEDOR_PATTERNS = [
   { pattern: /\byara\b/i, name: 'YARA' },
+  { pattern: /\bcibra\b/i, name: 'CIBRA' },
   { pattern: /\bmosaic\b/i, name: 'Mosaic' },
   { pattern: /\bnutrien\b/i, name: 'Nutrien' },
   { pattern: /\bheringer\b/i, name: 'Heringer' },
@@ -378,9 +401,41 @@ export function dateToQuarter(date) {
 }
 
 const QUARTER_TEXT_REGEX = /\bQ\s*([1-4])\b(?:\s*[-/]?\s*(\d{4}))?/i
+/** Catálogos Cibra e similares: BRL_Q4_2026, _Q3_2026, Q4_2026 */
+const CATALOG_QUARTER_REGEX = /(?:^|[_\s-])Q\s*([1-4])[_\s-]?(\d{4})(?:$|[_\s-])/i
 
 /**
- * Busca quarter explícito (QX ou QX YYYY) em qualquer célula da planilha.
+ * Extrai quarter normalizado (`Q4 2026`) de texto livre ou código de catálogo.
+ * @returns {{ value: string, strategy: string } | null}
+ */
+export function parseQuarterFromText(text) {
+  const raw = cellToString(text)
+  if (!raw) return null
+
+  const catalogMatch = raw.match(CATALOG_QUARTER_REGEX)
+  if (catalogMatch) {
+    return {
+      value: `Q${Number(catalogMatch[1])} ${Number(catalogMatch[2])}`,
+      strategy: 'catalog_code',
+    }
+  }
+
+  const plainMatch = raw.match(QUARTER_TEXT_REGEX)
+  if (plainMatch) {
+    const year = plainMatch[2]
+      ? Number(plainMatch[2])
+      : new Date().getFullYear()
+    return {
+      value: `Q${Number(plainMatch[1])} ${year}`,
+      strategy: 'quarter_text',
+    }
+  }
+
+  return null
+}
+
+/**
+ * Busca quarter explícito (QX, QX YYYY ou BRL_Qx_YYYY) em qualquer célula.
  */
 export function detectQuarterText(matrix, maxRows = MAX_SCAN_ROWS) {
   const candidates = []
@@ -392,23 +447,21 @@ export function detectQuarterText(matrix, maxRows = MAX_SCAN_ROWS) {
       const text = cellToString(row[c])
       if (!text) continue
 
-      const match = text.match(QUARTER_TEXT_REGEX)
-      if (!match) continue
+      const parsed = parseQuarterFromText(text)
+      if (!parsed) continue
 
-      const qNum = Number(match[1])
-      const year = match[2] ? Number(match[2]) : new Date().getFullYear()
-      const value = `Q${qNum} ${year}`
-
-      let score = 6
+      let score = parsed.strategy === 'catalog_code' ? 8 : 6
       const lower = normalizeText(text)
-      if (/quarter|trimestre|lista|periodo|per[ií]odo/.test(lower)) score += 3
+      if (/quarter|trimestre|lista|periodo|per[ií]odo|catalogo|cat[aá]logo/.test(lower)) {
+        score += 3
+      }
       if (r < 10) score += 1
 
       candidates.push({
-        value,
+        value: parsed.value,
         score,
         cellRef: cellRef(r, c),
-        strategy: 'quarter_text',
+        strategy: parsed.strategy,
         raw: text,
       })
     }
@@ -477,9 +530,138 @@ export function normalizeEmbalagemLabel(value) {
     .replace(/\s+/g, '')
 }
 
-/** Apenas embalagem literal 1000KG (exclui Pallet 1000KG, 25KG, etc.). */
+/**
+ * Embalagem de 1000 kg: label literal `1000KG` ou equivalente Cibra `Big bag liner`.
+ * Exclui Pallet 1000KG, 25KG, etc.
+ */
 export function isEmbalagem1000Kg(value) {
-  return normalizeEmbalagemLabel(value) === '1000kg'
+  const normalized = normalizeEmbalagemLabel(value)
+  return normalized === '1000kg' || normalized === 'bigbagliner'
+}
+
+/** Coluna de catálogo de preços (ex.: Cibra `BRL_Q4_2026`). */
+export function findCatalogColumnIndex(matrix, headerRowIndex) {
+  const header = matrix[headerRowIndex] ?? []
+  for (let i = 0; i < header.length; i++) {
+    const label = normalizeText(header[i])
+    if (/catalogo|cat[aá]logo/.test(label)) return i
+  }
+
+  // Fallback: primeira coluna cujos valores de dados batem com código de catálogo.
+  const colCount = header.length
+  for (let c = 0; c < colCount; c++) {
+    let hits = 0
+    let samples = 0
+    for (let r = headerRowIndex + 1; r < matrix.length && samples < 30; r++) {
+      const text = cellToString(matrix[r]?.[c])
+      if (!text) continue
+      samples += 1
+      if (parseQuarterFromText(text)?.strategy === 'catalog_code') hits += 1
+    }
+    if (samples >= 3 && hits / samples >= 0.5) return c
+  }
+
+  return undefined
+}
+
+/** Índices de colunas de validade por grupo (Entrega até / Vencimento Financeiro). */
+export function findGroupValidadeColumnIndexes(matrix, headerRowIndex) {
+  const header = matrix[headerRowIndex] ?? []
+  let entregaAteIndex
+  let vencimentoIndex
+  for (let i = 0; i < header.length; i++) {
+    const label = normalizeText(header[i])
+    if (/entrega\s*at[eé]/.test(label)) entregaAteIndex = i
+    else if (/vencimento\s*financeiro/.test(label) || /^vencimento\b/.test(label)) {
+      vencimentoIndex = i
+    }
+  }
+  return { entregaAteIndex, vencimentoIndex }
+}
+
+function pickGroupValidadeIso(rows, { entregaAteIndex, vencimentoIndex }) {
+  for (const idx of [entregaAteIndex, vencimentoIndex]) {
+    if (idx === undefined) continue
+    for (const row of rows) {
+      const date = parseBrazilianDateParts(row[idx])
+      if (date) return dateToIsoDate(date)
+    }
+  }
+  return ''
+}
+
+/**
+ * Agrupa linhas de dados por quarter do catálogo (Cibra multi-quarter).
+ * Sem coluna de catálogo, retorna um único grupo com o quarter/validade da planilha.
+ *
+ * @returns {Array<{ quarter: string, catalogCode: string, dataRows: unknown[][], dataValidade: string }>}
+ */
+export function groupDataRowsByQuarter(
+  dataRows,
+  {
+    catalogIndex,
+    matrix,
+    headerRowIndex,
+    fallbackQuarter = '',
+    fallbackValidade = '',
+  } = {},
+) {
+  if (!dataRows?.length) {
+    return fallbackQuarter
+      ? [
+          {
+            quarter: fallbackQuarter,
+            catalogCode: '',
+            dataRows: [],
+            dataValidade: fallbackValidade,
+          },
+        ]
+      : []
+  }
+
+  if (catalogIndex === undefined) {
+    return [
+      {
+        quarter: fallbackQuarter,
+        catalogCode: '',
+        dataRows,
+        dataValidade: fallbackValidade,
+      },
+    ]
+  }
+
+  const validadeCols = findGroupValidadeColumnIndexes(
+    matrix ?? [],
+    headerRowIndex ?? 0,
+  )
+  const byQuarter = new Map()
+
+  for (const row of dataRows) {
+    const catalogCode = cellToString(row[catalogIndex])
+    const parsed = parseQuarterFromText(catalogCode)
+    const quarter = parsed?.value || fallbackQuarter || 'Sem quarter'
+    const existing = byQuarter.get(quarter)
+    if (existing) {
+      existing.dataRows.push(row)
+      if (!existing.catalogCode && catalogCode) existing.catalogCode = catalogCode
+    } else {
+      byQuarter.set(quarter, {
+        quarter,
+        catalogCode,
+        dataRows: [row],
+        dataValidade: '',
+      })
+    }
+  }
+
+  const groups = [...byQuarter.values()].map((group) => ({
+    ...group,
+    dataValidade:
+      pickGroupValidadeIso(group.dataRows, validadeCols) || fallbackValidade,
+  }))
+
+  groups.sort((a, b) => a.quarter.localeCompare(b.quarter))
+  return groups
 }
 
 /**
@@ -691,10 +873,15 @@ export function detectFornecedor({ fileName = '', matrix = [] } = {}) {
   }
 
   for (const source of sources) {
+    const textForKnown = String(source.text).replace(/[_-]+/g, ' ')
     for (const { pattern, name } of KNOWN_FORNECEDOR_PATTERNS) {
-      if (!pattern.test(source.text)) continue
+      if (!pattern.test(source.text) && !pattern.test(textForKnown)) continue
       let score = 8 + source.scoreBoost
       if (/lista\s+de\s+pre[çc]os/i.test(source.text)) score += 4
+      // Preferência a nomes conhecidos sobre extratos genéricos do título.
+      if (source.strategy === 'filename' || source.strategy === 'filename_token') {
+        score += 3
+      }
       candidates.push({
         value: name,
         score,
@@ -708,7 +895,14 @@ export function detectFornecedor({ fileName = '', matrix = [] } = {}) {
     )
     if (titleMatch) {
       const rawName = titleMatch[1].trim().replace(/\s+/g, ' ')
-      if (rawName.length >= 2 && rawName.length <= 80) {
+      // Evita capturar "Emissão dd/mm/aaaa" como se fosse fornecedor.
+      const looksLikeEmission =
+        /emiss[aã]o|d[oó]lar|\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}/i.test(rawName)
+      if (
+        !looksLikeEmission &&
+        rawName.length >= 2 &&
+        rawName.length <= 80
+      ) {
         candidates.push({
           value: rawName,
           score: 6 + source.scoreBoost,
@@ -806,6 +1000,21 @@ export function analyzeSpreadsheet(matrix) {
     embalagemIndex: embalagemIdx,
   })
 
+  const catalogIndex = findCatalogColumnIndex(matrix, headerRowIndex)
+  const quarterGroups = groupDataRowsByQuarter(dataRows, {
+    catalogIndex,
+    matrix,
+    headerRowIndex,
+    fallbackQuarter: quarterCalculado,
+    fallbackValidade: dateToIsoDate(dataValidadeDate),
+  })
+
+  const primaryGroup =
+    quarterGroups.length === 1
+      ? quarterGroups[0]
+      : quarterGroups.find((g) => g.quarter === quarterCalculado) ??
+        quarterGroups[0]
+
   return {
     ok: true,
     headerRowIndex,
@@ -813,9 +1022,12 @@ export function analyzeSpreadsheet(matrix) {
     headerScore: score,
     columns,
     dataRows,
+    quarterGroups,
+    catalogColumnIndex: catalogIndex,
     moedaDetectada,
-    dataValidade: dateToIsoDate(dataValidadeDate),
-    quarterCalculado,
+    dataValidade:
+      primaryGroup?.dataValidade || dateToIsoDate(dataValidadeDate),
+    quarterCalculado: primaryGroup?.quarter || quarterCalculado,
     autoMappings: autoMap.mappings,
     autoMapConfidence: autoMap.confidence,
     autoMapMissingRequired: autoMap.missingRequired,
@@ -832,6 +1044,8 @@ export function analyzeSpreadsheet(matrix) {
       validadeDefaultAplicada: !detectedValidade,
       autoMapConfidence: autoMap.confidence,
       autoMapMissingRequired: autoMap.missingRequired,
+      catalogColumnIndex: catalogIndex,
+      quarterGroupCount: quarterGroups.length,
     },
   }
 }

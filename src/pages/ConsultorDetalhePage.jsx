@@ -49,7 +49,7 @@ export function ConsultorDetalhePage() {
           .maybeSingle(),
         supabase
           .from("profiles")
-          .select("id, nome, created_at, role")
+          .select("id, nome, filial, created_at, role")
           .eq("id", id)
           .maybeSingle(),
         supabase.rpc("get_consultant_email", { p_consultor_id: id }),
@@ -147,6 +147,7 @@ export function ConsultorDetalhePage() {
             open={editOpen}
             consultorId={id}
             initialNome={profile.nome}
+            initialFilial={profile.filial ?? ""}
             onClose={() => setEditOpen(false)}
             onSaved={() => reload()}
           />

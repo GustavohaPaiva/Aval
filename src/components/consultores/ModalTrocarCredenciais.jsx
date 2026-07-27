@@ -6,6 +6,10 @@ import { Modal } from '../ui/Modal'
 import { ModalFormFooter } from '../ui/ModalFormFooter'
 import { useAbortableAsync } from '../../hooks/useAbortableAsync'
 import { supabase } from '../../services/supabase'
+import {
+  isValidDocumentPassword,
+  normalizeDocumentDigits,
+} from '../../utils/consultantLogin'
 import { buildSyagriEmail } from '../../utils/syagriEmail'
 
 const FORM_ID = 'form-trocar-credenciais'
@@ -52,12 +56,15 @@ export function ModalTrocarCredenciais({
     }
 
     const wantsPassword = senha.length > 0 || confirmSenha.length > 0
+    const normalizedPassword = wantsPassword
+      ? normalizeDocumentDigits(senha)
+      : null
     if (wantsPassword) {
-      if (senha.length < 8) {
-        setFormError('A senha deve ter pelo menos 8 caracteres.')
+      if (!isValidDocumentPassword(normalizedPassword ?? '')) {
+        setFormError('A senha deve ser o CPF (11) ou CNPJ (14), só números.')
         return
       }
-      if (senha !== confirmSenha) {
+      if (normalizeDocumentDigits(senha) !== normalizeDocumentDigits(confirmSenha)) {
         setFormError('As senhas não coincidem.')
         return
       }
@@ -67,7 +74,7 @@ export function ModalTrocarCredenciais({
     const { error } = await supabase.rpc('update_consultant', {
       p_consultor_id: consultorId,
       p_email,
-      p_password: wantsPassword ? senha : null,
+      p_password: wantsPassword ? normalizedPassword : null,
     })
     setSaving(false)
 
@@ -104,17 +111,17 @@ export function ModalTrocarCredenciais({
               label="Usuário"
               name="usuario"
               autoComplete="off"
-              placeholder="ex.: joao"
+              placeholder="ex.: joao.silva"
               value={usuario}
               onChange={(e) => setUsuario(e.target.value)}
               disabled={saving}
             />
             <Input
-              label="Nova senha"
+              label="Nova senha (CPF/CNPJ)"
               name="senha"
               type="password"
               autoComplete="new-password"
-              placeholder="Opcional — mínimo de 8 caracteres"
+              placeholder="Opcional — só números do CPF/CNPJ"
               value={senha}
               onChange={(e) => setSenha(e.target.value)}
               disabled={saving}
