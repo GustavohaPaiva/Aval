@@ -1195,39 +1195,21 @@ export async function inativarListaImportacao(loteId) {
 export async function excluirListaImportacao(loteId) {
   if (!loteId) return { ok: false, error: 'Lista de produtos não informada.' }
 
-  const { count, error: countError } = await supabase
-    .from('produtos_oficiais')
-    .select('id', { count: 'exact', head: true })
-    .eq('lote_id', loteId)
-
-  if (countError) {
-    return { ok: false, error: formatSupabaseError(countError) }
-  }
-
-  const prodCount = count ?? 0
-  if (prodCount > 0) {
-    return {
-      ok: false,
-      error: `Não é possível excluir: esta lista de produtos possui ${prodCount} produto${prodCount === 1 ? '' : 's'} vinculado${prodCount === 1 ? '' : 's'}. Inative a lista em vez de excluir.`,
-    }
-  }
-
-  const { error } = await supabase
-    .from('lotes_importacao')
-    .delete()
-    .eq('id', loteId)
+  const { data, error } = await supabase.rpc('excluir_lista_importacao', {
+    p_lote_id: loteId,
+  })
 
   if (error) {
     return {
       ok: false,
       error:
         error.code === '23503'
-          ? 'Não é possível excluir: esta lista de produtos possui registros vinculados.'
+          ? 'Não é possível excluir: esta lista de produtos possui registros vinculados. Inative a lista em vez de excluir.'
           : formatSupabaseError(error),
     }
   }
 
-  return { ok: true }
+  return { ok: true, result: data }
 }
 
 export async function reativarListaImportacao(loteId) {

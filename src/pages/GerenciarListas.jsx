@@ -166,9 +166,12 @@ export function GerenciarListas() {
 
   async function handleExcluir(lista) {
     setActionError(null)
+    const label = [lista.fornecedor_nome, lista.quarter_calculado]
+      .filter(Boolean)
+      .join(' ')
     if (
       !window.confirm(
-        'Tem certeza que deseja excluir esta lista de produtos?',
+        `Excluir definitivamente a lista de produtos${label ? ` de ${label}` : ''} e todos os produtos vinculados? Esta ação não pode ser desfeita.`,
       )
     ) {
       return
@@ -200,7 +203,7 @@ export function GerenciarListas() {
         <PageHeader
           eyebrow="Administração"
           title="Listas de produtos"
-          description="Gerencie as listas de produtos lançadas: inative para desativar todos os produtos vinculados de uma vez, ou exclua listas sem vínculos."
+          description="Gerencie as listas de produtos lançadas: inative para desativar os produtos vinculados, ou exclua a lista e os produtos de forma definitiva."
           className="relative mb-0"
         />
 

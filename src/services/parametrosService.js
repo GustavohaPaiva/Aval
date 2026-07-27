@@ -51,6 +51,7 @@ export async function updateParametrosSistema({
   }
 
   const payload = {
+    id: 1,
     updated_at: new Date().toISOString(),
     updated_by: session.user.id,
   }
@@ -61,6 +62,8 @@ export async function updateParametrosSistema({
       return { ok: false, error: 'Informe um ICMS válido entre 0 e 100.' }
     }
     payload.icms_percentual = icms
+  } else {
+    payload.icms_percentual = DEFAULT_ICMS_PERCENTUAL
   }
 
   if (pis_cofins_percentual !== undefined) {
@@ -89,8 +92,7 @@ export async function updateParametrosSistema({
 
   const { data, error } = await supabase
     .from('parametros_sistema')
-    .update(payload)
-    .eq('id', 1)
+    .upsert(payload, { onConflict: 'id' })
     .select(
       'id, icms_percentual, pis_cofins_percentual, margem_percentual, updated_at',
     )
