@@ -11,12 +11,19 @@ import {
   calcMargemLucro,
   calcPrecoSimulacao,
   DEFAULT_ICMS_PERCENTUAL,
+  DEFAULT_TAXA_ANTECIPACAO,
+  DEFAULT_TAXA_JUROS,
 } from '../utils/pricingCalculations'
 import { roundMoney } from '../utils/roundMoney'
 import { createDraftSaver, loadDraft } from '../utils/uiDraftStorage'
 
 const SIMULADOR_DRAFT_KEY = 'simulador-draft'
-const OVERRIDE_FIELDS = ['custoUsd', 'descontoUsd', 'taxa', 'frete']
+const COST_OVERRIDE_FIELDS = ['custoUsd', 'descontoUsd', 'taxa', 'frete']
+const OVERRIDE_FIELDS = [
+  ...COST_OVERRIDE_FIELDS,
+  'taxaAntecipacao',
+  'taxaJuros',
+]
 
 function readSimulationDraft() {
   const draft = loadDraft(SIMULADOR_DRAFT_KEY, null)
@@ -61,16 +68,21 @@ function resolvePricing(product, context, overrides) {
     context
   const dias = calcDiasAntecipacao(dataPagamento, product.vencimentoLista)
   const ov = normalizeOverrides(overrides)
-  const hasOverride = Boolean(ov)
+  const hasCostOverride = COST_OVERRIDE_FIELDS.some((f) => ov?.[f] != null)
 
   const custoUsd = ov?.custoUsd ?? Number(product.custoUsd ?? 0)
   const descontoUsd = ov?.descontoUsd ?? Number(product.descontoUsd ?? 0)
   const taxa = ov?.taxa ?? Number(product.taxa ?? 0)
   const frete = ov?.frete ?? freteUnitario
+  const taxaAntecipacao =
+    ov?.taxaAntecipacao ??
+    Number(product.taxaAntecipacao ?? DEFAULT_TAXA_ANTECIPACAO)
+  const taxaJuros =
+    ov?.taxaJuros ?? Number(product.taxaJuros ?? DEFAULT_TAXA_JUROS)
 
   let custoBrl
   let custoIcms
-  if (hasOverride) {
+  if (hasCostOverride) {
     custoBrl = calcCustoBrlComDesconto(custoUsd, descontoUsd, taxa)
     custoIcms = calcCustoIcmsFromBrl(custoBrl, icmsPercentual)
   } else {
@@ -84,6 +96,8 @@ function resolvePricing(product, context, overrides) {
     custoIcms,
     freteUnitario: frete,
     diasAntecipacao: dias,
+    taxaAntecipacao,
+    taxaJuros,
   })
 
   return {
@@ -95,11 +109,13 @@ function resolvePricing(product, context, overrides) {
       custoBrl,
       custoIcms,
       frete,
+      taxaAntecipacao,
+      taxaJuros,
       valorComFrete,
       fatorFinanceiro: fator,
       diasAntecipacao: dias,
       financeiro,
-      hasOverride,
+      hasOverride: Boolean(ov),
     },
   }
 }
@@ -574,6 +590,8 @@ export function useSimulation(options = {}) {
               descontoUsd: it.override_desconto_usd ?? undefined,
               taxa: it.override_taxa ?? undefined,
               frete: it.override_frete ?? undefined,
+              taxaAntecipacao: it.override_taxa_antecipacao ?? undefined,
+              taxaJuros: it.override_taxa_juros ?? undefined,
             }),
           })),
       )

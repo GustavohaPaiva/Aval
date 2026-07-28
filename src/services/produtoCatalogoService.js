@@ -4,6 +4,8 @@ import { lookupFreteValor } from './freteService'
 import {
   calcCustoIcmsFromBrl,
   DEFAULT_ICMS_PERCENTUAL,
+  DEFAULT_TAXA_ANTECIPACAO,
+  DEFAULT_TAXA_JUROS,
 } from '../utils/pricingCalculations'
 import { fetchParametrosSistema } from './parametrosService'
 
@@ -19,7 +21,7 @@ export async function fetchCatalogoSimulador({ quarter, estado } = {}) {
   let query = supabase
     .from('produtos_oficiais')
     .select(
-      'id, nome, referencia_complementar, fornecedor_id, estado, classe, quarter, moeda_origem, preco_original, desconto_usd, preco_interno_calculado, custo_icms, vencimento_lista, ativo, fornecedores(nome)',
+      'id, nome, referencia_complementar, fornecedor_id, estado, classe, quarter, moeda_origem, preco_original, desconto_usd, preco_interno_calculado, custo_icms, vencimento_lista, taxa_antecipacao, taxa_juros, ativo, fornecedores(nome)',
     )
     .eq('ativo', true)
     .ilike('quarter', `${quarter}%`)
@@ -68,6 +70,10 @@ export async function fetchCatalogoSimulador({ quarter, estado } = {}) {
         p.custo_icms ?? calcCustoIcmsFromBrl(custoBrl, icmsPercentual),
       ),
       vencimentoLista: p.vencimento_lista ?? '',
+      taxaAntecipacao: Number(
+        p.taxa_antecipacao ?? DEFAULT_TAXA_ANTECIPACAO,
+      ),
+      taxaJuros: Number(p.taxa_juros ?? DEFAULT_TAXA_JUROS),
     }
   })
 
@@ -90,6 +96,8 @@ export function getFallbackCatalog(icmsPercentual = DEFAULT_ICMS_PERCENTUAL) {
     custoBrl: p.precoBase,
     custoIcms: calcCustoIcmsFromBrl(p.precoBase, icmsPercentual),
     vencimentoLista: '',
+    taxaAntecipacao: DEFAULT_TAXA_ANTECIPACAO,
+    taxaJuros: DEFAULT_TAXA_JUROS,
   }))
 }
 

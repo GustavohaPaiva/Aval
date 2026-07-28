@@ -81,6 +81,34 @@ describe('pricingCalculations', () => {
     expect(result.precoFinal).not.toBeCloseTo(1000 / 0.85, 2)
   })
 
+  it('aceita taxas customizadas de antecipação e juros', () => {
+    const diasAnt = -30
+    const fatorAnt = calcFatorAntecipacao(diasAnt, 3.4)
+    expect(fatorAnt).toBeCloseTo(1.034, 6)
+
+    const resultAnt = calcPrecoSimulacao({
+      custoIcms: 1000,
+      freteUnitario: 0,
+      diasAntecipacao: diasAnt,
+      taxaAntecipacao: 3.4,
+    })
+    expect(resultAnt.fator).toBeCloseTo(fatorAnt, 6)
+    expect(resultAnt.valorAjustado).toBeCloseTo(1000 / fatorAnt, 2)
+
+    const diasJuros = 30
+    const fatorJuros = calcFatorJuros(diasJuros, 4)
+    expect(fatorJuros).toBeCloseTo(0.96, 6)
+
+    const resultJuros = calcPrecoSimulacao({
+      custoIcms: 1000,
+      freteUnitario: 0,
+      diasAntecipacao: diasJuros,
+      taxaJuros: 4,
+    })
+    expect(resultJuros.fator).toBeCloseTo(fatorJuros, 6)
+    expect(resultJuros.valorAjustado).toBeCloseTo(1000 / fatorJuros, 2)
+  })
+
   it('calcula margem de lucro da planilha (proposta - 4% - 1% - financeiro)', () => {
     // (3950 - 3950*0.04 - 3950*0.01 - 3000) / 3950
     expect(calcMargemLucro(3950, 3000)).toBeCloseTo((3950 * 0.95 - 3000) / 3950, 6)

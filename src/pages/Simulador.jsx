@@ -975,7 +975,8 @@ export function Simulador() {
             ) : null}
             {showGestorReview ? (
               <p className="text-sm text-slate-600">
-                Revisão do gestor: ajuste os fatores de custo por linha para
+                Revisão do gestor: ajuste os fatores de custo e as taxas de
+                antecipação/juros por linha para recalcular o preço de tabela e
                 validar o preço especial desta simulação.
               </p>
             ) : null}

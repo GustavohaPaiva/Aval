@@ -44,20 +44,37 @@ export function calcDiasAntecipacao(dataPagamento, vencimentoLista) {
   return Math.round(ms / (1000 * 60 * 60 * 24))
 }
 
-/**
- * Fator de antecipação (planilha col. L): (100 - (1.7/30)*dias)/100
- * Com dias negativos (antecipado) o fator fica > 1.
- */
-export function calcFatorAntecipacao(dias) {
-  return (100 - (1.7 / 30) * Number(dias)) / 100
+/** Taxa padrão de antecipação (% a cada 30 dias) — planilha col. L. */
+export const DEFAULT_TAXA_ANTECIPACAO = 1.7
+
+/** Taxa padrão de juros (% a cada 30 dias) — planilha col. M. */
+export const DEFAULT_TAXA_JUROS = 2
+
+function resolveTaxaFinanceira(taxa, fallback) {
+  const n = Number(taxa)
+  if (!Number.isFinite(n) || n < 0) return fallback
+  return n
 }
 
 /**
- * Fator de juros (planilha col. M): (100 - (2/30)*dias)/100
+ * Fator de antecipação (planilha col. L): (100 - (taxa/30)*dias)/100
+ * Com dias negativos (antecipado) o fator fica > 1.
+ */
+export function calcFatorAntecipacao(
+  dias,
+  taxa = DEFAULT_TAXA_ANTECIPACAO,
+) {
+  const t = resolveTaxaFinanceira(taxa, DEFAULT_TAXA_ANTECIPACAO)
+  return (100 - (t / 30) * Number(dias)) / 100
+}
+
+/**
+ * Fator de juros (planilha col. M): (100 - (taxa/30)*dias)/100
  * Com dias positivos (atraso) o fator fica < 1.
  */
-export function calcFatorJuros(dias) {
-  return (100 - (2 / 30) * Number(dias)) / 100
+export function calcFatorJuros(dias, taxa = DEFAULT_TAXA_JUROS) {
+  const t = resolveTaxaFinanceira(taxa, DEFAULT_TAXA_JUROS)
+  return (100 - (t / 30) * Number(dias)) / 100
 }
 
 /**
@@ -76,15 +93,17 @@ export function calcPrecoSimulacao({
   freteUnitario = 0,
   diasAntecipacao = 0,
   margemRatio = 0.85,
+  taxaAntecipacao = DEFAULT_TAXA_ANTECIPACAO,
+  taxaJuros = DEFAULT_TAXA_JUROS,
 }) {
   const valorComFrete = roundMoney(Number(custoIcms) + Number(freteUnitario))
   const dias = Number(diasAntecipacao) || 0
 
   let fator = 1
   if (dias < 0) {
-    fator = calcFatorAntecipacao(dias)
+    fator = calcFatorAntecipacao(dias, taxaAntecipacao)
   } else if (dias > 0) {
-    fator = calcFatorJuros(dias)
+    fator = calcFatorJuros(dias, taxaJuros)
   }
 
   const valorAjustado =

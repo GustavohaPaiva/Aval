@@ -117,7 +117,7 @@ const SimulationLinesTableRow = memo(function SimulationLinesTableRow({
             <button
               type="button"
               onClick={() => setOverridesOpen((open) => !open)}
-              title="Parâmetros de custo"
+              title="Ajustes de parâmetros"
               className={[
                 "relative inline-flex size-9 items-center justify-center rounded-2xl transition-colors",
                 overridesOpen || hasOverride

@@ -1,11 +1,15 @@
 import { supabase } from './supabase'
 import { IGNORE_COLUMN_VALUE } from '../constants/mapeamentoCampos'
-import { dateToQuarter, parsePrecoValue } from '../utils/spreadsheetAnalyzer'
+import { parsePrecoValue } from '../utils/spreadsheetAnalyzer'
 import {
   isValidFertilizante,
   normalizeFertilizante,
 } from '../utils/normalizeSku'
-import { calcCustoBrlComDesconto } from '../utils/pricingCalculations'
+import {
+  calcCustoBrlComDesconto,
+  DEFAULT_TAXA_ANTECIPACAO,
+  DEFAULT_TAXA_JUROS,
+} from '../utils/pricingCalculations'
 import { formatSupabaseError } from '../utils/supabaseErrors'
 
 const STAGING_ROW_FIELDS =
@@ -21,6 +25,8 @@ const LOTE_DETAIL_SELECT = `
       quarter_calculado,
       desconto_usd,
       estado_padrao,
+      taxa_antecipacao,
+      taxa_juros,
       ativo,
       metadata_planilha,
       fornecedores ( id, nome )
@@ -387,6 +393,10 @@ export async function fetchLoteById(loteId) {
       quarter_calculado: data.quarter_calculado ?? '',
       desconto_usd: Number(data.desconto_usd ?? 0),
       estado_padrao: data.estado_padrao ?? '',
+      taxa_antecipacao: Number(
+        data.taxa_antecipacao ?? DEFAULT_TAXA_ANTECIPACAO,
+      ),
+      taxa_juros: Number(data.taxa_juros ?? DEFAULT_TAXA_JUROS),
       ativo: data.ativo ?? true,
       metadata_planilha: data.metadata_planilha ?? {},
       fornecedor_nome: fornecedor?.nome ?? '—',
@@ -398,10 +408,6 @@ export async function updateLoteMetadata(loteId, patch) {
   const payload = {}
   if (patch.data_validade !== undefined) {
     payload.data_validade = patch.data_validade || null
-    if (patch.data_validade && patch.quarter_calculado === undefined) {
-      const d = new Date(`${patch.data_validade}T12:00:00`)
-      payload.quarter_calculado = dateToQuarter(d)
-    }
   }
   if (patch.quarter_calculado !== undefined) {
     payload.quarter_calculado = String(patch.quarter_calculado).trim()
@@ -412,13 +418,22 @@ export async function updateLoteMetadata(loteId, patch) {
   if (patch.estado_padrao !== undefined) {
     payload.estado_padrao = patch.estado_padrao || null
   }
+  if (patch.taxa_antecipacao !== undefined) {
+    const n = Number(patch.taxa_antecipacao)
+    payload.taxa_antecipacao =
+      Number.isFinite(n) && n >= 0 ? n : DEFAULT_TAXA_ANTECIPACAO
+  }
+  if (patch.taxa_juros !== undefined) {
+    const n = Number(patch.taxa_juros)
+    payload.taxa_juros = Number.isFinite(n) && n >= 0 ? n : DEFAULT_TAXA_JUROS
+  }
 
   const { data, error } = await supabase
     .from('lotes_importacao')
     .update(payload)
     .eq('id', loteId)
     .select(
-      'id, moeda_detectada, data_validade, quarter_calculado, desconto_usd, estado_padrao, ativo, metadata_planilha',
+      'id, moeda_detectada, data_validade, quarter_calculado, desconto_usd, estado_padrao, taxa_antecipacao, taxa_juros, ativo, metadata_planilha',
     )
     .single()
 
@@ -426,6 +441,14 @@ export async function updateLoteMetadata(loteId, patch) {
 
   if (patch.estado_padrao !== undefined && patch.estado_padrao) {
     const bulkRes = await bulkUpdateStagingEstado(loteId, patch.estado_padrao)
+    if (!bulkRes.ok) return bulkRes
+  }
+
+  if (patch.quarter_calculado !== undefined && payload.quarter_calculado) {
+    const bulkRes = await bulkUpdateStagingQuarter(
+      loteId,
+      payload.quarter_calculado,
+    )
     if (!bulkRes.ok) return bulkRes
   }
 
@@ -438,6 +461,21 @@ export async function updateLoteMetadata(loteId, patch) {
   }
 
   return { ok: true, row: data }
+}
+
+export async function bulkUpdateStagingQuarter(loteId, quarter) {
+  const quarterTrim = String(quarter ?? '').trim()
+  if (!quarterTrim) {
+    return { ok: false, error: 'Informe o quarter.' }
+  }
+
+  const { error } = await supabase
+    .from('produtos_staging')
+    .update({ quarter: quarterTrim })
+    .eq('lote_id', loteId)
+
+  if (error) return { ok: false, error: error.message }
+  return { ok: true }
 }
 
 export async function bulkUpdateStagingEstado(loteId, estado, rowIds = null) {
@@ -699,7 +737,7 @@ export function validateStagingRowFields(row) {
 export async function computeStagingMatch(
   fornecedorId,
   stagingRows,
-  { loteEstadoPadrao = '', loteDescontoUsd = 0 } = {},
+  { loteEstadoPadrao = '', loteDescontoUsd = 0, loteQuarter = '' } = {},
 ) {
   if (!fornecedorId || stagingRows.length === 0) {
     return {
@@ -711,21 +749,24 @@ export async function computeStagingMatch(
 
   const { data: oficiais, error } = await supabase
     .from('produtos_oficiais')
-    .select('id, nome, quarter')
+    .select('id, nome, quarter, estado')
     .eq('fornecedor_id', fornecedorId)
 
   if (error) return { ok: false, error: error.message }
 
-  const catalogByNomeQuarter = new Map()
+  const catalogByNomeQuarterEstado = new Map()
   for (const p of oficiais ?? []) {
+    const estado = normalizeEstado(p.estado)
+    if (!estado) continue
     const key = `${normalizeFertilizante(p.nome)}|${String(p.quarter ?? '')
       .trim()
-      .toLowerCase()}`
-    catalogByNomeQuarter.set(key, p.id)
+      .toLowerCase()}|${estado}`
+    catalogByNomeQuarterEstado.set(key, p.id)
   }
 
   const identityCounts = buildStagingIdentityCounts(stagingRows)
   const matchContext = { identityCounts, loteEstadoPadrao, loteDescontoUsd }
+  const fallbackQuarter = String(loteQuarter ?? '').trim()
 
   let novos = 0
   let atualizacoes = 0
@@ -739,12 +780,12 @@ export async function computeStagingMatch(
       status_linha = 'erro'
       erros += 1
     } else {
-      const matchKey = `${normalizeFertilizante(row.nome)}|${String(
-        row.quarter ?? '',
-      )
-        .trim()
-        .toLowerCase()}`
-      if (catalogByNomeQuarter.has(matchKey)) {
+      const estado =
+        normalizeEstado(row.estado) || normalizeEstado(loteEstadoPadrao)
+      const rowQuarter =
+        String(row.quarter ?? '').trim() || fallbackQuarter
+      const matchKey = `${normalizeFertilizante(row.nome)}|${rowQuarter.toLowerCase()}|${estado ?? ''}`
+      if (estado && catalogByNomeQuarterEstado.has(matchKey)) {
         status_linha = 'atualizacao'
         atualizacoes += 1
       } else {
@@ -771,6 +812,7 @@ export async function applyStagingMatchToLote(loteId, fornecedorId) {
     ? {
         loteEstadoPadrao: loteRes.row.estado_padrao ?? '',
         loteDescontoUsd: loteRes.row.desconto_usd ?? 0,
+        loteQuarter: loteRes.row.quarter_calculado ?? '',
       }
     : {}
 
@@ -1166,7 +1208,7 @@ export async function upsertProdutoOficialManual({
   if (error) {
     const message =
       error.code === '23505'
-        ? 'Já existe um produto com esse fertilizante e quarter para este fornecedor.'
+        ? 'Já existe um produto com esse fertilizante, quarter e estado para este fornecedor.'
         : formatSupabaseError(error)
     return { ok: false, error: message }
   }

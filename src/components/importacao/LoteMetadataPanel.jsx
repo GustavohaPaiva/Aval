@@ -2,6 +2,10 @@ import { useState } from 'react'
 import { ESTADOS_PRODUTO } from '../../constants/mapeamentoCampos'
 import { Input } from '../ui/Input'
 import { Select } from '../ui/Select'
+import {
+  DEFAULT_TAXA_ANTECIPACAO,
+  DEFAULT_TAXA_JUROS,
+} from '../../utils/pricingCalculations'
 import { dateToQuarter, parsePrecoValue } from '../../utils/spreadsheetAnalyzer'
 
 function formatValidade(value) {
@@ -13,6 +17,20 @@ function parseDescontoUsd(value) {
   const raw = String(value ?? '').trim()
   if (!raw) return 0
   return parsePrecoValue(raw) ?? 0
+}
+
+function parseTaxaPercentual(value, fallback) {
+  const raw = String(value ?? '').trim()
+  if (!raw) return fallback
+  const num = parsePrecoValue(raw)
+  if (num == null || !Number.isFinite(num) || num < 0) return fallback
+  return num
+}
+
+function formatTaxaInput(value, fallback) {
+  const num = Number(value)
+  if (!Number.isFinite(num)) return String(fallback)
+  return String(num)
 }
 
 export function LoteMetadataPanel({
@@ -30,6 +48,12 @@ export function LoteMetadataPanel({
   const [estadoPadrao, setEstadoPadrao] = useState(
     () => lote?.estado_padrao ?? '',
   )
+  const [taxaAntecipacao, setTaxaAntecipacao] = useState(() =>
+    formatTaxaInput(lote?.taxa_antecipacao, DEFAULT_TAXA_ANTECIPACAO),
+  )
+  const [taxaJuros, setTaxaJuros] = useState(() =>
+    formatTaxaInput(lote?.taxa_juros, DEFAULT_TAXA_JUROS),
+  )
   const [saving, setSaving] = useState(false)
 
   async function savePatch(patch) {
@@ -45,12 +69,19 @@ export function LoteMetadataPanel({
       quarter_calculado: quarter,
       desconto_usd: parseDescontoUsd(descontoUsd),
       estado_padrao: estadoPadrao || null,
+      taxa_antecipacao: parseTaxaPercentual(
+        taxaAntecipacao,
+        DEFAULT_TAXA_ANTECIPACAO,
+      ),
+      taxa_juros: parseTaxaPercentual(taxaJuros, DEFAULT_TAXA_JUROS),
     })
   }
 
   function handleValidadeChange(value) {
     setDataValidade(value)
-    if (value) {
+    // Only derive quarter from date when the field is still empty.
+    // Multi-quarter sheets (Cibra Q3/Q4) keep the catalog quarter as source of truth.
+    if (value && !String(quarter ?? '').trim()) {
       const d = new Date(`${value}T12:00:00`)
       if (!Number.isNaN(d.getTime())) {
         setQuarter(dateToQuarter(d))
@@ -66,6 +97,16 @@ export function LoteMetadataPanel({
   async function handleDescontoBlur() {
     await savePatch({
       desconto_usd: parseDescontoUsd(descontoUsd),
+    })
+  }
+
+  async function handleTaxasBlur() {
+    await savePatch({
+      taxa_antecipacao: parseTaxaPercentual(
+        taxaAntecipacao,
+        DEFAULT_TAXA_ANTECIPACAO,
+      ),
+      taxa_juros: parseTaxaPercentual(taxaJuros, DEFAULT_TAXA_JUROS),
     })
   }
 
@@ -112,6 +153,24 @@ export function LoteMetadataPanel({
           onChange={(e) => void handleEstadoChange(e.target.value)}
           options={ESTADOS_PRODUTO}
           disabled={readOnly}
+        />
+        <Input
+          label="Antecipação (% / 30 dias)"
+          inputMode="decimal"
+          value={taxaAntecipacao}
+          onChange={(e) => setTaxaAntecipacao(e.target.value)}
+          onBlur={() => void handleTaxasBlur()}
+          disabled={readOnly}
+          placeholder="Ex.: 1,7"
+        />
+        <Input
+          label="Juros (% / 30 dias)"
+          inputMode="decimal"
+          value={taxaJuros}
+          onChange={(e) => setTaxaJuros(e.target.value)}
+          onBlur={() => void handleTaxasBlur()}
+          disabled={readOnly}
+          placeholder="Ex.: 2"
         />
       </div>
     </section>

@@ -82,12 +82,21 @@ function buildSimulationFields(input, status) {
 
 function buildOverrideFields(overrides, userId) {
     const ov = overrides ?? {};
-    const hasOverride = ['custoUsd', 'descontoUsd', 'taxa', 'frete'].some((f) => ov[f] != null);
+    const hasOverride = [
+        'custoUsd',
+        'descontoUsd',
+        'taxa',
+        'frete',
+        'taxaAntecipacao',
+        'taxaJuros',
+    ].some((f) => ov[f] != null);
     return {
         override_custo_usd: ov.custoUsd ?? null,
         override_desconto_usd: ov.descontoUsd ?? null,
         override_taxa: ov.taxa ?? null,
         override_frete: ov.frete ?? null,
+        override_taxa_antecipacao: ov.taxaAntecipacao ?? null,
+        override_taxa_juros: ov.taxaJuros ?? null,
         override_por: hasOverride ? userId ?? null : null,
         override_em: hasOverride ? new Date().toISOString() : null,
     };
@@ -211,7 +220,7 @@ async function replaceSimulationItems(simulationId, lines, statusLinha, userId) 
     const { data: previousItems, error: snapshotError } = await supabase
         .from('simulation_items')
         .select(
-            'simulation_id, product_id, volume, preco_unitario, proposta, cultura, status_linha, produto_classe, margem_percentual, comissao_percentual, comissao_valor, override_custo_usd, override_desconto_usd, override_taxa, override_frete, override_por, override_em',
+            'simulation_id, product_id, volume, preco_unitario, proposta, cultura, status_linha, produto_classe, margem_percentual, comissao_percentual, comissao_valor, override_custo_usd, override_desconto_usd, override_taxa, override_frete, override_taxa_antecipacao, override_taxa_juros, override_por, override_em',
         )
         .eq('simulation_id', simulationId);
     if (snapshotError) {
@@ -393,6 +402,8 @@ function parseBundle(data) {
             override_desconto_usd: item.override_desconto_usd != null ? Number(item.override_desconto_usd) : null,
             override_taxa: item.override_taxa != null ? Number(item.override_taxa) : null,
             override_frete: item.override_frete != null ? Number(item.override_frete) : null,
+            override_taxa_antecipacao: item.override_taxa_antecipacao != null ? Number(item.override_taxa_antecipacao) : null,
+            override_taxa_juros: item.override_taxa_juros != null ? Number(item.override_taxa_juros) : null,
             product: prod
                 ? { nome: String(prod.nome ?? '') }
                 : null,
@@ -473,6 +484,8 @@ export async function fetchSimulationOrderBundle(simulationId) {
         override_desconto_usd,
         override_taxa,
         override_frete,
+        override_taxa_antecipacao,
+        override_taxa_juros,
         produtos_oficiais ( nome )
       )
     `)
