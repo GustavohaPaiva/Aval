@@ -503,16 +503,6 @@ export function ImportacaoPreviewPage() {
 
           <div className="sticky bottom-0 z-10 -mx-4 border-t border-slate-200/80 bg-white/95 px-4 py-4 backdrop-blur-sm sm:mx-0 sm:rounded-2xl sm:border sm:shadow-sm">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-slate-900">
-                  {multiQuarter
-                    ? `Processar ${derivedQuarterGroups.length} lançamentos`
-                    : "Processar lote"}
-                </p>
-                <p className="mt-0.5 text-xs text-slate-600">
-                  {totalPreviewRows} produto(s) · {fornecedorNome || "fornecedor"}
-                </p>
-              </div>
               <ButtonGroup className="sm:shrink-0">
                 <Button
                   type="button"
