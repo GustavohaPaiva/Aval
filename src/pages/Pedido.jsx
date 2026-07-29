@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { PedidoFornecedorPdfDocument } from '../components/pedido/PedidoFornecedorPdfDocument'
 import { PedidoPdfDocument } from '../components/pedido/PedidoPdfDocument'
@@ -6,7 +6,6 @@ import { PdfPreviewModal } from '../components/pdf/PdfPreviewModal'
 import { AlertMessage } from '../components/ui/AlertMessage'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
-import { FormattedInput } from '../components/ui/FormattedInput'
 import { Input } from '../components/ui/Input'
 import { PageBackLink } from '../components/ui/PageBackLink'
 import { PageHeader } from '../components/ui/PageHeader'
@@ -31,11 +30,8 @@ import {
   cancelOrder,
   fetchSimulationOrderBundle,
   rejectOrder,
-  updateClientDeliveryFields,
   updatePedidoFields,
 } from '../services/simulationOrderService'
-import { fetchViaCepAddress } from '../services/viaCep'
-import { parseCepInput } from '../utils/dataFormatters'
 
 export function Pedido({ simulationId }) {
   const printRef = useRef(null)
@@ -59,16 +55,6 @@ export function Pedido({ simulationId }) {
   const [municipiosLoading, setMunicipiosLoading] = useState(false)
   const [municipiosError, setMunicipiosError] = useState(null)
 
-  const [cep, setCep] = useState('')
-  const [logradouro, setLogradouro] = useState('')
-  const [bairro, setBairro] = useState('')
-  const [municipio, setMunicipio] = useState('')
-  const [uf, setUf] = useState('')
-  const [complemento, setComplemento] = useState('')
-
-  const [cepLookupLoading, setCepLookupLoading] = useState(false)
-  const [cepLookupError, setCepLookupError] = useState(null)
-
   const [pdfPreview, setPdfPreview] = useState(null)
   const [actionError, setActionError] = useState(null)
   const [actionBanner, setActionBanner] = useState(null)
@@ -85,7 +71,6 @@ export function Pedido({ simulationId }) {
     : isConverted
   const canCancelPedido =
     isGestor && (isOrderPending || isConverted || isOrderRejected)
-  const isCif = bundle?.simulation.tipo_frete === 'CIF'
   const backTo = isPedidoStatus(status) ? '/pedidos' : '/simulacoes'
   const backLabel = isPedidoStatus(status)
     ? 'Voltar para pedidos'
@@ -105,16 +90,10 @@ export function Pedido({ simulationId }) {
       }
       setBundle(res.data)
       const sim = res.data.simulation
-      const c = res.data.client
       setFazenda(sim.fazenda ?? '')
       setPedidoMunicipio(sim.pedido_municipio ?? '')
       setPedidoUf(sim.pedido_uf ?? '')
       setPrazoDias(normalizePrazoDias(sim.prazo_dias))
-      setCep(parseCepInput(c.cep ?? ''))
-      setLogradouro(c.logradouro ?? '')
-      setBairro(c.bairro ?? '')
-      setMunicipio(c.municipio ?? '')
-      setUf(c.uf ?? '')
       setLoadState('ready')
     },
     [simulationId],
@@ -174,40 +153,6 @@ export function Pedido({ simulationId }) {
     pedidoMunicipio,
     pedidoUf,
   ])
-
-  const lookupCep = useCallback(
-    async (digits) => {
-      if (!isCif || digits.length !== 8) return
-      setCepLookupLoading(true)
-      setCepLookupError(null)
-      const res = await fetchViaCepAddress(digits)
-      setCepLookupLoading(false)
-      if (!res.ok) {
-        setCepLookupError(res.error)
-        return
-      }
-      setLogradouro(res.data.logradouro)
-      setBairro(res.data.bairro)
-      setMunicipio(res.data.municipio)
-      setUf(res.data.uf)
-    },
-    [isCif],
-  )
-
-  useEffect(() => {
-    if (!isCif) return
-    const digits = parseCepInput(cep)
-    if (digits.length !== 8) return
-
-    const handle = window.setTimeout(() => {
-      void lookupCep(digits)
-    }, 450)
-    return () => window.clearTimeout(handle)
-  }, [cep, isCif, lookupCep])
-
-  const cepDigits = parseCepInput(cep)
-  const displayedCepLookupError =
-    isCif && cepDigits.length === 8 ? cepLookupError : null
 
   function clearFieldError(key) {
     setFieldErrors((prev) => {
@@ -323,16 +268,6 @@ export function Pedido({ simulationId }) {
             pedido_uf: pedidoUf || null,
             prazo_dias: normalizePrazoDias(prazoDias),
           },
-          client: isCif
-            ? {
-                ...bundle.client,
-                cep: parseCepInput(cep) || null,
-                logradouro: logradouro.trim() || null,
-                bairro: bairro.trim() || null,
-                municipio: municipio.trim() || null,
-                uf: uf.trim().toUpperCase().slice(0, 2) || null,
-              }
-            : bundle.client,
         }
       : null
 
@@ -411,51 +346,15 @@ export function Pedido({ simulationId }) {
     )
     setPrazoDias(prazo)
 
-    if (isCif) {
-      const addr = await updateClientDeliveryFields({
-        clientId: bundle.client.id,
-        cep: parseCepInput(cep) || null,
-        logradouro: logradouro.trim() || null,
-        bairro: bairro.trim() || null,
-        municipio: municipio.trim() || null,
-        uf: uf.trim().toUpperCase().slice(0, 2) || null,
-      })
-      if (!addr.ok) {
-        setSavingPedido(false)
-        return addr
-      }
-      setBundle((prev) =>
-        prev
-          ? {
-              ...prev,
-              client: {
-                ...prev.client,
-                cep: parseCepInput(cep) || null,
-                logradouro: logradouro.trim() || null,
-                bairro: bairro.trim() || null,
-                municipio: municipio.trim() || null,
-                uf: uf.trim().toUpperCase().slice(0, 2) || null,
-              },
-            }
-          : prev,
-      )
-    }
-
     setSavingPedido(false)
     return { ok: true }
   }, [
-    bairro,
     bundle,
-    cep,
     fazenda,
-    isCif,
     isGestor,
-    logradouro,
-    municipio,
     pedidoMunicipio,
     pedidoUf,
     prazoDias,
-    uf,
   ])
 
   const handleGerarPdf = useCallback(async () => {
@@ -648,56 +547,12 @@ export function Pedido({ simulationId }) {
         </div>
       </Card>
 
-      {isCif ? (
-        <Card className="mb-6 rounded-3xl">
-          <h2 className="mb-4 text-sm font-semibold text-primary-800">
-            Endereço de entrega (CIF)
-          </h2>
-          <div className="grid gap-6 sm:grid-cols-2">
-            <div>
-              <FormattedInput
-                format="cep"
-                label="CEP"
-                placeholder="00000-000"
-                value={cep}
-                onChange={(e) => setCep(e.target.value)}
-                className="finance-text"
-              />
-              {cepLookupLoading ? (
-                <p className="mt-2 text-xs text-slate-500">Consultando ViaCEP…</p>
-              ) : null}
-              {displayedCepLookupError ? (
-                <p className="mt-2 text-xs font-medium text-feedback-error">
-                  {displayedCepLookupError}
-                </p>
-              ) : null}
-            </div>
-            <Input
-              label="Complemento (opcional)"
-              value={complemento}
-              onChange={(e) => setComplemento(e.target.value)}
-            />
-            <Input
-              label="Logradouro"
-              value={logradouro}
-              onChange={(e) => setLogradouro(e.target.value)}
-            />
-            <Input
-              label="Bairro"
-              value={bairro}
-              onChange={(e) => setBairro(e.target.value)}
-            />
-          </div>
-        </Card>
-      ) : null}
-
       <div className="overflow-x-auto rounded-3xl border border-slate-200/80 bg-slate-100/60 p-3 shadow-sm sm:p-5">
         <div className="mx-auto w-fit shadow-xl shadow-slate-900/10">
           {pdfBundle ? (
             <PedidoPdfDocument
               bundle={pdfBundle}
               vendedorNome={bundle.vendedorNome}
-              delivery={{ complemento }}
             />
           ) : null}
         </div>
@@ -713,7 +568,6 @@ export function Pedido({ simulationId }) {
             <PedidoPdfDocument
               bundle={pdfBundle}
               vendedorNome={bundle.vendedorNome}
-              delivery={{ complemento }}
             />
           ) : null}
         </div>
@@ -723,7 +577,6 @@ export function Pedido({ simulationId }) {
               <PedidoFornecedorPdfDocument
                 bundle={pdfBundle}
                 vendedorNome={bundle.vendedorNome}
-                delivery={{ complemento }}
               />
             ) : null}
           </div>
@@ -763,7 +616,7 @@ export function Pedido({ simulationId }) {
             disabled={savingPedido || Boolean(deciding)}
             onClick={() => void handleGerarPdf()}
           >
-            {savingPedido ? 'Salvando…' : 'Gerar PDF para o cliente'}
+            {savingPedido ? 'Salvando…' : 'Gerar Proposta p/ Cliente'}
           </Button>
         ) : null}
         {isGestor && canEditPedido ? (
@@ -774,7 +627,7 @@ export function Pedido({ simulationId }) {
             disabled={savingPedido || Boolean(deciding)}
             onClick={() => void handleGerarPdfFornecedor()}
           >
-            {savingPedido ? 'Salvando…' : 'Gerar PDF para cotação (fornecedor)'}
+            {savingPedido ? 'Salvando…' : 'Gerar cotação p/ fornecedor'}
           </Button>
         ) : null}
         {canCancelPedido ? (

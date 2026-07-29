@@ -451,15 +451,11 @@ GRANT SELECT, INSERT, UPDATE ON public.simulation_items TO authenticated;
 -- Status de simulação após conversão em pedido (PDF / fluxo comercial)
 ALTER TYPE public.simulation_status ADD VALUE IF NOT EXISTS 'converted';
 
--- Endereço detalhado do cliente (ViaCEP / pedido)
+-- Localização cadastral do cliente (município/UF).
+-- cep/logradouro/bairro foram removidos em 20260729160000_drop_clients_delivery_address.sql
 ALTER TABLE public.clients
-  ADD COLUMN IF NOT EXISTS cep text,
-  ADD COLUMN IF NOT EXISTS logradouro text,
-  ADD COLUMN IF NOT EXISTS bairro text,
   ADD COLUMN IF NOT EXISTS municipio text,
   ADD COLUMN IF NOT EXISTS uf text;
-
-COMMENT ON COLUMN public.clients.cep IS 'CEP (apenas dígitos ou formatado); preenchimento via ViaCEP na UI.';
 
 -- Produtos seed com IDs fixos (alinhados ao catálogo do Simulador no frontend)
 INSERT INTO public.products (id, nome, cultura, preco_base, ativo)

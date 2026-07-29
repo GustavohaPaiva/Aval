@@ -219,7 +219,7 @@ ALTER TABLE public.simulations
   ADD COLUMN IF NOT EXISTS data_pagamento date,
   ADD COLUMN IF NOT EXISTS quarter text;
 
-COMMENT ON COLUMN public.simulations.tipo_frete IS 'CIF ou FOB — define se exige endereço de entrega no pedido.';
+COMMENT ON COLUMN public.simulations.tipo_frete IS 'CIF ou FOB — define modalidade de frete (rotas/custo no simulador).';
 
 -- >>> FILE: 20260604150000_notifications.sql
 -- Notificações in-app (aprovações, decisões do gestor)

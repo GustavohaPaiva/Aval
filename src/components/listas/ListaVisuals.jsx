@@ -122,6 +122,13 @@ function ListaCard({ row, onInativar, onReativar, onExcluir }) {
               {formatDate(row.data_upload)}
             </p>
           </div>
+          <div>
+            <p className="text-xs font-medium text-slate-500">Estado</p>
+            <p className="mt-0.5 font-medium text-slate-800">
+              {row.estado_padrao || '—'}
+            </p>
+          </div>
+          
           <div className="col-span-2 flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2">
             <IconPackage className="size-4 shrink-0 text-primary-600" />
             <p className="text-sm text-slate-700">
@@ -335,6 +342,11 @@ export function ListaTable({
           {row.quarter_calculado || '—'}
         </span>
       ),
+    },
+    {
+      key: 'estado',
+      header: 'Estado',
+      cell: (row) => row.estado_padrao || '-',
     },
     {
       key: 'validade',

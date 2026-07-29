@@ -1095,7 +1095,7 @@ export function Simulador() {
                   className="w-full sm:flex-1"
                   onClick={() => void handleGerarPdf()}
                 >
-                  Gerar PDF
+                  Gerar Proposta p/ Cliente
                 </Button>
               ) : null}
               {!sim.isReadOnly && !showGestorReview ? (

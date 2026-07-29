@@ -15,7 +15,7 @@ import {
 } from "../../constants/simulationStatus";
 import { formatShortDate } from "../../utils/formatShortDate";
 import { formatBRL } from "../../utils/money";
-import { displayCep, displayCpfCnpj, displayPhone } from "../../utils/dataFormatters";
+import { displayCpfCnpj, displayPhone } from "../../utils/dataFormatters";
 
 function clienteInitial(nome) {
   const trimmed = (nome ?? "").trim();
@@ -128,9 +128,6 @@ export function ClienteInfoPanel({
   onDelete,
   actionLoading = false,
 }) {
-  const endereco = [client.logradouro, client.bairro, displayCep(client.cep)]
-    .filter(Boolean)
-    .join(" · ");
   const isInactive = client.ativo === false;
 
   return (
@@ -182,7 +179,6 @@ export function ClienteInfoPanel({
             label="Local"
             value={[client.municipio, client.uf].filter(Boolean).join(" — ")}
           />
-          <InfoRow label="Endereço" value={endereco || null} />
         </dl>
       </section>
 

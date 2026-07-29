@@ -9,7 +9,7 @@ const CLIENT_FIELDS =
   'id, nome, razao_social, cnpj_cpf, email, telefone, municipio, uf, ativo, created_at'
 
 const CLIENT_DETAIL_FIELDS =
-  'id, nome, razao_social, cnpj_cpf, email, telefone, municipio, uf, cep, logradouro, bairro, ativo, created_at'
+  'id, nome, razao_social, cnpj_cpf, email, telefone, municipio, uf, ativo, created_at'
 
 const DUPLICATE_CNPJ_CPF_ERROR =
   'Esse CPF ou CNPJ não pode ser lançado.'

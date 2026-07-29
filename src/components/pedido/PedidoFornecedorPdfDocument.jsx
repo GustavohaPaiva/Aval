@@ -42,15 +42,12 @@ function productRef(product) {
   return ref || '—'
 }
 
-function buildDeliveryAddress(client, complemento) {
+function buildPedidoLocal(simulation) {
   const parts = [
-    client?.logradouro,
-    client?.bairro,
-    client?.municipio && client?.uf
-      ? `${client.municipio} / ${client.uf}`
-      : client?.municipio || client?.uf,
-    client?.cep ? `CEP ${client.cep}` : null,
-    complemento?.trim() || null,
+    simulation.fazenda?.trim() || null,
+    simulation.pedido_municipio && simulation.pedido_uf
+      ? `${simulation.pedido_municipio} / ${simulation.pedido_uf}`
+      : simulation.pedido_municipio || simulation.pedido_uf || null,
   ].filter(Boolean)
   return parts.length > 0 ? parts.join(' · ') : null
 }
@@ -62,11 +59,10 @@ function buildDeliveryAddress(client, complemento) {
 export function PedidoFornecedorPdfDocument({
   bundle,
   vendedorNome,
-  delivery = {},
 }) {
   const { simulation, client, items } = bundle
   const docNo = formatDocNumber(simulation.id)
-  const deliveryAddress = buildDeliveryAddress(client, delivery.complemento)
+  const pedidoLocal = buildPedidoLocal(simulation)
   const municipioUf =
     [simulation.pedido_municipio, simulation.pedido_uf].filter(Boolean).join(' / ') ||
     [client?.municipio, client?.uf].filter(Boolean).join(' / ') ||
@@ -264,7 +260,7 @@ export function PedidoFornecedorPdfDocument({
           Solicitação de cotação dos itens abaixo para o fornecedor.
         </p>
 
-        {(deliveryAddress || simulation.destino_frete || simulation.origem_frete) && (
+        {(pedidoLocal || simulation.destino_frete || simulation.origem_frete) && (
           <section
             style={{
               borderRadius: 14,
@@ -287,11 +283,16 @@ export function PedidoFornecedorPdfDocument({
               Entrega / destino
             </p>
             <p style={{ margin: 0, fontSize: 12, lineHeight: 1.45, color: '#0f172a' }}>
-              {deliveryAddress ||
+              {pedidoLocal ||
                 (simulation.destino_frete
                   ? `Destino: ${simulation.destino_frete}`
                   : 'A definir.')}
             </p>
+            {simulation.destino_frete && pedidoLocal ? (
+              <p style={{ margin: '6px 0 0', fontSize: 11, color: '#64748b' }}>
+                Destino do frete: {simulation.destino_frete}
+              </p>
+            ) : null}
             {simulation.origem_frete ? (
               <p style={{ margin: '6px 0 0', fontSize: 11, color: '#64748b' }}>
                 Origem do frete: {simulation.origem_frete}

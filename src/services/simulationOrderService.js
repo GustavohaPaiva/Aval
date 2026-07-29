@@ -494,9 +494,6 @@ export async function fetchSimulationOrderBundle(simulationId) {
         email,
         telefone,
         endereco,
-        cep,
-        logradouro,
-        bairro,
         municipio,
         uf
       ),
@@ -1163,22 +1160,6 @@ export async function fetchConsultorDashboardStats(userId) {
             convertedCount: convertedRes.count ?? 0,
         },
     };
-}
-
-export async function updateClientDeliveryFields(input) {
-    const { error } = await supabase
-        .from('clients')
-        .update({
-        cep: input.cep,
-        logradouro: input.logradouro,
-        bairro: input.bairro,
-        municipio: input.municipio,
-        uf: input.uf,
-    })
-        .eq('id', input.clientId);
-    if (error)
-        return { ok: false, error: error.message };
-    return { ok: true };
 }
 
 /**

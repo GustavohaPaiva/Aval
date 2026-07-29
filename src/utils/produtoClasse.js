@@ -7,6 +7,7 @@ import { normalizeFertilizante } from './normalizeSku'
  */
 export const PREFIXOS_PRODUTO_ESPECIAL = [
   'YaraBasa Full',
+  'YaraMila',
   'YaraMila High N',
   'YaraMila Triples',
   'Basefort Duo',

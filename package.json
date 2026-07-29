@@ -6,13 +6,13 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "build:pages": "npm run build && node scripts/prepare-pages-dist.mjs",
+    "build:pages": "VITE_GEMINI_API_KEY= npm run build && node scripts/prepare-pages-dist.mjs",
     "lint": "eslint .",
     "preview": "vite preview",
     "preview:pages": "npm run build:pages && vite preview",
     "test": "vitest run",
     "validate": "npm run lint && npm run test && npm run build",
-    "deploy": "npm run build:pages && gh-pages -d dist"
+    "deploy": "npm run build:pages && node scripts/verify-pages-dist.mjs && gh-pages -d dist"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.105.1",
