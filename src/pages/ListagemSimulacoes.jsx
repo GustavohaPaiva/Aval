@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { SimulationListCard } from "../components/SimulationListCard";
 import {
+  SIMULACAO_STATUS_FILTERS,
   SimulacaoFiltersPanel,
   SimulacaoStatsBar,
 } from "../components/simulacoes/SimulacaoVisuals";
@@ -12,6 +13,7 @@ import { EmptyState } from "../components/ui/EmptyState";
 import { PageHeader } from "../components/ui/PageHeader";
 import { PageInfoBanner } from "../components/ui/InfoStatCard";
 import { PaginationBar } from "../components/ui/PaginationBar";
+import { isPedidoStatus } from "../constants/simulationStatus";
 import { useSyncPageLoading } from "../contexts/PageLoadingContext";
 import { useAbortableAsync } from "../hooks/useAbortableAsync";
 import { useAuth } from "../hooks/useAuth";
@@ -20,14 +22,6 @@ import { usePersistedFilters } from "../hooks/usePersistedFilters";
 import { fetchSimulationsList } from "../services/simulationOrderService";
 
 const PAGE_SIZE = 50;
-
-const SIMULACAO_STATUS_FILTERS = [
-  { key: "all", label: "Todos" },
-  { key: "draft", label: "Rascunhos" },
-  { key: "pending", label: "Pendentes" },
-  { key: "approved", label: "Aprovados" },
-  { key: "rejected", label: "Reprovados" },
-];
 
 const VALID_STATUS_KEYS = new Set(
   SIMULACAO_STATUS_FILTERS.map((f) => f.key).filter((k) => k !== "all"),
@@ -51,16 +45,7 @@ export function ListagemSimulacoes() {
   const debouncedSearch = useDebouncedValue(searchQuery, 300);
 
   useEffect(() => {
-    if (quickFilter === "converted") {
-      patchFilters({ quickFilter: "all", page: 1 });
-      navigate("/pedidos", { replace: true });
-      return;
-    }
     const statusParam = searchParams.get("status");
-    if (statusParam === "converted") {
-      navigate("/pedidos", { replace: true });
-      return;
-    }
     if (statusParam && VALID_STATUS_KEYS.has(statusParam)) {
       if (quickFilter !== statusParam) {
         patchFilters({ quickFilter: statusParam, page: 1 });
@@ -74,7 +59,7 @@ export function ListagemSimulacoes() {
         { replace: true },
       );
     }
-  }, [searchParams, quickFilter, patchFilters, setSearchParams, navigate]);
+  }, [searchParams, quickFilter, patchFilters, setSearchParams]);
 
   useSyncPageLoading(loading || initializing);
 
@@ -102,7 +87,6 @@ export function ListagemSimulacoes() {
         userId: user.id,
         role,
         statusFilter: statusForQuery,
-        excludeConverted: !statusForQuery,
         search: debouncedSearch,
         page,
         pageSize: PAGE_SIZE,
@@ -126,7 +110,11 @@ export function ListagemSimulacoes() {
     canFetch,
   );
 
-  function openSimulador(simulationId) {
+  function openSimulacao(simulationId, status) {
+    if (isPedidoStatus(status)) {
+      navigate(`/pedido/${encodeURIComponent(simulationId)}`);
+      return;
+    }
     navigate(`/simulador?simulationId=${encodeURIComponent(simulationId)}`);
   }
 
@@ -156,7 +144,7 @@ export function ListagemSimulacoes() {
         <PageHeader
           eyebrow={isGestor ? "Gestão comercial" : "Operação"}
           title={isGestor ? "Simulações" : "Minhas simulações"}
-          description="Acompanhe rascunhos, aprovações e propostas em andamento."
+          description="Acompanhe rascunhos, aprovações, conversões e propostas em qualquer status."
           actions={
             <Button
               type="button"
@@ -228,8 +216,8 @@ export function ListagemSimulacoes() {
               row={row}
               isGestor={isGestor}
               consultorNome={consultorNomeById[row.user_id]}
-              onContinueEdit={openSimulador}
-              onViewDetails={openSimulador}
+              onContinueEdit={openSimulacao}
+              onViewDetails={openSimulacao}
             />
           ))}
         </div>

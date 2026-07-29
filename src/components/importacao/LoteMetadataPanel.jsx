@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { IconSliders } from '../icons'
 import { ESTADOS_PRODUTO } from '../../constants/mapeamentoCampos'
 import { Input } from '../ui/Input'
 import { Select } from '../ui/Select'
@@ -36,6 +37,7 @@ function formatTaxaInput(value, fallback) {
 export function LoteMetadataPanel({
   lote,
   readOnly,
+  launched = false,
   onSave,
 }) {
   const [dataValidade, setDataValidade] = useState(() =>
@@ -113,65 +115,92 @@ export function LoteMetadataPanel({
   if (!lote) return null
 
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-      <div className="flex items-center gap-2">
-        <h2 className="text-sm font-semibold text-slate-900">
-          Metadados da planilha
-        </h2>
-        {saving ? (
-          <span className="text-xs text-slate-500">Salvando…</span>
-        ) : null}
+    <section className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm sm:rounded-3xl">
+      <div className="border-b border-slate-100 bg-gradient-to-r from-primary-50/70 via-white to-emerald-50/40 px-4 py-3.5 sm:px-6 sm:py-4">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2">
+            <span className="flex size-8 items-center justify-center rounded-xl bg-primary-50 text-primary-700">
+              <IconSliders className="size-4" aria-hidden />
+            </span>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary-700">
+                {launched ? 'Padrões da lista' : 'Metadados da planilha'}
+              </p>
+              <p className="mt-0.5 text-sm text-slate-600">
+                {launched
+                  ? 'Validade, quarter, desconto e taxas aplicados ao catálogo.'
+                  : 'Defina quarter, validade e padrões antes de lançar.'}
+              </p>
+            </div>
+          </div>
+          {saving ? (
+            <span className="text-xs font-medium text-slate-500">
+              Salvando…
+            </span>
+          ) : null}
+        </div>
       </div>
-      <div className="mt-4 grid gap-4 sm:grid-cols-2">
-        <Input
-          label="Vencimento da lista"
-          type="date"
-          value={dataValidade}
-          onChange={(e) => handleValidadeChange(e.target.value)}
-          onBlur={() => void handleBlurSave()}
-          disabled={readOnly}
-        />
-        <Input
-          label="Quarter"
-          value={quarter}
-          onChange={(e) => setQuarter(e.target.value)}
-          onBlur={() => void handleBlurSave()}
-          disabled={readOnly}
-          placeholder="Ex.: Q2 2026"
-        />
-        <Input
-          label="Desconto USD (lista)"
-          value={descontoUsd}
-          onChange={(e) => setDescontoUsd(e.target.value)}
-          onBlur={() => void handleDescontoBlur()}
-          disabled={readOnly}
-        />
-        <Select
-          label="Estado padrão"
-          placeholder="Selecione…"
-          value={estadoPadrao}
-          onChange={(e) => void handleEstadoChange(e.target.value)}
-          options={ESTADOS_PRODUTO}
-          disabled={readOnly}
-        />
-        <Input
-          label="Antecipação (% / 30 dias)"
-          inputMode="decimal"
-          value={taxaAntecipacao}
-          onChange={(e) => setTaxaAntecipacao(e.target.value)}
-          onBlur={() => void handleTaxasBlur()}
-          disabled={readOnly}
-          placeholder="Ex.: 1,7"
-        />
-        <Input
-          label="Juros (% / 30 dias)"
-          inputMode="decimal"
-          value={taxaJuros}
-          onChange={(e) => setTaxaJuros(e.target.value)}
-          onBlur={() => void handleTaxasBlur()}
-          disabled={readOnly}
-          placeholder="Ex.: 2"
-        />
+
+      <div className="p-4 sm:p-6">
+        {launched && !readOnly ? (
+          <p className="mb-4 text-xs leading-relaxed text-slate-500">
+            Ao salvar, produtos do catálogo que ainda tiverem o valor antigo da
+            lista serão atualizados. Produtos editados individualmente e
+            simulações já criadas permanecem inalterados.
+          </p>
+        ) : null}
+
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Input
+            label="Vencimento da lista"
+            type="date"
+            value={dataValidade}
+            onChange={(e) => handleValidadeChange(e.target.value)}
+            onBlur={() => void handleBlurSave()}
+            disabled={readOnly}
+          />
+          <Input
+            label="Quarter"
+            value={quarter}
+            onChange={(e) => setQuarter(e.target.value)}
+            onBlur={() => void handleBlurSave()}
+            disabled={readOnly}
+            placeholder="Ex.: Q2 2026"
+          />
+          <Input
+            label="Desconto USD (lista)"
+            value={descontoUsd}
+            onChange={(e) => setDescontoUsd(e.target.value)}
+            onBlur={() => void handleDescontoBlur()}
+            disabled={readOnly}
+          />
+          <Select
+            label="Estado padrão"
+            placeholder="Selecione…"
+            value={estadoPadrao}
+            onChange={(e) => void handleEstadoChange(e.target.value)}
+            options={ESTADOS_PRODUTO}
+            disabled={readOnly}
+          />
+          <Input
+            label="Antecipação (% / 30 dias)"
+            inputMode="decimal"
+            value={taxaAntecipacao}
+            onChange={(e) => setTaxaAntecipacao(e.target.value)}
+            onBlur={() => void handleTaxasBlur()}
+            disabled={readOnly}
+            placeholder="Ex.: 1,7"
+          />
+          <Input
+            label="Juros (% / 30 dias)"
+            inputMode="decimal"
+            value={taxaJuros}
+            onChange={(e) => setTaxaJuros(e.target.value)}
+            onBlur={() => void handleTaxasBlur()}
+            disabled={readOnly}
+            placeholder="Ex.: 2"
+          />
+        </div>
       </div>
     </section>
   )

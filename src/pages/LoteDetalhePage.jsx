@@ -1,19 +1,23 @@
 import { useCallback, useMemo, useState } from "react";
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
+import {
+  LoteLaunchBar,
+  LoteProductsSection,
+  LoteProfileHero,
+  SiblingQuartersNav,
+} from "../components/importacao/LoteDetailVisuals";
 import { LoteMetadataPanel } from "../components/importacao/LoteMetadataPanel";
 import { ModalStagingRowForm } from "../components/importacao/ModalStagingRowForm";
 import {
   StagingMatchSummary,
   StagingProductsTable,
 } from "../components/importacao/StagingProductsTable";
-import { ImportacaoStatusBadge } from "../components/importacao/ImportacaoVisuals";
 import { AlertMessage } from "../components/ui/AlertMessage";
 import { Button } from "../components/ui/Button";
 import { ButtonGroup } from "../components/ui/ButtonGroup";
 import { EmptyState } from "../components/ui/EmptyState";
 import { Modal } from "../components/ui/Modal";
 import { PageBackLink } from "../components/ui/PageBackLink";
-import { PageHeader } from "../components/ui/PageHeader";
 import { Select } from "../components/ui/Select";
 import { useSyncPageLoading } from "../contexts/PageLoadingContext";
 import { useAbortableAsync } from "../hooks/useAbortableAsync";
@@ -24,6 +28,7 @@ import {
   createStagingRow,
   deleteStagingRow,
   fetchLoteById,
+  fetchProdutosOficiaisByLote,
   fetchStagingByLote,
   getStagingRowErrors,
   inativarListaImportacao,
@@ -33,7 +38,6 @@ import {
   updateStagingRow,
 } from "../services/produtoImportacaoService";
 import { CLASSES_PRODUTO } from "../constants/mapeamentoCampos";
-import { formatLoteDate } from "../utils/importacaoVisuals";
 
 export function LoteDetalhePage() {
   const { id } = useParams();
@@ -41,6 +45,11 @@ export function LoteDetalhePage() {
   const location = useLocation();
   const siblingLotes = location.state?.siblingLotes ?? [];
   const routeSuccessMessage = location.state?.successMessage ?? null;
+  const cameFromListas = location.state?.from === "listas";
+  const backTo = cameFromListas ? "/admin/listas" : "/admin/importacao";
+  const backLabel = cameFromListas
+    ? "Voltar às listas"
+    : "Voltar ao lançamento";
 
   const [lote, setLote] = useState(null);
   const [rows, setRows] = useState([]);
@@ -58,8 +67,11 @@ export function LoteDetalhePage() {
   const [bulkApplying, setBulkApplying] = useState(false);
   const [listaActionLoading, setListaActionLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
 
-  const readOnly = lote?.status === "concluido";
+  const productsReadOnly = lote?.status === "concluido";
+  const metadataEditable =
+    lote?.status === "aguardando_validacao" || lote?.status === "concluido";
   const loteEstadoPadrao = lote?.estado_padrao ?? "";
 
   const enrichedRows = useMemo(() => {
@@ -77,9 +89,15 @@ export function LoteDetalhePage() {
   }, [rows, lote]);
 
   const filteredRows = useMemo(() => {
-    if (statusFilter === "all") return enrichedRows;
-    return enrichedRows.filter((row) => row.status_linha === statusFilter);
-  }, [enrichedRows, statusFilter]);
+    const q = searchQuery.trim().toLowerCase();
+    return enrichedRows.filter((row) => {
+      if (statusFilter !== "all" && row.status_linha !== statusFilter) {
+        return false;
+      }
+      if (!q) return true;
+      return (row.nome ?? "").toLowerCase().includes(q);
+    });
+  }, [enrichedRows, statusFilter, searchQuery]);
 
   const statusFilterOptions = useMemo(() => {
     const counts = enrichedRows.reduce(
@@ -97,13 +115,14 @@ export function LoteDetalhePage() {
     ];
   }, [enrichedRows]);
 
-  const tableEmptyMessage =
-    statusFilter === "all"
+  const hasSearchQuery = Boolean(searchQuery.trim());
+  const tableEmptyMessage = hasSearchQuery
+    ? "Nenhum produto corresponde à busca."
+    : statusFilter === "all"
       ? "Nenhum produto neste lote."
       : statusFilter === "erro"
         ? "Nenhum produto com erro neste filtro."
         : "Nenhum produto corresponde ao filtro selecionado.";
-
   const semEstadoCount = enrichedRows.filter(
     (r) => !String(r.estado ?? "").trim() && !String(loteEstadoPadrao).trim(),
   ).length;
@@ -127,6 +146,22 @@ export function LoteDetalhePage() {
       }
 
       setLote(loteRes.row);
+
+      if (loteRes.row.status === "concluido") {
+        const oficiaisRes = await fetchProdutosOficiaisByLote(id);
+        if (!isActive || !isActive()) return;
+
+        if (!oficiaisRes.ok) {
+          setLoading(false);
+          setError(oficiaisRes.error);
+          return;
+        }
+
+        setRows(oficiaisRes.rows);
+        setSummary(null);
+        setLoading(false);
+        return;
+      }
 
       const stagingRes = await fetchStagingByLote(id);
       if (!isActive || !isActive()) return;
@@ -187,6 +222,15 @@ export function LoteDetalhePage() {
     }
   }
 
+  async function refreshLaunchedProducts() {
+    const oficiaisRes = await fetchProdutosOficiaisByLote(id);
+    if (!oficiaisRes.ok) {
+      setActionError(oficiaisRes.error);
+      return;
+    }
+    setRows(oficiaisRes.rows);
+  }
+
   async function handleRowChange(rowId, patch) {
     setActionError(null);
     const res = await updateStagingRow(rowId, patch);
@@ -233,7 +277,20 @@ export function LoteDetalhePage() {
       setActionError(res.error);
       return;
     }
+    setActionError(null);
     setLote((prev) => ({ ...prev, ...res.row }));
+
+    if (lote?.status === "concluido") {
+      const updatedCount = res.cascade?.updatedCount ?? 0;
+      setSuccessMessage(
+        updatedCount > 0
+          ? `Metadados salvos. ${updatedCount} produto(s) do catálogo atualizado(s) com o novo padrão; produtos com valor diferente (editados individualmente) foram mantidos. Simulações já salvas não são alteradas.`
+          : "Metadados da lista salvos. Nenhum produto do catálogo precisava ser atualizado (já estavam customizados ou sem mudança efetiva).",
+      );
+      await refreshLaunchedProducts();
+      return;
+    }
+
     await refreshMatch();
   }
 
@@ -318,9 +375,9 @@ export function LoteDetalhePage() {
     }
 
     const { novos = 0, atualizacoes = 0 } = res.result ?? {};
-    navigate("/admin/importacao", {
+    navigate("/admin/listas", {
       state: {
-        successMessage: `Lote lançado com sucesso: ${novos} novo(s), ${atualizacoes} atualização(ões).`,
+        successMessage: `Lista lançada com sucesso: ${novos} novo(s), ${atualizacoes} atualização(ões).`,
       },
     });
   }
@@ -328,7 +385,7 @@ export function LoteDetalhePage() {
   if (!id) {
     return (
       <div className="w-full min-w-0 space-y-4">
-        <PageBackLink to="/admin/importacao">Voltar ao lançamento</PageBackLink>
+        <PageBackLink to={backTo}>{backLabel}</PageBackLink>
         <AlertMessage>Lote não informado.</AlertMessage>
       </div>
     );
@@ -336,7 +393,7 @@ export function LoteDetalhePage() {
 
   return (
     <div className="w-full min-w-0 space-y-4 sm:space-y-6">
-      <PageBackLink to="/admin/importacao">Voltar ao lançamento</PageBackLink>
+      <PageBackLink to={backTo}>{backLabel}</PageBackLink>
 
       {loading ? (
         <EmptyState
@@ -347,11 +404,11 @@ export function LoteDetalhePage() {
         <AlertMessage>{error}</AlertMessage>
       ) : lote ? (
         <>
-          <PageHeader
-            eyebrow="Revisão de extração"
-            title={lote.fornecedor_nome}
-            description={`Enviado em ${formatLoteDate(lote.data_upload)}`}
-            actions={<ImportacaoStatusBadge status={lote.status} />}
+          <LoteProfileHero
+            lote={lote}
+            productsCount={rows.length}
+            semEstadoCount={semEstadoCount}
+            launched={productsReadOnly}
           />
 
           {error ? <AlertMessage>{error}</AlertMessage> : null}
@@ -359,28 +416,18 @@ export function LoteDetalhePage() {
           {successMessage ? (
             <AlertMessage tone="info">{successMessage}</AlertMessage>
           ) : null}
-          {siblingLotes.length > 0 ? (
-            <AlertMessage tone="info">
-              Outros lançamentos desta planilha:{' '}
-              {siblingLotes.map((sibling, index) => (
-                <span key={sibling.loteId}>
-                  {index > 0 ? ', ' : null}
-                  <Link
-                    className="font-semibold text-primary-700 underline decoration-primary-200 underline-offset-2 hover:text-primary-800"
-                    to={`/admin/importacao/lote/${sibling.loteId}`}
-                  >
-                    {sibling.quarter || 'Lote'}
-                  </Link>
-                </span>
-              ))}
-              . Valide e promova cada um independentemente.
-            </AlertMessage>
-          ) : null}
+
+          <SiblingQuartersNav
+            siblingLotes={siblingLotes}
+            currentLoteId={lote.id}
+            currentQuarter={lote.quarter_calculado}
+          />
 
           <LoteMetadataPanel
-            key={`${lote.id}-${lote.moeda_detectada}-${lote.data_validade}-${lote.quarter_calculado}-${lote.desconto_usd}-${lote.estado_padrao}`}
+            key={`${lote.id}-${lote.moeda_detectada}-${lote.data_validade}-${lote.quarter_calculado}-${lote.desconto_usd}-${lote.estado_padrao}-${lote.taxa_antecipacao}-${lote.taxa_juros}`}
             lote={lote}
-            readOnly={readOnly}
+            readOnly={!metadataEditable}
+            launched={lote.status === "concluido"}
             onSave={handleLoteMetadataSave}
           />
 
@@ -408,124 +455,101 @@ export function LoteDetalhePage() {
             </div>
           ) : null}
 
-          {!readOnly && summary ? (
+          {!productsReadOnly && summary ? (
             <StagingMatchSummary summary={summary} />
           ) : null}
 
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm text-slate-600">
-              {rows.length} produto(s) neste lote
-              {semEstadoCount > 0 && !readOnly
-                ? ` · ${semEstadoCount} sem estado`
-                : ""}
-              {readOnly ? " · somente leitura" : ""}
-              {lote.ativo === false ? " · lista de produtos inativa" : ""}
-            </p>
-            {!readOnly ? (
-              <ButtonGroup align="stretch">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => {
-                    setEditingRow(null);
-                    setRowModalOpen(true);
-                  }}
-                >
-                  Adicionar produto
-                </Button>
-                <Button
-                  type="button"
-                  disabled={!canLaunch}
-                  onClick={() => setConfirmLaunchOpen(true)}
-                >
-                  Lançar produtos
-                </Button>
-              </ButtonGroup>
-            ) : null}
-          </div>
-
-          {!readOnly && summary?.erros > 0 ? (
+          {!productsReadOnly && summary?.erros > 0 ? (
             <AlertMessage tone="info">
               {summary.erros} produto(s) com erro impedem o lançamento. Use o
-              filtro &quot;Com erro&quot; abaixo e corrija os problemas
-              indicados em cada linha.
+              filtro &quot;Com erro&quot; e corrija os problemas indicados em
+              cada linha.
             </AlertMessage>
           ) : null}
 
-          {!readOnly ? (
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-              <div className="w-full sm:max-w-xs">
-                <Select
-                  label="Filtrar produtos"
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  options={statusFilterOptions}
-                />
-              </div>
-              {summary?.erros > 0 && statusFilter !== "erro" ? (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className="sm:shrink-0"
-                  onClick={() => setStatusFilter("erro")}
-                >
-                  Ver apenas erros ({summary.erros})
-                </Button>
-              ) : null}
-            </div>
-          ) : null}
-
-          {!readOnly ? (
-            <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 sm:flex-row sm:items-end">
-              <div className="min-w-0 flex-1">
-                <Select
-                  label="Classe em massa"
-                  value={bulkClasse}
-                  onChange={(e) => setBulkClasse(e.target.value)}
-                  options={CLASSES_PRODUTO}
-                />
-              </div>
-              <ButtonGroup align="stretch" className="sm:flex-1">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  disabled={!bulkClasse || bulkApplying}
-                  onClick={() => void handleBulkClasse(false)}
-                >
-                  Aplicar classe a todos
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  disabled={
-                    !bulkClasse || bulkApplying || selectedIds.length === 0
-                  }
-                  onClick={() => void handleBulkClasse(true)}
-                >
-                  Aplicar aos selecionados ({selectedIds.length})
-                </Button>
-              </ButtonGroup>
-            </div>
-          ) : null}
-
-          <StagingProductsTable
-            rows={filteredRows}
-            loading={false}
-            readOnly={readOnly}
-            loteMoeda={lote.moeda_detectada}
-            loteDescontoUsd={lote.desconto_usd}
-            loteEstadoPadrao={lote.estado_padrao}
-            selectedIds={selectedIds}
-            onToggleSelect={toggleSelect}
-            onToggleSelectAll={toggleSelectAll}
-            onRowChange={handleRowChange}
-            emptyMessage={tableEmptyMessage}
-            onEdit={(row) => {
-              setEditingRow(row);
+          <LoteProductsSection
+            productsCount={rows.length}
+            launched={productsReadOnly}
+            inactive={lote.ativo === false}
+            semEstadoCount={semEstadoCount}
+            searchQuery={searchQuery}
+            onSearchChange={(e) => setSearchQuery(e.target.value)}
+            statusFilter={statusFilter}
+            onStatusFilterChange={(e) => setStatusFilter(e.target.value)}
+            statusFilterOptions={statusFilterOptions}
+            showStatusFilter={!productsReadOnly}
+            onAddProduct={() => {
+              setEditingRow(null);
               setRowModalOpen(true);
             }}
-            onDelete={handleDeleteRow}
-          />
+            onLaunch={() => setConfirmLaunchOpen(true)}
+            canLaunch={canLaunch}
+            errorCount={summary?.erros ?? 0}
+            onShowErrors={() => setStatusFilter("erro")}
+          >
+            {!productsReadOnly ? (
+              <div className="flex flex-col gap-3 rounded-2xl border border-slate-200/90 bg-white p-4 shadow-sm sm:flex-row sm:items-end sm:rounded-3xl sm:p-5">
+                <div className="min-w-0 flex-1">
+                  <Select
+                    label="Classe em massa"
+                    value={bulkClasse}
+                    onChange={(e) => setBulkClasse(e.target.value)}
+                    options={CLASSES_PRODUTO}
+                  />
+                </div>
+                <ButtonGroup align="stretch" className="sm:flex-1">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={!bulkClasse || bulkApplying}
+                    onClick={() => void handleBulkClasse(false)}
+                  >
+                    Aplicar classe a todos
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={
+                      !bulkClasse || bulkApplying || selectedIds.length === 0
+                    }
+                    onClick={() => void handleBulkClasse(true)}
+                  >
+                    Aplicar aos selecionados ({selectedIds.length})
+                  </Button>
+                </ButtonGroup>
+              </div>
+            ) : null}
+
+            <StagingProductsTable
+              rows={filteredRows}
+              loading={false}
+              readOnly={productsReadOnly}
+              loteMoeda={lote.moeda_detectada}
+              loteDescontoUsd={lote.desconto_usd}
+              loteEstadoPadrao={lote.estado_padrao}
+              selectedIds={selectedIds}
+              onToggleSelect={toggleSelect}
+              onToggleSelectAll={toggleSelectAll}
+              onRowChange={handleRowChange}
+              emptyMessage={tableEmptyMessage}
+              onEdit={(row) => {
+                setEditingRow(row);
+                setRowModalOpen(true);
+              }}
+              onDelete={handleDeleteRow}
+            />
+          </LoteProductsSection>
+
+          {!productsReadOnly ? (
+            <LoteLaunchBar
+              canLaunch={canLaunch}
+              launching={launching}
+              onLaunch={() => setConfirmLaunchOpen(true)}
+              summary={summary}
+              quarter={lote.quarter_calculado}
+              moeda={lote.moeda_detectada}
+            />
+          ) : null}
 
           <ModalStagingRowForm
             key={editingRow?.id ?? `create-${rowModalOpen}`}

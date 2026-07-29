@@ -118,6 +118,43 @@ export async function notifyConsultorSimulationDecision(input) {
   return { ok: true }
 }
 
+export async function notifyGestoresOrderPending(input) {
+  const { error } = await supabase.rpc('notify_gestores_order_pending', {
+    p_simulation_id: input.simulationId,
+    p_title: input.title,
+    p_body: input.body ?? null,
+  })
+
+  if (error) return { ok: false, error: error.message }
+  return { ok: true }
+}
+
+export async function notifyGestoresOrderConversionRequest(input) {
+  const { error } = await supabase.rpc(
+    'notify_gestores_order_conversion_request',
+    {
+      p_simulation_id: input.simulationId,
+      p_title: input.title,
+      p_body: input.body ?? null,
+    },
+  )
+
+  if (error) return { ok: false, error: error.message }
+  return { ok: true }
+}
+
+export async function notifyConsultorOrderDecision(input) {
+  const { error } = await supabase.rpc('notify_consultor_order_decision', {
+    p_simulation_id: input.simulationId,
+    p_type: input.type,
+    p_title: input.title,
+    p_body: input.body ?? null,
+  })
+
+  if (error) return { ok: false, error: error.message }
+  return { ok: true }
+}
+
 export function notificationTypeLabel(type) {
   switch (type) {
     case 'approval_request':
@@ -126,7 +163,32 @@ export function notificationTypeLabel(type) {
       return 'Simulação aprovada'
     case 'simulation_rejected':
       return 'Simulação reprovada'
+    case 'order_approval_request':
+      return 'Pedido aguardando aprovação'
+    case 'order_conversion_request':
+      return 'Solicitação de conversão'
+    case 'order_approved':
+      return 'Pedido aprovado'
+    case 'order_rejected':
+      return 'Pedido reprovado'
     default:
       return 'Notificação'
   }
+}
+
+export function isOrderNotification(type) {
+  return (
+    type === 'order_approval_request' ||
+    type === 'order_conversion_request' ||
+    type === 'order_approved' ||
+    type === 'order_rejected'
+  )
+}
+
+export function notificationOpensPedido(type) {
+  return (
+    type === 'order_approval_request' ||
+    type === 'order_approved' ||
+    type === 'order_rejected'
+  )
 }

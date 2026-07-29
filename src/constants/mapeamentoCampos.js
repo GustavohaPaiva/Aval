@@ -33,7 +33,7 @@ export const ESTADOS_PRODUTO = [
 
 export const CLASSES_PRODUTO = [
   { value: 'Convencional', label: 'Convencional' },
-  { value: 'Especial', label: 'Especial (Yara)' },
+  { value: 'Especial', label: 'Especial' },
 ]
 
 export function formatProdutoDisplayNome({ nome, referencia_complementar, fornecedor_nome }) {

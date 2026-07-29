@@ -1,10 +1,11 @@
 import { useCallback, useState } from 'react'
+import { Link, useLocation } from 'react-router-dom'
 import {
   ListaFiltersPanel,
   ListaStatsBar,
   ListaTable,
 } from '../components/listas/ListaVisuals'
-import { IconClipboardList } from '../components/icons'
+import { IconClipboardList, IconPlus } from '../components/icons'
 import { AlertMessage } from '../components/ui/AlertMessage'
 import { PageHeader } from '../components/ui/PageHeader'
 import { PageInfoBanner } from '../components/ui/InfoStatCard'
@@ -31,6 +32,7 @@ function parseStatusFilter(value) {
 }
 
 export function GerenciarListas() {
+  const location = useLocation()
   const [rows, setRows] = useState([])
   const [fornecedores, setFornecedores] = useState([])
   const [total, setTotal] = useState(0)
@@ -39,6 +41,7 @@ export function GerenciarListas() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(null)
   const [actionError, setActionError] = useState(null)
+  const [successMessage] = useState(location.state?.successMessage ?? null)
 
   const [filters, , patchFilters] = usePersistedFilters('filters:listas', {
     searchQuery: '',
@@ -171,7 +174,7 @@ export function GerenciarListas() {
       .join(' ')
     if (
       !window.confirm(
-        `Excluir definitivamente a lista de produtos${label ? ` de ${label}` : ''} e todos os produtos vinculados? Esta ação não pode ser desfeita.`,
+        `Excluir a lista de produtos${label ? ` de ${label}` : ''}? Os produtos do catálogo, simulações e pedidos permanecem inalterados. Esta ação não pode ser desfeita.`,
       )
     ) {
       return
@@ -190,21 +193,30 @@ export function GerenciarListas() {
 
   return (
     <div className="w-full min-w-0 space-y-4 sm:space-y-6">
-      <div className="relative overflow-hidden rounded-2xl border border-primary-100/80 bg-gradient-to-br from-primary-50/80 via-white to-violet-50/40 p-4 shadow-sm sm:rounded-[2rem] sm:p-6 lg:p-8">
+      <div className="relative overflow-hidden rounded-2xl border border-primary-100/80 bg-gradient-to-br from-primary-50/80 via-white to-emerald-50/40 p-4 shadow-sm sm:rounded-[2rem] sm:p-6 lg:p-8">
         <div
           className="pointer-events-none absolute -right-8 -top-8 size-28 rounded-full bg-primary-200/30 blur-3xl sm:-right-10 sm:-top-10 sm:size-40"
           aria-hidden
         />
         <div
-          className="pointer-events-none absolute -bottom-6 left-1/4 size-24 rounded-full bg-violet-200/20 blur-3xl sm:-bottom-8 sm:left-1/3 sm:size-32"
+          className="pointer-events-none absolute -bottom-6 left-1/4 size-24 rounded-full bg-emerald-200/20 blur-3xl sm:-bottom-8 sm:left-1/3 sm:size-32"
           aria-hidden
         />
 
         <PageHeader
           eyebrow="Administração"
           title="Listas de produtos"
-          description="Gerencie as listas de produtos lançadas: inative para desativar os produtos vinculados, ou exclua a lista e os produtos de forma definitiva."
+          description="Gerencie as listas lançadas por fornecedor e quarter. Inative para desativar os produtos no simulador, ou abra o detalhe para editar padrões."
           className="relative mb-0"
+          actions={
+            <Link
+              to="/admin/importacao"
+              className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-2xl bg-primary-600 px-4 text-sm font-medium text-white shadow-sm transition hover:bg-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 sm:w-auto"
+            >
+              <IconPlus className="size-4" aria-hidden />
+              Nova lista
+            </Link>
+          }
         />
 
         <PageInfoBanner icon={IconClipboardList}>
@@ -218,6 +230,9 @@ export function GerenciarListas() {
 
       {loadError ? <AlertMessage>{loadError}</AlertMessage> : null}
       {actionError ? <AlertMessage>{actionError}</AlertMessage> : null}
+      {successMessage ? (
+        <AlertMessage tone="info">{successMessage}</AlertMessage>
+      ) : null}
 
       <ListaStatsBar
         total={totalCount}

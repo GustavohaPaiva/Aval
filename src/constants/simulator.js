@@ -31,14 +31,18 @@ export const FREIGHT_TYPES = [
 ]
 
 export const CULTURES = [
-  'Algodão',
-  'Arroz',
-  'Café',
+  'Alho',
+  'Amendoim',
+  'Batata',
+  'Beterraba',
+  'Cana',
+  'Cebola',
+  'Cenoura',
   'Feijão',
   'Milho',
   'Soja',
   'Sorgo',
-  'Trigo',
+  'Outros',
 ]
 
 export const CITIES_BY_STATE = {

@@ -1,11 +1,19 @@
 import { useNavigate } from 'react-router-dom'
-import { IconBan, IconEye, IconPackage, IconRotateCw, IconSearch, IconTrash } from '../icons'
+import {
+  IconBan,
+  IconEye,
+  IconPackage,
+  IconRotateCw,
+  IconSearch,
+  IconTrash,
+} from '../icons'
 import { QUARTERS } from '../../constants/simulator'
 import { IconActionButton } from '../fretes/FreteCard'
 import { InfoStatCard } from '../ui/InfoStatCard'
 import { Button } from '../ui/Button'
 import { DataTable } from '../ui/DataTable'
 import { EmptyState } from '../ui/EmptyState'
+import { MobileCardList } from '../ui/MobileCardList'
 import { SearchInput } from '../ui/SearchInput'
 import { Select } from '../ui/Select'
 
@@ -26,7 +34,7 @@ function StatusBadge({ ativo }) {
   return (
     <span
       className={[
-        'inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ring-inset',
+        'inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset',
         ativo
           ? 'bg-emerald-50 text-emerald-800 ring-emerald-200'
           : 'bg-slate-100 text-slate-600 ring-slate-200',
@@ -34,6 +42,143 @@ function StatusBadge({ ativo }) {
     >
       {ativo ? 'Ativa' : 'Inativa'}
     </span>
+  )
+}
+
+function ListaRowActions({ row, onInativar, onReativar, onExcluir }) {
+  const navigate = useNavigate()
+  const label = `${row.fornecedor_nome} ${row.quarter_calculado || ''}`.trim()
+
+  return (
+    <div className="flex justify-end gap-0.5">
+      <IconActionButton
+        label={`Abrir detalhe de ${label}`}
+        onClick={() =>
+          navigate(`/admin/importacao/lote/${row.id}`, {
+            state: { from: 'listas' },
+          })
+        }
+      >
+        <IconEye className="size-3.5" />
+      </IconActionButton>
+      {row.ativo ? (
+        <IconActionButton
+          label={`Inativar ${label}`}
+          tone="danger"
+          onClick={() => onInativar(row)}
+        >
+          <IconBan className="size-3.5" />
+        </IconActionButton>
+      ) : (
+        <IconActionButton
+          label={`Reativar ${label}`}
+          onClick={() => onReativar(row)}
+        >
+          <IconRotateCw className="size-3.5" />
+        </IconActionButton>
+      )}
+      <IconActionButton
+        label={`Excluir lista de produtos ${label}`}
+        tone="danger"
+        onClick={() => onExcluir(row)}
+      >
+        <IconTrash className="size-3.5" />
+      </IconActionButton>
+    </div>
+  )
+}
+
+function ListaCard({ row, onInativar, onReativar, onExcluir }) {
+  const navigate = useNavigate()
+  const label = `${row.fornecedor_nome} ${row.quarter_calculado || ''}`.trim()
+
+  return (
+    <li>
+      <article className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm">
+        <header className="border-b border-slate-100 bg-gradient-to-br from-primary-50/50 via-white to-emerald-50/30 px-4 py-3.5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="truncate text-base font-semibold text-slate-900">
+                {row.fornecedor_nome ?? '—'}
+              </p>
+              <p className="mt-0.5 text-sm font-medium text-primary-700">
+                {row.quarter_calculado || 'Quarter não definido'}
+              </p>
+            </div>
+            <StatusBadge ativo={row.ativo} />
+          </div>
+        </header>
+
+        <div className="grid grid-cols-2 gap-3 px-4 py-3.5 text-sm">
+          <div>
+            <p className="text-xs font-medium text-slate-500">Validade</p>
+            <p className="mt-0.5 font-medium text-slate-800">
+              {formatDate(row.data_validade)}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs font-medium text-slate-500">Lançamento</p>
+            <p className="mt-0.5 font-medium text-slate-800">
+              {formatDate(row.data_upload)}
+            </p>
+          </div>
+          <div className="col-span-2 flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2">
+            <IconPackage className="size-4 shrink-0 text-primary-600" />
+            <p className="text-sm text-slate-700">
+              <span className="font-semibold text-slate-900">
+                {Number(row.produtos_count ?? 0).toLocaleString('pt-BR')}
+              </span>{' '}
+              produto(s)
+            </p>
+          </div>
+        </div>
+
+        <footer className="flex items-center gap-2 border-t border-slate-100 bg-slate-50/60 px-4 py-3">
+          <Button
+            type="button"
+            className="min-w-0 flex-1"
+            onClick={() =>
+              navigate(`/admin/importacao/lote/${row.id}`, {
+                state: { from: 'listas' },
+              })
+            }
+          >
+            <IconEye className="size-4" aria-hidden />
+            Abrir
+          </Button>
+          {row.ativo ? (
+            <Button
+              type="button"
+              variant="secondary"
+              className="shrink-0"
+              aria-label={`Inativar ${label}`}
+              onClick={() => onInativar(row)}
+            >
+              <IconBan className="size-4" aria-hidden />
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="secondary"
+              className="shrink-0"
+              aria-label={`Reativar ${label}`}
+              onClick={() => onReativar(row)}
+            >
+              <IconRotateCw className="size-4" aria-hidden />
+            </Button>
+          )}
+          <Button
+            type="button"
+            variant="secondary"
+            className="shrink-0"
+            aria-label={`Excluir lista de produtos ${label}`}
+            onClick={() => onExcluir(row)}
+          >
+            <IconTrash className="size-4" aria-hidden />
+          </Button>
+        </footer>
+      </article>
+    </li>
   )
 }
 
@@ -58,7 +203,7 @@ export function ListaStatsBar({ total, filtered, ativas, loading }) {
       value: loading ? '—' : String(filtered),
       hint: 'Resultados visíveis',
       icon: IconSearch,
-      accent: 'text-violet-700 bg-violet-50',
+      accent: 'text-sky-700 bg-sky-50',
     },
   ]
 
@@ -91,7 +236,7 @@ export function ListaFiltersPanel({
 
   return (
     <section className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm sm:rounded-3xl">
-      <div className="border-b border-slate-100 bg-gradient-to-r from-primary-50/70 via-white to-violet-50/40 px-4 py-3.5 sm:px-6 sm:py-4">
+      <div className="border-b border-slate-100 bg-gradient-to-r from-primary-50/70 via-white to-emerald-50/40 px-4 py-3.5 sm:px-6 sm:py-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary-700">
@@ -101,56 +246,48 @@ export function ListaFiltersPanel({
               Filtre listas de produtos por fornecedor, quarter ou status.
             </p>
           </div>
-          <Button
-            type="button"
-            variant="ghost"
-            className="h-9 w-full shrink-0 px-3 sm:w-auto"
-            disabled={!hasFilters}
-            onClick={onClear}
-          >
-            Limpar filtros
-          </Button>
+          {hasFilters ? (
+            <Button type="button" variant="secondary" onClick={onClear}>
+              Limpar filtros
+            </Button>
+          ) : null}
         </div>
       </div>
 
-      <div className="space-y-4 p-4 sm:p-6">
-        <div>
+      <div className="grid gap-4 p-4 sm:grid-cols-2 sm:p-6 lg:grid-cols-4">
+        <div className="sm:col-span-2 lg:col-span-1">
           <label
-            htmlFor="lista-filter-busca"
-            className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500"
+            htmlFor="listas-busca"
+            className="mb-1.5 block text-sm font-medium text-slate-700"
           >
-            <IconSearch className="size-3.5" />
             Quarter ou estado
           </label>
           <SearchInput
-            id="lista-filter-busca"
-            ariaLabel="Buscar lista de produtos"
-            placeholder="Ex.: Q2, MG…"
+            id="listas-busca"
+            ariaLabel="Buscar por quarter ou estado"
+            placeholder="Ex.: Q2, MT…"
             value={searchQuery}
             onChange={onSearchChange}
           />
         </div>
-
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <Select
-            label="Fornecedor"
-            value={fornecedorId}
-            onChange={onFornecedorChange}
-            options={fornecedorOptions}
-          />
-          <Select
-            label="Quarter"
-            value={quarterFilter}
-            onChange={onQuarterChange}
-            options={[{ value: '', label: 'Todos' }, ...QUARTERS]}
-          />
-          <Select
-            label="Status"
-            value={statusFilter}
-            onChange={onStatusChange}
-            options={STATUS_OPTIONS}
-          />
-        </div>
+        <Select
+          label="Fornecedor"
+          value={fornecedorId}
+          onChange={onFornecedorChange}
+          options={fornecedorOptions}
+        />
+        <Select
+          label="Quarter"
+          value={quarterFilter}
+          onChange={onQuarterChange}
+          options={[{ value: '', label: 'Todos' }, ...QUARTERS]}
+        />
+        <Select
+          label="Status"
+          value={statusFilter}
+          onChange={onStatusChange}
+          options={STATUS_OPTIONS}
+        />
       </div>
     </section>
   )
@@ -164,8 +301,6 @@ export function ListaTable({
   onReativar,
   onExcluir,
 }) {
-  const navigate = useNavigate()
-
   if (loading) {
     return (
       <section className="rounded-2xl border border-slate-200/90 bg-white p-8 text-center text-sm text-slate-500 shadow-sm sm:rounded-3xl">
@@ -186,12 +321,20 @@ export function ListaTable({
     {
       key: 'fornecedor',
       header: 'Fornecedor',
-      cell: (row) => row.fornecedor_nome ?? '—',
+      cell: (row) => (
+        <span className="font-medium text-slate-900">
+          {row.fornecedor_nome ?? '—'}
+        </span>
+      ),
     },
     {
       key: 'quarter',
       header: 'Quarter',
-      cell: (row) => row.quarter_calculado || '—',
+      cell: (row) => (
+        <span className="inline-flex rounded-lg bg-primary-50 px-2 py-1 text-xs font-semibold text-primary-800 ring-1 ring-inset ring-primary-100">
+          {row.quarter_calculado || '—'}
+        </span>
+      ),
     },
     {
       key: 'validade',
@@ -207,7 +350,11 @@ export function ListaTable({
       key: 'produtos',
       header: 'Produtos',
       align: 'right',
-      cell: (row) => Number(row.produtos_count ?? 0).toLocaleString('pt-BR'),
+      cell: (row) => (
+        <span className="font-semibold tabular-nums text-slate-900">
+          {Number(row.produtos_count ?? 0).toLocaleString('pt-BR')}
+        </span>
+      ),
     },
     {
       key: 'status',
@@ -218,48 +365,39 @@ export function ListaTable({
       key: 'actions',
       header: '',
       align: 'right',
-      cell: (row) => {
-        const label = `${row.fornecedor_nome} ${row.quarter_calculado || ''}`.trim()
-        return (
-          <div className="flex justify-end gap-0.5">
-            <IconActionButton
-              label={`Abrir detalhe de ${label}`}
-              onClick={() => navigate(`/admin/importacao/lote/${row.id}`)}
-            >
-              <IconEye className="size-3.5" />
-            </IconActionButton>
-            {row.ativo ? (
-              <IconActionButton
-                label={`Inativar ${label}`}
-                tone="danger"
-                onClick={() => onInativar(row)}
-              >
-                <IconBan className="size-3.5" />
-              </IconActionButton>
-            ) : (
-              <IconActionButton
-                label={`Reativar ${label}`}
-                onClick={() => onReativar(row)}
-              >
-                <IconRotateCw className="size-3.5" />
-              </IconActionButton>
-            )}
-            <IconActionButton
-              label={`Excluir lista de produtos ${label}`}
-              tone="danger"
-              onClick={() => onExcluir(row)}
-            >
-              <IconTrash className="size-3.5" />
-            </IconActionButton>
-          </div>
-        )
-      },
+      cell: (row) => (
+        <ListaRowActions
+          row={row}
+          onInativar={onInativar}
+          onReativar={onReativar}
+          onExcluir={onExcluir}
+        />
+      ),
     },
   ]
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm sm:rounded-3xl">
-      <DataTable columns={columns} rows={rows} getRowKey={(row) => row.id} />
-    </section>
+    <>
+      <DataTable
+        columns={columns}
+        rows={rows}
+        getRowKey={(row) => row.id}
+      />
+
+      <MobileCardList
+        items={rows}
+        loading={false}
+        emptyMessage={emptyMessage}
+        renderItem={(row) => (
+          <ListaCard
+            key={row.id}
+            row={row}
+            onInativar={onInativar}
+            onReativar={onReativar}
+            onExcluir={onExcluir}
+          />
+        )}
+      />
+    </>
   )
 }

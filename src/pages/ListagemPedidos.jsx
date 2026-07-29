@@ -1,13 +1,15 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { SimulationListCard } from "../components/SimulationListCard";
-import { IconPackage } from "../components/icons";
+import { IconPackage, IconSearch, IconSliders } from "../components/icons";
 import { AlertMessage } from "../components/ui/AlertMessage";
+import { Button } from "../components/ui/Button";
 import { EmptyState } from "../components/ui/EmptyState";
 import { PageHeader } from "../components/ui/PageHeader";
 import { PageInfoBanner } from "../components/ui/InfoStatCard";
 import { PaginationBar } from "../components/ui/PaginationBar";
 import { SearchInput } from "../components/ui/SearchInput";
+import { PEDIDO_STATUSES } from "../constants/simulationStatus";
 import { useSyncPageLoading } from "../contexts/PageLoadingContext";
 import { useAbortableAsync } from "../hooks/useAbortableAsync";
 import { useAuth } from "../hooks/useAuth";
@@ -17,9 +19,22 @@ import { fetchSimulationsList } from "../services/simulationOrderService";
 
 const PAGE_SIZE = 50;
 
+const PEDIDO_STATUS_FILTERS = [
+  { key: "all", label: "Todos" },
+  { key: "order_pending", label: "Pendentes" },
+  { key: "converted", label: "Convertidos" },
+  { key: "order_rejected", label: "Reprovados" },
+  { key: "cancelled", label: "Cancelados" },
+];
+
+const VALID_STATUS_KEYS = new Set(
+  PEDIDO_STATUS_FILTERS.map((f) => f.key).filter((k) => k !== "all"),
+);
+
 export function ListagemPedidos() {
   const { user, role, initializing } = useAuth();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
   const [consultorNomeById, setConsultorNomeById] = useState({});
@@ -27,17 +42,26 @@ export function ListagemPedidos() {
   const [error, setError] = useState(null);
   const [filters, , patchFilters] = usePersistedFilters("filters:pedidos", {
     searchQuery: "",
+    quickFilter: "all",
     page: 1,
   });
-  const { searchQuery, page } = filters;
+  const { searchQuery, quickFilter, page } = filters;
   const debouncedSearch = useDebouncedValue(searchQuery, 300);
 
   useSyncPageLoading(loading || initializing);
+
+  const statusParam = searchParams.get("status");
+  const effectiveFilter =
+    statusParam && VALID_STATUS_KEYS.has(statusParam)
+      ? statusParam
+      : quickFilter;
 
   const canFetch = !initializing && Boolean(user?.id) && Boolean(role);
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const rangeStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const rangeEnd = Math.min(page * PAGE_SIZE, total);
+  const hasFilters =
+    Boolean(searchQuery.trim()) || effectiveFilter !== "all";
 
   useAbortableAsync(
     async (_signal, isActive) => {
@@ -53,10 +77,14 @@ export function ListagemPedidos() {
       setLoading(true);
       setError(null);
 
+      const statusForQuery =
+        effectiveFilter !== "all" ? effectiveFilter : null;
+
       const result = await fetchSimulationsList({
         userId: user.id,
         role,
-        statusFilter: "converted",
+        statusFilter: statusForQuery,
+        statusIn: statusForQuery ? undefined : PEDIDO_STATUSES,
         search: debouncedSearch,
         page,
         pageSize: PAGE_SIZE,
@@ -76,16 +104,25 @@ export function ListagemPedidos() {
       setTotal(result.total);
       setConsultorNomeById(result.consultorNomeById);
     },
-    [user, role, debouncedSearch, page],
+    [user, role, debouncedSearch, page, effectiveFilter],
     canFetch,
   );
 
-  function openPedido(simulationId) {
+  const isGestor = role === "gestor";
+
+  function openPedido(simulationId, status) {
+    if (!isGestor && status !== "converted") return;
     navigate(`/pedido/${encodeURIComponent(simulationId)}`);
   }
 
-  const isGestor = role === "gestor";
-  const hasFilters = Boolean(searchQuery.trim());
+  function setQuickFilter(key) {
+    patchFilters({ quickFilter: key, page: 1 });
+    if (statusParam) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("status");
+      setSearchParams(next, { replace: true });
+    }
+  }
 
   return (
     <div className="w-full min-w-0 space-y-4 sm:space-y-6">
@@ -102,7 +139,7 @@ export function ListagemPedidos() {
         <PageHeader
           eyebrow={isGestor ? "Gestão comercial" : "Operação"}
           title={isGestor ? "Pedidos" : "Meus pedidos"}
-          description="Simulações convertidas em pedidos, prontas para envio ao cliente."
+          description="Pedidos convertidos a partir de simulações, com status de aprovação."
           className="relative mb-0"
         />
 
@@ -110,7 +147,7 @@ export function ListagemPedidos() {
           {loading || initializing
             ? "Carregando pedidos…"
             : hasFilters
-              ? `${total.toLocaleString("pt-BR")} pedido(s) encontrado(s) com a busca atual.`
+              ? `${total.toLocaleString("pt-BR")} pedido(s) encontrado(s) com os filtros atuais.`
               : `${total.toLocaleString("pt-BR")} pedido(s) disponível(is) nesta listagem.`}
         </PageInfoBanner>
       </div>
@@ -118,16 +155,95 @@ export function ListagemPedidos() {
       {error ? <AlertMessage>{error}</AlertMessage> : null}
 
       <section className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm sm:rounded-3xl">
-        <div className="p-4 sm:p-6">
-          <SearchInput
-            id="pedido-filter-busca"
-            ariaLabel="Buscar pedido por cliente ou consultor"
-            placeholder="Buscar por cliente ou consultor…"
-            value={searchQuery}
-            onChange={(e) => {
-              patchFilters({ searchQuery: e.target.value, page: 1 });
-            }}
-          />
+        <div className="border-b border-slate-100 bg-gradient-to-r from-primary-50/70 via-white to-emerald-50/40 px-4 py-3.5 sm:px-6 sm:py-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary-700">
+                Filtros
+              </p>
+              <p className="mt-1 text-sm text-slate-600">
+                Busque por cliente ou consultor e refine por status.
+              </p>
+            </div>
+            {hasFilters ? (
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-9 w-full shrink-0 px-3 sm:w-auto"
+                onClick={() => {
+                  patchFilters({
+                    searchQuery: "",
+                    quickFilter: "all",
+                    page: 1,
+                  });
+                  if (statusParam) {
+                    const next = new URLSearchParams(searchParams);
+                    next.delete("status");
+                    setSearchParams(next, { replace: true });
+                  }
+                }}
+              >
+                Limpar filtros
+              </Button>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="space-y-5 p-4 sm:p-6">
+          <div>
+            <label
+              htmlFor="pedido-filter-busca"
+              className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500"
+            >
+              <IconSearch className="size-3.5" />
+              Busca
+            </label>
+            <SearchInput
+              id="pedido-filter-busca"
+              ariaLabel="Buscar pedido por cliente ou consultor"
+              placeholder="Buscar por cliente ou consultor…"
+              value={searchQuery}
+              onChange={(e) => {
+                patchFilters({ searchQuery: e.target.value, page: 1 });
+              }}
+            />
+          </div>
+
+          <div>
+            <p
+              id="pedido-filter-status-label"
+              className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500"
+            >
+              <IconSliders className="size-3.5" />
+              Status
+            </p>
+            <div
+              role="tablist"
+              aria-labelledby="pedido-filter-status-label"
+              className="grid grid-cols-2 gap-1 rounded-2xl bg-slate-100/90 p-1 ring-1 ring-slate-200/70 sm:grid-cols-3 lg:grid-cols-5"
+            >
+              {PEDIDO_STATUS_FILTERS.map((pill) => {
+                const active = effectiveFilter === pill.key;
+                return (
+                  <button
+                    key={pill.key}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    className={[
+                      "rounded-xl px-3 py-2 text-sm font-semibold transition-colors",
+                      active
+                        ? "bg-white text-primary-800 shadow-sm ring-1 ring-slate-200/80"
+                        : "text-slate-600 hover:text-slate-900",
+                    ].join(" ")}
+                    onClick={() => setQuickFilter(pill.key)}
+                  >
+                    {pill.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
       </section>
 
@@ -146,7 +262,7 @@ export function ListagemPedidos() {
           description={
             total === 0 && !hasFilters
               ? "Converta uma simulação em pedido no simulador para vê-la aqui."
-              : "Tente outro termo de busca."
+              : "Tente outro termo ou status."
           }
         />
       ) : (

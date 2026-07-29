@@ -146,9 +146,11 @@ export default function App() {
               <Route
                 path="pedido/:simulationId"
                 element={
-                  <LazyPage>
-                    <PedidoPage />
-                  </LazyPage>
+                  <ProtectedRoute roles={["gestor", "consultor"]}>
+                    <LazyPage>
+                      <PedidoPage />
+                    </LazyPage>
+                  </ProtectedRoute>
                 }
               />
               <Route

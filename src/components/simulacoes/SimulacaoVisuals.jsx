@@ -3,12 +3,14 @@ import { InfoStatCard } from "../ui/InfoStatCard";
 import { Button } from "../ui/Button";
 import { SearchInput } from "../ui/SearchInput";
 
-const SIMULACAO_STATUS_FILTERS = [
+export const SIMULACAO_STATUS_FILTERS = [
   { key: "all", label: "Todos" },
   { key: "draft", label: "Rascunhos" },
   { key: "pending", label: "Pendentes" },
   { key: "approved", label: "Aprovados" },
+  { key: "converted", label: "Convertidos" },
   { key: "rejected", label: "Reprovados" },
+  { key: "cancelled", label: "Cancelados" },
 ];
 
 export function SimulacaoFiltersPanel({
@@ -73,7 +75,7 @@ export function SimulacaoFiltersPanel({
           <div
             role="tablist"
             aria-labelledby="simulacao-filter-status-label"
-            className="grid grid-cols-2 gap-1 rounded-2xl bg-slate-100/90 p-1 ring-1 ring-slate-200/70 sm:grid-cols-3 lg:grid-cols-5"
+            className="grid grid-cols-2 gap-1 rounded-2xl bg-slate-100/90 p-1 ring-1 ring-slate-200/70 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7"
           >
             {SIMULACAO_STATUS_FILTERS.map((pill) => {
               const active = quickFilter === pill.key;

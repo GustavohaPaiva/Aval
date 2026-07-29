@@ -1,7 +1,14 @@
-import { IconClipboardList, IconDollarSign, IconUser, IconUsers } from '../icons'
+import {
+  IconClipboardList,
+  IconDollarSign,
+  IconHistory,
+  IconUser,
+  IconUsers,
+} from '../icons'
 import { InfoStatCard } from '../ui/InfoStatCard'
 import { Button } from '../ui/Button'
 import { formatShortDate } from '../../utils/formatShortDate'
+import { formatBRL } from '../../utils/money'
 import { formatCorporateEmail } from '../../utils/syagriEmail'
 
 function consultorInitial(nome) {
@@ -40,6 +47,69 @@ export function ConsultorDetailStats({ metric, conversionRate, loading }) {
         <InfoStatCard key={item.label} {...item} />
       ))}
     </div>
+  )
+}
+
+/**
+ * Prévia de vendas + comissão (mesma fonte da tela /comissao).
+ * Status Prompt 10: confirmada ≈ paga/convertida; calculada ≈ pendente.
+ */
+export function ConsultorResumoComercial({ vendas, comissao, loading }) {
+  const qtd = vendas?.quantidade ?? 0
+  const valorVendas = vendas?.valor ?? 0
+  const total = comissao?.total ?? 0
+  const confirmada = comissao?.confirmada ?? 0
+  const calculada = comissao?.calculada ?? 0
+
+  const items = [
+    {
+      label: 'Vendas',
+      value: loading ? '—' : formatBRL(valorVendas),
+      hint: loading
+        ? 'Carregando…'
+        : `${qtd.toLocaleString('pt-BR')} pedido${qtd === 1 ? '' : 's'} convertido${qtd === 1 ? '' : 's'}`,
+      icon: IconDollarSign,
+      accent: 'text-sky-700 bg-sky-50',
+    },
+    {
+      label: 'Comissão total',
+      value: loading ? '—' : formatBRL(total),
+      hint: 'Confirmada + calculada',
+      icon: IconClipboardList,
+      accent: 'text-primary-600 bg-primary-50',
+    },
+    {
+      label: 'Confirmada',
+      value: loading ? '—' : formatBRL(confirmada),
+      hint: 'Pedidos convertidos',
+      icon: IconDollarSign,
+      accent: 'text-emerald-700 bg-emerald-50',
+    },
+    {
+      label: 'Calculada',
+      value: loading ? '—' : formatBRL(calculada),
+      hint: 'Pendente de confirmação',
+      icon: IconHistory,
+      accent: 'text-amber-700 bg-amber-50',
+    },
+  ]
+
+  return (
+    <section className="space-y-3">
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary-700">
+          Resumo comercial
+        </p>
+        <p className="mt-0.5 text-sm text-slate-600">
+          Prévia de vendas e comissão — total geral, sem filtro de período.
+        </p>
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {items.map((item) => (
+          <InfoStatCard key={item.label} {...item} />
+        ))}
+      </div>
+    </section>
   )
 }
 

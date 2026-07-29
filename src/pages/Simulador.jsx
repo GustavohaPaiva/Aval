@@ -25,12 +25,14 @@ import { PageInfoBanner } from "../components/ui/InfoStatCard";
 import { Select } from "../components/ui/Select";
 import { FREIGHT_TYPES, QUARTERS, STATES } from "../constants/simulator";
 import { FRETE_ORIGENS } from "../constants/fretes";
+import { isPedidoStatus } from "../constants/simulationStatus";
 import { useAbortableAsync } from "../hooks/useAbortableAsync";
 import { useAuth } from "../hooks/useAuth";
 import { useSimulation } from "../hooks/useSimulation";
 import {
   fetchSimulationOrderBundle,
   persistConvertedSimulation,
+  requestOrderConversion,
   saveDraftSimulation,
   savePendingSimulation,
   saveGestorReview,
@@ -100,6 +102,8 @@ export function Simulador() {
   const [launchError, setLaunchError] = useState(null);
   const [clientModalOpen, setClientModalOpen] = useState(false);
   const [convertAfterClientSave, setConvertAfterClientSave] = useState(false);
+  const [requestConversionAfterClientSave, setRequestConversionAfterClientSave] =
+    useState(false);
   const [reviewSaving, setReviewSaving] = useState(false);
   const [reviewDeciding, setReviewDeciding] = useState(null);
   const [reviewError, setReviewError] = useState(null);
@@ -233,14 +237,21 @@ export function Simulador() {
         navigate("/simulacoes", { replace: true });
         return;
       }
-      if (result.data.simulation.status === "converted") {
-        navigate(`/pedido/${encodeURIComponent(simulationId)}`, { replace: true });
+      if (isPedidoStatus(result.data.simulation.status)) {
+        const status = result.data.simulation.status
+        if (role === "gestor" || status === "converted") {
+          navigate(`/pedido/${encodeURIComponent(simulationId)}`, {
+            replace: true,
+          });
+        } else {
+          navigate("/pedidos", { replace: true });
+        }
         return;
       }
       sim.hydrateFromBundle(result.data);
       setRemoteStatus(result.data.simulation.status ?? null);
     },
-    [simulationId, navigate, sim.hydrateFromBundle, sim.resetLocal, sim.clearDraft],
+    [simulationId, navigate, role, sim.hydrateFromBundle, sim.resetLocal, sim.clearDraft],
   );
 
   const handleClientSearch = useCallback(async (query, signal) => {
@@ -265,6 +276,10 @@ export function Simulador() {
   }, [sim.clientName, sim.isReadOnly]);
 
   async function persistAndNavigate(overrideClientId) {
+    if (!sim.isGestor) {
+      setPersistError("Apenas gestores podem converter simulações em pedido.");
+      return;
+    }
     setPersisting(true);
     try {
       const result = await persistConvertedSimulation({
@@ -276,8 +291,40 @@ export function Simulador() {
         return;
       }
       sim.clearDraft();
-      setRemoteStatus("converted");
+      setRemoteStatus(result.status ?? "order_pending");
       navigate(`/pedido/${result.simulationId}`);
+    } finally {
+      setPersisting(false);
+    }
+  }
+
+  async function persistRequestConversion(overrideClientId) {
+    setPersisting(true);
+    setNotifyError(null);
+    setLaunchError(null);
+    try {
+      const result = await requestOrderConversion({
+        ...buildSimulationPayload(),
+        clientId: overrideClientId ?? sim.clientId,
+      });
+      if (!result.ok) {
+        setNotifyError(result.error);
+        return;
+      }
+      sim.clearDraft();
+      setRemoteStatus(result.status ?? "conversion_requested");
+      sim.lockAsPending();
+      sim.showActionBanner(
+        result.alreadyRequested
+          ? "Conversão já havia sido solicitada. A proposta permanece bloqueada."
+          : "Solicitação enviada: o gestor foi notificado para converter esta simulação em pedido. A proposta ficou bloqueada para edição.",
+      );
+      if (!simulationId) {
+        navigate(
+          `/simulador?simulationId=${encodeURIComponent(result.simulationId)}`,
+          { replace: true },
+        );
+      }
     } finally {
       setPersisting(false);
     }
@@ -423,7 +470,12 @@ export function Simulador() {
     setPersistError(null);
     setLaunchError(null);
 
-    if (remoteStatus === "converted") {
+    if (!sim.isGestor) {
+      setLaunchError("Apenas gestores podem converter simulações em pedido.");
+      return;
+    }
+
+    if (isPedidoStatus(remoteStatus)) {
       if (simulationId) navigate(`/pedido/${simulationId}`);
       return;
     }
@@ -460,6 +512,53 @@ export function Simulador() {
     }
 
     await persistAndNavigate();
+  }
+
+  async function handleRequestOrderConversion() {
+    setNotifyError(null);
+    setLaunchError(null);
+
+    if (sim.isGestor || isPedidoStatus(remoteStatus)) return;
+    if (remoteStatus === "conversion_requested") {
+      setLaunchError(
+        "Conversão já solicitada. Aguarde o gestor converter esta simulação em pedido.",
+      );
+      return;
+    }
+
+    const liberatedByGestor = remoteStatus === "approved";
+    if (!liberatedByGestor) {
+      const blockReason = sim.getLaunchBlockReason();
+      if (blockReason) {
+        setLaunchError(blockReason);
+        return;
+      }
+      if (sim.tipoFrete === "CIF" && freteLookupError) {
+        setLaunchError(freteLookupError);
+        return;
+      }
+      if (!sim.canConvert) return;
+    } else {
+      const blockReason = getSaveBlockReason();
+      if (blockReason) {
+        setLaunchError(blockReason);
+        return;
+      }
+    }
+
+    if (!ensureValidClientDocument()) return;
+
+    if (!sim.clientId) {
+      if (!sim.clientName.trim()) {
+        setLaunchError("Informe o nome do cliente.");
+        return;
+      }
+      setRequestConversionAfterClientSave(true);
+      setClientModalOpen(true);
+      return;
+    }
+
+    await persistRequestConversion();
   }
 
   function buildSimulationPayload() {
@@ -611,7 +710,7 @@ export function Simulador() {
       setRemoteStatus(status);
       sim.showActionBanner(
         status === "approved"
-          ? "Simulação liberada para o consultor concluir o pedido."
+          ? "Margem aprovada. O consultor pode solicitar a conversão em pedido."
           : "Simulação reprovada e consultor notificado.",
       );
     } finally {
@@ -621,7 +720,7 @@ export function Simulador() {
 
   async function handleGestorConvertToPedido() {
     if (!sim.isGestor || !simulationId) return;
-    if (remoteStatus === "converted") {
+    if (isPedidoStatus(remoteStatus)) {
       navigate(`/pedido/${simulationId}`);
       return;
     }
@@ -633,12 +732,16 @@ export function Simulador() {
         setReviewError(saveResult.error);
         return;
       }
-      const statusResult = await updateSimulationStatus(simulationId, "converted");
+      const statusResult = await updateSimulationStatus(simulationId, "order_pending", {
+        notifyGestores: true,
+        clientName: sim.clientName,
+        body: `Proposta de ${formatBRL(sim.totalProposta)} enviada para aprovação.`,
+      });
       if (!statusResult.ok) {
         setReviewError(statusResult.error);
         return;
       }
-      setRemoteStatus("converted");
+      setRemoteStatus("order_pending");
       navigate(`/pedido/${simulationId}`);
     } finally {
       setPersisting(false);
@@ -970,7 +1073,11 @@ export function Simulador() {
           <div className="mt-5 space-y-3 rounded-2xl border border-slate-100 bg-slate-50/50 p-4 sm:p-5">
             {showReadOnlyNotice ? (
               <p className="text-sm text-slate-600">
-                Proposta enviada — aguardando revisão do gestor.
+                {remoteStatus === "conversion_requested"
+                  ? "Conversão solicitada — proposta bloqueada. Aguarde o gestor converter em pedido."
+                  : remoteStatus === "approved"
+                    ? "Simulação aprovada — edição bloqueada. Você pode solicitar a conversão em pedido."
+                    : "Proposta enviada — aguardando revisão do gestor."}
               </p>
             ) : null}
             {showGestorReview ? (
@@ -1046,7 +1153,7 @@ export function Simulador() {
                     disabled={reviewSaving || reviewDeciding === "rejected" || persisting}
                     onClick={() => void handleReviewDecision("approved")}
                   >
-                    Liberar para o consultor
+                    Liberar margem
                   </Button>
                   <Button
                     type="button"
@@ -1059,7 +1166,7 @@ export function Simulador() {
                     Converter em pedido
                   </Button>
                 </>
-              ) : sim.isGestor && simulationId && remoteStatus !== "converted" ? (
+              ) : sim.isGestor && simulationId && !isPedidoStatus(remoteStatus) ? (
                 <Button
                   type="button"
                   variant="primary"
@@ -1071,17 +1178,18 @@ export function Simulador() {
                   Converter em pedido
                 </Button>
               ) : !sim.isGestor &&
-                remoteStatus !== "converted" &&
+                !isPedidoStatus(remoteStatus) &&
+                remoteStatus !== "conversion_requested" &&
                 (sim.globalStatus === "Aprovado" ||
                   remoteStatus === "approved") ? (
                 <Button
                   type="button"
                   variant="primary"
                   className="w-full sm:flex-1"
-                  loading={persisting}
-                  onClick={() => void handleConvertToPedido()}
+                  loading={persisting || notifying}
+                  onClick={() => void handleRequestOrderConversion()}
                 >
-                  Converter em pedido
+                  Solicitar conversão em pedido
                 </Button>
               ) : sim.isGestor && !simulationId ? (
                 <Button
@@ -1124,12 +1232,18 @@ export function Simulador() {
         onClose={() => {
           setClientModalOpen(false);
           setConvertAfterClientSave(false);
+          setRequestConversionAfterClientSave(false);
         }}
         onSaved={(client) => {
           sim.selectClient(client);
           if (convertAfterClientSave) {
             setConvertAfterClientSave(false);
             void persistAndNavigate(client.id);
+            return;
+          }
+          if (requestConversionAfterClientSave) {
+            setRequestConversionAfterClientSave(false);
+            void persistRequestConversion(client.id);
           }
         }}
       />

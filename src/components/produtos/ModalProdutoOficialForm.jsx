@@ -4,6 +4,7 @@ import { Input } from '../ui/Input'
 import { Modal } from '../ui/Modal'
 import { ModalFormFooter } from '../ui/ModalFormFooter'
 import { Select } from '../ui/Select'
+import { classifyProdutoClasse } from '../../utils/produtoClasse'
 import { parsePrecoValue } from '../../utils/spreadsheetAnalyzer'
 
 const MOEDA_OPTIONS = [
@@ -25,12 +26,13 @@ const EMPTY = {
 
 function buildForm(initial) {
   if (!initial) return EMPTY
+  const nome = initial.nome ?? ''
   return {
-    nome: initial.nome ?? '',
+    nome,
     referencia_complementar:
       initial.referencia_complementar ?? initial.sku_fornecedor ?? '',
     estado: initial.estado ?? '',
-    classe: initial.classe ?? 'Convencional',
+    classe: initial.classe ?? classifyProdutoClasse(nome),
     quarter: initial.quarter ?? '',
     preco_original: String(initial.preco_original ?? ''),
     desconto_usd: String(initial.desconto_usd ?? 0),
@@ -47,11 +49,20 @@ export function ModalProdutoOficialForm({
   fornecedores,
 }) {
   const [form, setForm] = useState(() => buildForm(initial))
+  const [classeManual, setClasseManual] = useState(false)
   const [fornecedorId, setFornecedorId] = useState(
     () => initial?.fornecedor_id ?? fornecedores?.[0]?.id ?? '',
   )
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
+
+  function handleNomeChange(value) {
+    setForm((p) => ({
+      ...p,
+      nome: value,
+      ...(classeManual ? {} : { classe: classifyProdutoClasse(value) }),
+    }))
+  }
 
   const showFornecedorSelect = Boolean(fornecedores?.length) && !initial?.id
 
@@ -149,7 +160,7 @@ export function ModalProdutoOficialForm({
         <Input
           label="Fertilizante"
           value={form.nome}
-          onChange={(e) => setForm((p) => ({ ...p, nome: e.target.value }))}
+          onChange={(e) => handleNomeChange(e.target.value)}
           disabled={saving}
         />
         <Input
@@ -172,7 +183,10 @@ export function ModalProdutoOficialForm({
           <Select
             label="Classe"
             value={form.classe}
-            onChange={(e) => setForm((p) => ({ ...p, classe: e.target.value }))}
+            onChange={(e) => {
+              setClasseManual(true)
+              setForm((p) => ({ ...p, classe: e.target.value }))
+            }}
             options={CLASSES_PRODUTO}
             disabled={saving}
           />

@@ -13,6 +13,7 @@ import {
   fetchNotifications,
   markAllNotificationsRead,
   markNotificationRead,
+  notificationOpensPedido,
   notificationTypeLabel,
 } from "../services/notificationService";
 
@@ -29,10 +30,14 @@ function formatNotificationDate(iso) {
 function typeBadgeClass(type) {
   switch (type) {
     case "approval_request":
+    case "order_approval_request":
+    case "order_conversion_request":
       return "bg-amber-50 text-amber-800 ring-1 ring-amber-200";
     case "simulation_approved":
+    case "order_approved":
       return "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200";
     case "simulation_rejected":
+    case "order_rejected":
       return "bg-red-50 text-red-800 ring-1 ring-red-200";
     default:
       return "bg-slate-100 text-slate-700 ring-1 ring-slate-200";
@@ -85,9 +90,25 @@ export function NotificacoesPage() {
         );
       }
       if (notification.simulation_id) {
-        navigate(
-          `/simulador?simulationId=${encodeURIComponent(notification.simulation_id)}`,
-        );
+        if (notification.type === "order_approved") {
+          navigate(
+            `/pedido/${encodeURIComponent(notification.simulation_id)}`,
+          );
+        } else if (notificationOpensPedido(notification.type) && isGestor) {
+          navigate(
+            `/pedido/${encodeURIComponent(notification.simulation_id)}`,
+          );
+        } else if (notification.type === "order_conversion_request") {
+          navigate(
+            `/simulador?simulationId=${encodeURIComponent(notification.simulation_id)}`,
+          );
+        } else if (notification.type === "order_rejected") {
+          navigate("/pedidos");
+        } else {
+          navigate(
+            `/simulador?simulationId=${encodeURIComponent(notification.simulation_id)}`,
+          );
+        }
       }
     } finally {
       setOpeningId(null);
@@ -115,8 +136,8 @@ export function NotificacoesPage() {
         title="Notificações"
         description={
           isGestor
-            ? "Solicitações de revisão de simulações abaixo da margem."
-            : "Atualizações das suas simulações enviadas para análise."
+            ? "Solicitações de revisão de simulações e pedidos aguardando aprovação."
+            : "Atualizações das suas simulações e pedidos enviados para análise."
         }
         actions={
           unreadCount > 0 ? (
@@ -150,8 +171,8 @@ export function NotificacoesPage() {
           title="Nenhuma notificação"
           description={
             isGestor
-              ? "Quando um consultor solicitar revisão de uma simulação abaixo da margem, ela aparecerá aqui."
-              : "Quando o gestor aprovar ou reprovar uma simulação sua em análise, a atualização aparecerá aqui."
+              ? "Quando um consultor solicitar revisão de simulação ou enviar um pedido para aprovação, a notificação aparecerá aqui."
+              : "Quando o gestor aprovar ou reprovar uma simulação ou pedido seu, a atualização aparecerá aqui."
           }
         />
       ) : null}
@@ -161,9 +182,15 @@ export function NotificacoesPage() {
           {rows.map((row) => {
             const unread = !row.read_at;
             const openLabel =
-              row.type === "simulation_approved"
+              row.type === "order_approved"
                 ? "Abrir pedido"
-                : "Abrir simulação";
+                : notificationOpensPedido(row.type) && isGestor
+                  ? "Abrir pedido"
+                  : row.type === "order_conversion_request"
+                    ? "Abrir simulação"
+                    : row.type === "order_rejected"
+                      ? "Ver pedidos"
+                      : "Abrir simulação";
             return (
               <li key={row.id}>
                 <article

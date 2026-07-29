@@ -386,32 +386,123 @@ export async function syncComissaoRegistroFromSimulation(
   })
 }
 
+const REGISTRO_SELECT = `
+  id,
+  simulation_id,
+  consultor_id,
+  base_calculo,
+  comissao_valor,
+  margem_media_percentual,
+  status,
+  calculado_em,
+  simulations ( id, status, total_proposta, created_at, clients ( nome ) )
+`
+
 /**
- * Lista registros de comissão de um consultor (para a futura tela de detalhe).
+ * Lista registros de comissão (histórico gerado por simulação/pedido).
+ * @param {{ consultorId?: string, status?: string }} [params]
+ */
+export async function fetchComissaoRegistros(params = {}) {
+  let q = supabase
+    .from('comissao_registros')
+    .select(REGISTRO_SELECT)
+    .order('calculado_em', { ascending: false })
+
+  if (params.consultorId) {
+    q = q.eq('consultor_id', params.consultorId)
+  }
+  if (params.status) {
+    q = q.eq('status', params.status)
+  }
+
+  const { data, error } = await q
+  if (error) return { ok: false, error: error.message }
+
+  const rows = data ?? []
+  const consultorIds = [...new Set(rows.map((r) => r.consultor_id).filter(Boolean))]
+  let consultorNomeById = {}
+
+  if (consultorIds.length > 0) {
+    const { data: profs, error: pErr } = await supabase
+      .from('profiles')
+      .select('id, nome')
+      .in('id', consultorIds)
+    if (pErr) return { ok: false, error: pErr.message }
+    consultorNomeById = Object.fromEntries(
+      (profs ?? []).map((p) => [String(p.id), String(p.nome ?? '')]),
+    )
+  }
+
+  return {
+    ok: true,
+    rows: rows.map((row) => ({
+      ...row,
+      consultor_nome: consultorNomeById[String(row.consultor_id)] || null,
+    })),
+  }
+}
+
+/**
+ * Lista registros de comissão de um consultor.
  */
 export async function fetchComissoesByConsultor(consultorId) {
   if (!consultorId) {
     return { ok: false, error: 'Consultor inválido.' }
   }
+  return fetchComissaoRegistros({ consultorId })
+}
+
+/**
+ * Agrega totais de comissão pelos status do Prompt 10.
+ * Canceladas entram só em `cancelada` / `count` — não somam em `total`.
+ * @param {Array<{ status?: string, comissao_valor?: number }>} registros
+ */
+export function aggregateComissaoTotais(registros = []) {
+  let confirmada = 0
+  let calculada = 0
+  let cancelada = 0
+
+  for (const row of registros) {
+    const valor = Number(row.comissao_valor) || 0
+    if (row.status === 'confirmada') confirmada += valor
+    else if (row.status === 'calculada') calculada += valor
+    else if (row.status === 'cancelada') cancelada += valor
+  }
+
+  return {
+    confirmada: roundMoney(confirmada),
+    calculada: roundMoney(calculada),
+    cancelada: roundMoney(cancelada),
+    total: roundMoney(confirmada + calculada),
+    count: registros.length,
+  }
+}
+
+/**
+ * Valor e quantidade de vendas (pedidos convertidos) do consultor — total geral.
+ * @param {string} consultorId
+ */
+export async function fetchConsultorVendasResumo(consultorId) {
+  if (!consultorId) {
+    return { ok: false, error: 'Consultor inválido.' }
+  }
 
   const { data, error } = await supabase
-    .from('comissao_registros')
-    .select(
-      `
-      id,
-      simulation_id,
-      consultor_id,
-      base_calculo,
-      comissao_valor,
-      margem_media_percentual,
-      status,
-      calculado_em,
-      simulations ( id, status, total_proposta, created_at, clients ( nome ) )
-    `,
-    )
-    .eq('consultor_id', consultorId)
-    .order('calculado_em', { ascending: false })
+    .from('simulations')
+    .select('id, total_proposta')
+    .eq('user_id', consultorId)
+    .eq('status', 'converted')
 
   if (error) return { ok: false, error: error.message }
-  return { ok: true, rows: data ?? [] }
+
+  const rows = data ?? []
+  const valor = roundMoney(
+    rows.reduce((acc, row) => acc + (Number(row.total_proposta) || 0), 0),
+  )
+
+  return {
+    ok: true,
+    quantidade: rows.length,
+    valor,
+  }
 }

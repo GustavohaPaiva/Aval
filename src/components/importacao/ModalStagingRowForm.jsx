@@ -4,6 +4,7 @@ import { Input } from '../ui/Input'
 import { Modal } from '../ui/Modal'
 import { ModalFormFooter } from '../ui/ModalFormFooter'
 import { Select } from '../ui/Select'
+import { classifyProdutoClasse } from '../../utils/produtoClasse'
 import { parsePrecoValue } from '../../utils/spreadsheetAnalyzer'
 
 const EMPTY = {
@@ -16,12 +17,13 @@ const EMPTY = {
 
 function buildForm(initial) {
   if (!initial) return EMPTY
+  const nome = initial.nome ?? ''
   return {
-    nome: initial.nome ?? '',
+    nome,
     referencia_complementar:
       initial.referencia_complementar ?? initial.sku_fornecedor ?? '',
     estado: initial.estado ?? '',
-    classe: initial.classe ?? 'Convencional',
+    classe: initial.classe ?? classifyProdutoClasse(nome),
     preco_original: String(initial.preco_original ?? ''),
   }
 }
@@ -37,8 +39,17 @@ export function ModalStagingRowForm({
   loteEstado = '',
 }) {
   const [form, setForm] = useState(() => buildForm(initial))
+  const [classeManual, setClasseManual] = useState(false)
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
+
+  function handleNomeChange(value) {
+    setForm((p) => ({
+      ...p,
+      nome: value,
+      ...(classeManual ? {} : { classe: classifyProdutoClasse(value) }),
+    }))
+  }
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -104,7 +115,7 @@ export function ModalStagingRowForm({
         <Input
           label="Fertilizante"
           value={form.nome}
-          onChange={(e) => setForm((p) => ({ ...p, nome: e.target.value }))}
+          onChange={(e) => handleNomeChange(e.target.value)}
           disabled={saving}
         />
         <Input
@@ -127,7 +138,10 @@ export function ModalStagingRowForm({
           <Select
             label="Classe"
             value={form.classe}
-            onChange={(e) => setForm((p) => ({ ...p, classe: e.target.value }))}
+            onChange={(e) => {
+              setClasseManual(true)
+              setForm((p) => ({ ...p, classe: e.target.value }))
+            }}
             options={CLASSES_PRODUTO}
             disabled={saving}
           />

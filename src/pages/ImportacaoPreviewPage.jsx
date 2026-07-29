@@ -4,6 +4,7 @@ import { SpreadsheetPreviewPanel } from "../components/importacao/SpreadsheetPre
 import { AlertMessage } from "../components/ui/AlertMessage";
 import { Button } from "../components/ui/Button";
 import { ButtonGroup } from "../components/ui/ButtonGroup";
+import { EmptyState } from "../components/ui/EmptyState";
 import { Input } from "../components/ui/Input";
 import { PageBackLink } from "../components/ui/PageBackLink";
 import { PageHeader } from "../components/ui/PageHeader";
@@ -338,55 +339,86 @@ export function ImportacaoPreviewPage() {
     <div className="w-full min-w-0 space-y-4 sm:space-y-6">
       <PageBackLink to="/admin/importacao">Voltar ao lançamento</PageBackLink>
 
-      <PageHeader
-        eyebrow="Revisão"
-        title="Revisar importação"
-        description={file.name}
-        actions={
-          <ButtonGroup>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => navigate("/admin/importacao")}
-              disabled={confirming}
-            >
-              Cancelar
-            </Button>
-            <Button
-              type="button"
-              loading={confirming}
-              disabled={loading || !parseState}
-              onClick={() => void handleConfirm()}
-            >
-              {confirmLabel}
-            </Button>
-          </ButtonGroup>
-        }
-      />
+      <div className="relative overflow-hidden rounded-2xl border border-primary-100/80 bg-gradient-to-br from-primary-50/80 via-white to-sky-50/40 p-4 shadow-sm sm:rounded-[2rem] sm:p-6">
+        <div
+          className="pointer-events-none absolute -right-8 -top-8 size-28 rounded-full bg-primary-200/30 blur-3xl"
+          aria-hidden
+        />
+        <PageHeader
+          eyebrow="Revisão"
+          title="Revisar importação"
+          description={file.name}
+          className="relative mb-0"
+          actions={
+            <ButtonGroup>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => navigate("/admin/importacao")}
+                disabled={confirming}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                loading={confirming}
+                disabled={loading || !parseState}
+                onClick={() => void handleConfirm()}
+              >
+                {confirmLabel}
+              </Button>
+            </ButtonGroup>
+          }
+        />
+      </div>
 
       {loading ? (
-        <p className="text-sm text-slate-600">Analisando planilha…</p>
+        <EmptyState
+          title="Analisando planilha…"
+          description="Detectando fornecedor, quarters e colunas."
+        />
       ) : error ? (
         <AlertMessage>{error}</AlertMessage>
       ) : parseState ? (
         <>
           {processError ? <AlertMessage>{processError}</AlertMessage> : null}
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-            <Input
-              label="Fornecedor detectado"
-              value={fornecedorNome}
-              onChange={(e) => setFornecedorNome(e.target.value)}
-              placeholder="Ex.: YARA"
-            />
-            {parseState.fornecedorDetectado?.confidence ? (
-              <p className="mt-1 text-xs text-slate-500">
-                Confiança da detecção:{" "}
-                {CONFIDENCE_LABEL[parseState.fornecedorDetectado.confidence] ??
-                  parseState.fornecedorDetectado.confidence}
+          {multiQuarter ? (
+            <AlertMessage tone="info">
+              Esta planilha gerará {derivedQuarterGroups.length} listas
+              separadas ({derivedQuarterGroups
+                .map((g) => g.quarter)
+                .filter(Boolean)
+                .join(", ")}
+              ). Você revisará e lançará cada quarter de forma independente.
+            </AlertMessage>
+          ) : null}
+
+          <section className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm sm:rounded-3xl">
+            <div className="border-b border-slate-100 bg-gradient-to-r from-primary-50/70 via-white to-emerald-50/40 px-4 py-3.5 sm:px-6 sm:py-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary-700">
+                Fornecedor
               </p>
-            ) : null}
-          </div>
+              <p className="mt-1 text-sm text-slate-600">
+                Confirme o fornecedor detectado na planilha.
+              </p>
+            </div>
+            <div className="p-4 sm:p-6">
+              <Input
+                label="Fornecedor detectado"
+                value={fornecedorNome}
+                onChange={(e) => setFornecedorNome(e.target.value)}
+                placeholder="Ex.: YARA"
+              />
+              {parseState.fornecedorDetectado?.confidence ? (
+                <p className="mt-1 text-xs text-slate-500">
+                  Confiança da detecção:{" "}
+                  {CONFIDENCE_LABEL[parseState.fornecedorDetectado.confidence] ??
+                    parseState.fornecedorDetectado.confidence}
+                </p>
+              ) : null}
+            </div>
+          </section>
 
           <SpreadsheetPreviewPanel
             dataValidade={dataValidade}
@@ -407,12 +439,12 @@ export function ImportacaoPreviewPage() {
             </AlertMessage>
           ) : null}
 
-          <section className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-            <div>
-              <h3 className="text-sm font-semibold text-slate-900">
-                Mapeamento automático das colunas
-              </h3>
-              <p className="mt-1 text-xs text-slate-600">
+          <section className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm sm:rounded-3xl">
+            <div className="border-b border-slate-100 bg-gradient-to-r from-primary-50/70 via-white to-sky-50/40 px-4 py-3.5 sm:px-6 sm:py-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary-700">
+                Mapeamento das colunas
+              </p>
+              <p className="mt-1 text-sm text-slate-600">
                 {totalPreviewRows} linha(s) serão importadas
                 {multiQuarter
                   ? ` em ${derivedQuarterGroups.length} lançamentos separados`
@@ -421,66 +453,85 @@ export function ImportacaoPreviewPage() {
               </p>
             </div>
 
-            {parseState.columns.map((col) => {
-              const selected = columnMapRecord[col.id] ?? "";
-              const targetLabel =
-                selected && selected !== IGNORE_COLUMN_VALUE
-                  ? MAPPING_TARGET_LABELS[selected]
-                  : null;
-              const confidenceForCol =
-                selected && selected !== IGNORE_COLUMN_VALUE
-                  ? mapConfidence[selected]
-                  : null;
+            <div className="divide-y divide-slate-100">
+              {parseState.columns.map((col) => {
+                const selected = columnMapRecord[col.id] ?? "";
+                const targetLabel =
+                  selected && selected !== IGNORE_COLUMN_VALUE
+                    ? MAPPING_TARGET_LABELS[selected]
+                    : null;
+                const confidenceForCol =
+                  selected && selected !== IGNORE_COLUMN_VALUE
+                    ? mapConfidence[selected]
+                    : null;
 
-              return (
-                <div
-                  key={col.id}
-                  className="grid gap-2 border-b border-slate-100 pb-3 last:border-0 last:pb-0 sm:grid-cols-2 sm:items-center"
-                >
-                  <div>
-                    <p className="font-mono text-sm font-medium text-slate-900">
-                      {col.label}
-                    </p>
-                    {targetLabel && confidenceForCol ? (
-                      <p className="text-xs text-slate-500">
-                        {targetLabel} · confiança{" "}
-                        {CONFIDENCE_LABEL[confidenceForCol] ?? confidenceForCol}
+                return (
+                  <div
+                    key={col.id}
+                    className="grid gap-2 px-4 py-3.5 sm:grid-cols-2 sm:items-center sm:px-6"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate font-mono text-sm font-medium text-slate-900">
+                        {col.label}
                       </p>
-                    ) : null}
+                      {targetLabel && confidenceForCol ? (
+                        <p className="mt-0.5 text-xs text-slate-500">
+                          {targetLabel} · confiança{" "}
+                          {CONFIDENCE_LABEL[confidenceForCol] ??
+                            confidenceForCol}
+                        </p>
+                      ) : (
+                        <p className="mt-0.5 text-xs text-slate-400">
+                          Coluna da planilha
+                        </p>
+                      )}
+                    </div>
+                    <Select
+                      aria-label={`Mapear coluna ${col.label}`}
+                      placeholder="Selecione o campo…"
+                      value={selected}
+                      onChange={(e) =>
+                        handleColumnMapChange(col.id, e.target.value)
+                      }
+                      options={SYSTEM_MAPPING_FIELDS}
+                    />
                   </div>
-                  <Select
-                    aria-label={`Mapear coluna ${col.label}`}
-                    placeholder="Selecione o campo…"
-                    value={selected}
-                    onChange={(e) =>
-                      handleColumnMapChange(col.id, e.target.value)
-                    }
-                    options={SYSTEM_MAPPING_FIELDS}
-                  />
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </section>
 
-          <div className="sticky bottom-0 -mx-4 border-t border-slate-100 bg-white/95 px-4 py-4 backdrop-blur-sm sm:mx-0 sm:rounded-2xl sm:border sm:px-6">
-            <ButtonGroup>
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => navigate("/admin/importacao")}
-                disabled={confirming}
-              >
-                Cancelar
-              </Button>
-              <Button
-                type="button"
-                loading={confirming}
-                disabled={loading || !parseState}
-                onClick={() => void handleConfirm()}
-              >
-                {confirmLabel}
-              </Button>
-            </ButtonGroup>
+          <div className="sticky bottom-0 z-10 -mx-4 border-t border-slate-200/80 bg-white/95 px-4 py-4 backdrop-blur-sm sm:mx-0 sm:rounded-2xl sm:border sm:shadow-sm">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-slate-900">
+                  {multiQuarter
+                    ? `Processar ${derivedQuarterGroups.length} lançamentos`
+                    : "Processar lote"}
+                </p>
+                <p className="mt-0.5 text-xs text-slate-600">
+                  {totalPreviewRows} produto(s) · {fornecedorNome || "fornecedor"}
+                </p>
+              </div>
+              <ButtonGroup className="sm:shrink-0">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => navigate("/admin/importacao")}
+                  disabled={confirming}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="button"
+                  loading={confirming}
+                  disabled={loading || !parseState}
+                  onClick={() => void handleConfirm()}
+                >
+                  {confirmLabel}
+                </Button>
+              </ButtonGroup>
+            </div>
           </div>
         </>
       ) : null}

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CATALOG_PRODUCTS } from '../constants/catalogProducts'
 import { CULTURES } from '../constants/simulator'
+import { isConsultorSimulationLocked } from '../constants/simulationStatus'
 import { FLOOR_RATIO } from '../types/simulation'
 import { parseCpfCnpjInput } from '../utils/dataFormatters'
 import { calcComissaoLinha } from '../utils/comissaoCalculations'
@@ -292,7 +293,13 @@ export function useSimulation(options = {}) {
 
   const showFreteRotas = tipoFrete === 'CIF'
 
-  const cultureOptions = useMemo(() => [...CULTURES].sort((a, b) => a.localeCompare(b, 'pt-BR')), [])
+  const cultureOptions = useMemo(() => {
+    const others = 'Outros'
+    return [...CULTURES]
+      .filter((c) => c !== others)
+      .sort((a, b) => a.localeCompare(b, 'pt-BR'))
+      .concat(CULTURES.includes(others) ? [others] : [])
+  }, [])
 
   const setClientName = useCallback(
     (value) => {
@@ -563,7 +570,7 @@ export function useSimulation(options = {}) {
   const hydrateFromBundle = useCallback(
     (bundle) => {
       setRemotePendingLock(
-        !isGestor && bundle.simulation.status === 'pending',
+        !isGestor && isConsultorSimulationLocked(bundle.simulation.status),
       )
       setClientId(bundle.client.id ?? null)
       setClientNameState(bundle.client.nome)

@@ -185,6 +185,7 @@ export function ClienteDetalhePage() {
             rows={simulations}
             loading={false}
             emptyMessage="Nenhuma simulação ou compra registrada para este cliente."
+            isGestor={isGestor}
             onViewPedido={(simId) => navigate(`/pedido/${simId}`)}
           />
 

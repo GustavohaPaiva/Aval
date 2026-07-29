@@ -1,6 +1,13 @@
+import { isPedidoStatus, PEDIDO_STATUSES } from '../constants/simulationStatus';
 import { roundMoney } from '../utils/roundMoney';
 import { parseCpfCnpjInput } from '../utils/dataFormatters';
-import { notifyConsultorSimulationDecision } from './notificationService';
+import { formatBRL } from '../utils/money';
+import {
+    notifyConsultorOrderDecision,
+    notifyConsultorSimulationDecision,
+    notifyGestoresOrderConversionRequest,
+    notifyGestoresOrderPending,
+} from './notificationService';
 import {
     syncComissaoRegistroFromSimulation,
     upsertComissaoRegistro,
@@ -405,7 +412,27 @@ function parseBundle(data) {
             override_taxa_antecipacao: item.override_taxa_antecipacao != null ? Number(item.override_taxa_antecipacao) : null,
             override_taxa_juros: item.override_taxa_juros != null ? Number(item.override_taxa_juros) : null,
             product: prod
-                ? { nome: String(prod.nome ?? '') }
+                ? {
+                    nome: String(prod.nome ?? ''),
+                    sku_fornecedor:
+                        prod.sku_fornecedor != null
+                            ? String(prod.sku_fornecedor)
+                            : null,
+                    referencia_complementar:
+                        prod.referencia_complementar != null
+                            ? String(prod.referencia_complementar)
+                            : null,
+                    estado: prod.estado != null ? String(prod.estado) : null,
+                    classe: prod.classe != null ? String(prod.classe) : null,
+                    quarter: prod.quarter != null ? String(prod.quarter) : null,
+                    fornecedor_nome: (() => {
+                        const rawForn = prod.fornecedores;
+                        const forn = Array.isArray(rawForn)
+                            ? rawForn[0]
+                            : rawForn;
+                        return forn?.nome != null ? String(forn.nome) : null;
+                    })(),
+                }
                 : null,
         };
     });
@@ -486,7 +513,15 @@ export async function fetchSimulationOrderBundle(simulationId) {
         override_frete,
         override_taxa_antecipacao,
         override_taxa_juros,
-        produtos_oficiais ( nome )
+        produtos_oficiais (
+          nome,
+          sku_fornecedor,
+          referencia_complementar,
+          estado,
+          classe,
+          quarter,
+          fornecedores ( nome )
+        )
       )
     `)
         .eq('id', simulationId)
@@ -559,6 +594,20 @@ export async function persistApprovedSimulation(input) {
 export async function persistConvertedSimulation(input) {
     const auth = await requireAuthUser();
     if (!auth.ok) return auth;
+
+    const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', auth.user.id)
+        .maybeSingle();
+    if (profileError) return { ok: false, error: profileError.message };
+    if (profile?.role !== 'gestor') {
+        return {
+            ok: false,
+            error: 'Apenas gestores podem converter simulações em pedido.',
+        };
+    }
+
     if (input.lines.length === 0) {
         return { ok: false, error: 'Inclua ao menos um produto na simulação.' };
     }
@@ -572,11 +621,99 @@ export async function persistConvertedSimulation(input) {
             .eq('id', input.simulationId)
             .maybeSingle();
         if (fetchError) return { ok: false, error: fetchError.message };
-        if (existing?.status === 'converted') {
-            return { ok: true, simulationId: input.simulationId, alreadyConverted: true };
+        if (existing && isPedidoStatus(existing.status)) {
+            return {
+                ok: true,
+                simulationId: input.simulationId,
+                alreadyConverted: true,
+                status: existing.status,
+            };
         }
     }
-    return upsertSimulationWithItems(input, 'converted', auth.user.id);
+
+    const result = await upsertSimulationWithItems(
+        input,
+        'order_pending',
+        auth.user.id,
+    );
+    if (!result.ok) return result;
+
+    const clientLabel = (input.clientName ?? '').trim() || 'Cliente';
+    const notifyResult = await notifyGestoresOrderPending({
+        simulationId: result.simulationId,
+        title: `Pedido aguardando aprovação — ${clientLabel}`,
+        body: `Proposta de ${formatBRL(input.totalProposta)} enviada para aprovação.`,
+    });
+    if (!notifyResult.ok) return notifyResult;
+
+    return { ...result, status: 'order_pending' };
+}
+
+/**
+ * Consultor salva a simulação como aprovada e solicita que o gestor converta em pedido.
+ */
+export async function requestOrderConversion(input) {
+    const auth = await requireAuthUser();
+    if (!auth.ok) return auth;
+
+    const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', auth.user.id)
+        .maybeSingle();
+    if (profileError) return { ok: false, error: profileError.message };
+    if (profile?.role === 'gestor') {
+        return {
+            ok: false,
+            error: 'Gestores devem converter o pedido diretamente.',
+        };
+    }
+
+    if (input.lines.length === 0) {
+        return { ok: false, error: 'Inclua ao menos um produto na simulação.' };
+    }
+    if (input.lines.some((line) => !line.productId)) {
+        return { ok: false, error: 'Selecione o produto em todas as linhas.' };
+    }
+    if (input.simulationId) {
+        const { data: existing, error: fetchError } = await supabase
+            .from('simulations')
+            .select('id, status')
+            .eq('id', input.simulationId)
+            .maybeSingle();
+        if (fetchError) return { ok: false, error: fetchError.message };
+        if (existing && isPedidoStatus(existing.status)) {
+            return {
+                ok: false,
+                error: 'Esta simulação já foi convertida em pedido.',
+            };
+        }
+        if (existing?.status === 'conversion_requested') {
+            return {
+                ok: true,
+                simulationId: input.simulationId,
+                status: 'conversion_requested',
+                alreadyRequested: true,
+            };
+        }
+    }
+
+    const result = await upsertSimulationWithItems(
+        input,
+        'conversion_requested',
+        auth.user.id,
+    );
+    if (!result.ok) return result;
+
+    const clientLabel = (input.clientName ?? '').trim() || 'Cliente';
+    const notifyResult = await notifyGestoresOrderConversionRequest({
+        simulationId: result.simulationId,
+        title: `Conversão solicitada — ${clientLabel}`,
+        body: `Proposta de ${formatBRL(input.totalProposta)}. O consultor pediu para converter em pedido.`,
+    });
+    if (!notifyResult.ok) return notifyResult;
+
+    return { ...result, status: 'conversion_requested' };
 }
 
 export async function savePendingSimulation(input) {
@@ -669,8 +806,14 @@ export async function updateSimulationStatus(simulationId, status, options = {})
     if (fetchError) return { ok: false, error: fetchError.message };
     if (!existing) return { ok: false, error: 'Simulação não encontrada.' };
 
-    if (existing.status === 'converted') {
-        return { ok: true, alreadyConverted: true };
+    if (isPedidoStatus(existing.status) && status !== 'order_pending') {
+        return { ok: true, alreadyConverted: true, status: existing.status };
+    }
+    if (existing.status === 'order_pending' && status === 'order_pending') {
+        return { ok: true, status: 'order_pending' };
+    }
+    if (isPedidoStatus(existing.status) && status === 'order_pending') {
+        return { ok: true, alreadyConverted: true, status: existing.status };
     }
     if (existing.status === status) {
         return { ok: true };
@@ -682,6 +825,24 @@ export async function updateSimulationStatus(simulationId, status, options = {})
         .eq('id', simulationId);
     if (error)
         return { ok: false, error: error.message };
+
+    if (status === 'order_pending') {
+        await supabase
+            .from('simulation_items')
+            .update({ status_linha: 'order_pending' })
+            .eq('simulation_id', simulationId);
+    }
+
+    if (status === 'order_pending' && options.notifyGestores) {
+        const clientLabel = options.clientName?.trim() || 'Cliente';
+        const notifyResult = await notifyGestoresOrderPending({
+            simulationId,
+            title: `Pedido aguardando aprovação — ${clientLabel}`,
+            body: options.body ?? null,
+        });
+        if (!notifyResult.ok) return notifyResult;
+    }
+
     if (options.notifyConsultor && (status === 'approved' || status === 'rejected')) {
         const type = status === 'approved' ? 'simulation_approved' : 'simulation_rejected';
         const clientLabel = options.clientName?.trim() || 'Cliente';
@@ -704,7 +865,158 @@ export async function updateSimulationStatus(simulationId, status, options = {})
         );
         if (!comissaoResult.ok) return comissaoResult;
     }
-    return { ok: true };
+    return { ok: true, status };
+}
+
+async function requireGestorUser() {
+    const auth = await requireAuthUser();
+    if (!auth.ok) return auth;
+    const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', auth.user.id)
+        .maybeSingle();
+    if (error) return { ok: false, error: error.message };
+    if (profile?.role !== 'gestor') {
+        return { ok: false, error: 'Apenas gestores podem executar esta ação.' };
+    }
+    return { ok: true, user: auth.user };
+}
+
+/**
+ * Gestor aprova pedido pendente → converted (confirma comissão).
+ */
+export async function approveOrder(simulationId, options = {}) {
+    const auth = await requireGestorUser();
+    if (!auth.ok) return auth;
+
+    const { data: existing, error: fetchError } = await supabase
+        .from('simulations')
+        .select('id, status')
+        .eq('id', simulationId)
+        .maybeSingle();
+    if (fetchError) return { ok: false, error: fetchError.message };
+    if (!existing) return { ok: false, error: 'Pedido não encontrado.' };
+    if (existing.status === 'converted') return { ok: true, status: 'converted' };
+    if (existing.status !== 'order_pending') {
+        return { ok: false, error: 'Só é possível aprovar pedidos pendentes de aprovação.' };
+    }
+
+    const { error } = await supabase
+        .from('simulations')
+        .update({ status: 'converted' })
+        .eq('id', simulationId);
+    if (error) return { ok: false, error: error.message };
+
+    await supabase
+        .from('simulation_items')
+        .update({ status_linha: 'converted' })
+        .eq('simulation_id', simulationId);
+
+    const clientLabel = options.clientName?.trim() || 'Cliente';
+    const notifyResult = await notifyConsultorOrderDecision({
+        simulationId,
+        type: 'order_approved',
+        title: `Pedido aprovado — ${clientLabel}`,
+        body: options.body ?? null,
+    });
+    if (!notifyResult.ok) return notifyResult;
+
+    const comissaoResult = await syncComissaoRegistroFromSimulation(simulationId, {
+        status: 'confirmada',
+    });
+    if (!comissaoResult.ok) return comissaoResult;
+
+    return { ok: true, status: 'converted' };
+}
+
+/**
+ * Gestor reprova pedido pendente → order_rejected.
+ */
+export async function rejectOrder(simulationId, options = {}) {
+    const auth = await requireGestorUser();
+    if (!auth.ok) return auth;
+
+    const { data: existing, error: fetchError } = await supabase
+        .from('simulations')
+        .select('id, status')
+        .eq('id', simulationId)
+        .maybeSingle();
+    if (fetchError) return { ok: false, error: fetchError.message };
+    if (!existing) return { ok: false, error: 'Pedido não encontrado.' };
+    if (existing.status === 'order_rejected') {
+        return { ok: true, status: 'order_rejected' };
+    }
+    if (existing.status !== 'order_pending') {
+        return { ok: false, error: 'Só é possível reprovar pedidos pendentes de aprovação.' };
+    }
+
+    const { error } = await supabase
+        .from('simulations')
+        .update({ status: 'order_rejected' })
+        .eq('id', simulationId);
+    if (error) return { ok: false, error: error.message };
+
+    await supabase
+        .from('simulation_items')
+        .update({ status_linha: 'order_rejected' })
+        .eq('simulation_id', simulationId);
+
+    const clientLabel = options.clientName?.trim() || 'Cliente';
+    const notifyResult = await notifyConsultorOrderDecision({
+        simulationId,
+        type: 'order_rejected',
+        title: `Pedido reprovado — ${clientLabel}`,
+        body: options.body ?? null,
+    });
+    if (!notifyResult.ok) return notifyResult;
+
+    return { ok: true, status: 'order_rejected' };
+}
+
+/**
+ * Gestor cancela pedido (pendente, convertido ou reprovado) → cancelled.
+ */
+export async function cancelOrder(simulationId) {
+    const auth = await requireGestorUser();
+    if (!auth.ok) return auth;
+
+    const { data: existing, error: fetchError } = await supabase
+        .from('simulations')
+        .select('id, status')
+        .eq('id', simulationId)
+        .maybeSingle();
+    if (fetchError) return { ok: false, error: fetchError.message };
+    if (!existing) return { ok: false, error: 'Pedido não encontrado.' };
+    if (existing.status === 'cancelled') {
+        return { ok: true, status: 'cancelled' };
+    }
+    if (!['order_pending', 'converted', 'order_rejected'].includes(existing.status)) {
+        return { ok: false, error: 'Só é possível cancelar pedidos.' };
+    }
+
+    const { error } = await supabase
+        .from('simulations')
+        .update({
+            status: 'cancelled',
+            cancelado_por: auth.user.id,
+            cancelado_em: new Date().toISOString(),
+        })
+        .eq('id', simulationId);
+    if (error) return { ok: false, error: error.message };
+
+    await supabase
+        .from('simulation_items')
+        .update({ status_linha: 'cancelled' })
+        .eq('simulation_id', simulationId);
+
+    const { error: comissaoError } = await supabase
+        .from('comissao_registros')
+        .update({ status: 'cancelada' })
+        .eq('simulation_id', simulationId);
+    if (comissaoError) return { ok: false, error: comissaoError.message };
+
+    return { ok: true, status: 'cancelled' };
 }
 export async function fetchSimulationsList(params) {
     const page = Math.max(1, params.page ?? 1)
@@ -729,10 +1041,14 @@ export async function fetchSimulationsList(params) {
     if (params.role === 'consultor') {
         q = q.eq('user_id', params.userId)
     }
-    if (params.statusFilter) {
+    if (params.statusFilter === 'approved') {
+        q = q.in('status', ['approved', 'conversion_requested'])
+    } else if (params.statusFilter) {
         q = q.eq('status', params.statusFilter)
+    } else if (params.statusIn?.length) {
+        q = q.in('status', params.statusIn)
     } else if (params.excludeConverted) {
-        q = q.neq('status', 'converted')
+        q = q.not('status', 'in', `(${PEDIDO_STATUSES.join(',')})`)
     }
 
     if (search) {

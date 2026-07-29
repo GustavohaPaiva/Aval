@@ -8,6 +8,11 @@ import { InfoStatCard } from "../ui/InfoStatCard";
 import { Button } from "../ui/Button";
 import { ButtonGroup } from "../ui/ButtonGroup";
 import { EmptyState } from "../ui/EmptyState";
+import {
+  isPedidoStatus,
+  statusBadgeClass,
+  statusLabelPt,
+} from "../../constants/simulationStatus";
 import { formatShortDate } from "../../utils/formatShortDate";
 import { formatBRL } from "../../utils/money";
 import { displayCep, displayCpfCnpj, displayPhone } from "../../utils/dataFormatters";
@@ -18,34 +23,7 @@ function clienteInitial(nome) {
 }
 
 function statusLabel(status) {
-  switch (status) {
-    case "draft":
-      return "Rascunho";
-    case "pending":
-      return "Pendente";
-    case "approved":
-      return "Aprovado";
-    case "rejected":
-      return "Reprovado";
-    case "converted":
-      return "Convertido";
-    default:
-      return status;
-  }
-}
-
-function statusBadgeClass(status) {
-  switch (status) {
-    case "approved":
-    case "converted":
-      return "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200";
-    case "pending":
-      return "bg-amber-50 text-amber-800 ring-1 ring-amber-200";
-    case "rejected":
-      return "bg-red-50 text-red-800 ring-1 ring-red-200";
-    default:
-      return "bg-slate-100 text-slate-700 ring-1 ring-slate-200";
-  }
+  return statusLabelPt(status);
 }
 
 export function ClienteProfileHero({ client }) {
@@ -259,6 +237,7 @@ export function ClienteSimulationsTable({
   loading,
   emptyMessage,
   onViewPedido,
+  isGestor = false,
 }) {
   if (loading) {
     return (
@@ -328,7 +307,8 @@ export function ClienteSimulationsTable({
         <tbody className="block md:table-row-group">
           {rows.map((row, index) => {
             const canViewPedido =
-              row.status === "approved" || row.status === "converted";
+              (isGestor && isPedidoStatus(row.status)) ||
+              row.status === "converted";
 
             return (
               <tr

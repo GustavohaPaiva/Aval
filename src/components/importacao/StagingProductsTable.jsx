@@ -35,7 +35,7 @@ function StagingRowCard({
   return (
     <li
       className={[
-        'rounded-2xl border border-slate-200 bg-white p-4 shadow-sm',
+        'overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm',
         !readOnly ? 'cursor-pointer hover:border-primary-200' : '',
       ]
         .filter(Boolean)
@@ -54,81 +54,116 @@ function StagingRowCard({
       role={!readOnly ? 'button' : undefined}
       tabIndex={!readOnly ? 0 : undefined}
     >
-      <div className="mb-3 flex items-start justify-between gap-2">
-        <div className="flex min-w-0 items-start gap-2">
-          {!readOnly ? (
-            <input
-              type="checkbox"
-              checked={selected}
-              onChange={() => onToggleSelect(row.id)}
-              onClick={(e) => e.stopPropagation()}
-              className="mt-1 size-4 rounded border-slate-300"
-              aria-label={`Selecionar ${row.nome}`}
-            />
-          ) : null}
-          <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-slate-900">
-              {row.nome || '—'}
-            </p>
-            <p className="font-mono text-xs text-slate-500">
-              {row.referencia_complementar || row.sku_fornecedor || '—'}
-            </p>
+      <div className="border-b border-slate-100 bg-gradient-to-r from-slate-50/80 to-white px-4 py-3">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex min-w-0 items-start gap-2">
+            {!readOnly ? (
+              <input
+                type="checkbox"
+                checked={selected}
+                onChange={() => onToggleSelect(row.id)}
+                onClick={(e) => e.stopPropagation()}
+                className="mt-1 size-4 rounded border-slate-300"
+                aria-label={`Selecionar ${row.nome}`}
+              />
+            ) : null}
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-slate-900">
+                {row.nome || '—'}
+              </p>
+              <p className="font-mono text-xs text-slate-500">
+                {row.referencia_complementar || row.sku_fornecedor || '—'}
+              </p>
+            </div>
           </div>
+          {!readOnly ? (
+            <StagingStatusBadge status={row.status_linha} compact />
+          ) : null}
         </div>
-        <StagingStatusBadge status={row.status_linha} compact />
       </div>
-      {row.staging_erros?.length > 0 ? (
-        <p className="mb-3 text-xs leading-relaxed text-red-700">
-          {row.staging_erros.join(' · ')}
-        </p>
-      ) : null}
-      <dl className="grid grid-cols-2 gap-2 text-xs text-slate-600">
-        <div>
-          <dt className="font-medium text-slate-500">Estado</dt>
-          <dd>{estado || '—'}</dd>
-        </div>
-        <div>
-          <dt className="font-medium text-slate-500">Classe</dt>
-          <dd>{row.classe || 'Convencional'}</dd>
-        </div>
-        <div>
-          <dt className="font-medium text-slate-500">Desconto USD</dt>
-          <dd>{formatBRL(effectiveDescontoUsd(row, loteDescontoUsd))}</dd>
-        </div>
-        <div>
-          <dt className="font-medium text-slate-500">Preço de custo</dt>
-          <dd>
-            {formatBRL(row.preco_original)} {loteMoeda ?? row.moeda}
-          </dd>
-        </div>
-      </dl>
-      {!readOnly ? (
-        <div className="mt-3 flex gap-2" data-no-row-click>
-          <Button
-            type="button"
-            variant="secondary"
-            className="flex-1"
-            onClick={(e) => {
-              e.stopPropagation()
-              onEdit(row)
-            }}
-          >
-            <IconPencil className="size-4" aria-hidden />
-            Editar
-          </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            className="shrink-0"
-            onClick={(e) => {
-              e.stopPropagation()
-              onDelete(row.id)
-            }}
-          >
-            <IconTrash className="size-4" aria-hidden />
-          </Button>
-        </div>
-      ) : null}
+      <div className="p-4">
+        {row.staging_erros?.length > 0 ? (
+          <p className="mb-3 rounded-xl bg-red-50 px-3 py-2 text-xs leading-relaxed text-red-700">
+            {row.staging_erros.join(' · ')}
+          </p>
+        ) : null}
+        <dl className="grid grid-cols-2 gap-2.5 text-xs text-slate-600">
+          <div>
+            <dt className="font-medium text-slate-500">Estado</dt>
+            <dd className="mt-0.5 font-medium text-slate-800">
+              {estado || '—'}
+            </dd>
+          </div>
+          <div>
+            <dt className="font-medium text-slate-500">Classe</dt>
+            <dd className="mt-0.5 font-medium text-slate-800">
+              {row.classe || 'Convencional'}
+            </dd>
+          </div>
+          <div>
+            <dt className="font-medium text-slate-500">Quarter</dt>
+            <dd className="mt-0.5">
+              <span className="inline-flex rounded-md bg-primary-50 px-1.5 py-0.5 text-[0.7rem] font-semibold text-primary-800">
+                {row.quarter || '—'}
+              </span>
+            </dd>
+          </div>
+          <div>
+            <dt className="font-medium text-slate-500">Desconto USD</dt>
+            <dd className="mt-0.5 font-medium text-slate-800">
+              {formatBRL(effectiveDescontoUsd(row, loteDescontoUsd))}
+            </dd>
+          </div>
+          <div className="col-span-2">
+            <dt className="font-medium text-slate-500">Preço de custo</dt>
+            <dd className="mt-0.5 text-sm font-semibold text-slate-900">
+              {formatBRL(row.preco_original)}{' '}
+              <span className="text-xs font-normal text-slate-500">
+                {loteMoeda ?? row.moeda}
+              </span>
+            </dd>
+          </div>
+          {readOnly && row.taxa_antecipacao != null ? (
+            <div>
+              <dt className="font-medium text-slate-500">Antecipação %</dt>
+              <dd className="mt-0.5">{String(row.taxa_antecipacao)}</dd>
+            </div>
+          ) : null}
+          {readOnly && row.taxa_juros != null ? (
+            <div>
+              <dt className="font-medium text-slate-500">Juros %</dt>
+              <dd className="mt-0.5">{String(row.taxa_juros)}</dd>
+            </div>
+          ) : null}
+        </dl>
+        {!readOnly ? (
+          <div className="mt-3 flex gap-2" data-no-row-click>
+            <Button
+              type="button"
+              variant="secondary"
+              className="flex-1"
+              onClick={(e) => {
+                e.stopPropagation()
+                onEdit(row)
+              }}
+            >
+              <IconPencil className="size-4" aria-hidden />
+              Editar
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              className="shrink-0"
+              onClick={(e) => {
+                e.stopPropagation()
+                onDelete(row.id)
+              }}
+            >
+              <IconTrash className="size-4" aria-hidden />
+            </Button>
+          </div>
+        ) : null}
+      </div>
     </li>
   )
 }
@@ -218,6 +253,15 @@ export function StagingProductsTable({
       cell: (row) => row.classe || 'Convencional',
     },
     {
+      key: 'quarter',
+      header: 'Quarter',
+      cell: (row) => (
+        <span className="inline-flex rounded-md bg-primary-50 px-1.5 py-0.5 text-[0.7rem] font-semibold text-primary-800 ring-1 ring-inset ring-primary-100">
+          {row.quarter || '—'}
+        </span>
+      ),
+    },
+    {
       key: 'desconto',
       header: 'Desconto USD',
       align: 'right',
@@ -256,20 +300,41 @@ export function StagingProductsTable({
           />
         ),
     },
-    {
-      key: 'status',
-      header: 'Status',
-      cell: (row) => (
-        <div className="min-w-[7rem]">
-          <StagingStatusBadge status={row.status_linha} compact />
-          {row.staging_erros?.length > 0 ? (
-            <p className="mt-1 max-w-xs text-xs leading-relaxed text-red-700">
-              {row.staging_erros.join(' · ')}
-            </p>
-          ) : null}
-        </div>
-      ),
-    },
+    ...(readOnly
+      ? [
+          {
+            key: 'taxa_antecipacao',
+            header: 'Antecipação %',
+            align: 'right',
+            cell: (row) =>
+              row.taxa_antecipacao != null
+                ? String(row.taxa_antecipacao)
+                : '—',
+          },
+          {
+            key: 'taxa_juros',
+            header: 'Juros %',
+            align: 'right',
+            cell: (row) =>
+              row.taxa_juros != null ? String(row.taxa_juros) : '—',
+          },
+        ]
+      : [
+          {
+            key: 'status',
+            header: 'Status',
+            cell: (row) => (
+              <div className="min-w-[7rem]">
+                <StagingStatusBadge status={row.status_linha} compact />
+                {row.staging_erros?.length > 0 ? (
+                  <p className="mt-1 max-w-xs text-xs leading-relaxed text-red-700">
+                    {row.staging_erros.join(' · ')}
+                  </p>
+                ) : null}
+              </div>
+            ),
+          },
+        ]),
   ]
 
   if (!readOnly) {
@@ -312,6 +377,7 @@ export function StagingProductsTable({
         emptyMessage={emptyMessage}
         getRowKey={(row) => row.id}
         onRowClick={!readOnly && onEdit ? (row) => onEdit(row) : undefined}
+        density="compact"
       />
       <MobileCardList
         items={rows}
@@ -339,22 +405,53 @@ export function StagingProductsTable({
 export function StagingMatchSummary({ summary }) {
   if (!summary) return null
 
+  const items = [
+    {
+      key: 'novos',
+      label: 'Novos',
+      value: summary.novos,
+      className: 'border-emerald-200 bg-emerald-50/70 text-emerald-800',
+      labelClass: 'text-emerald-700',
+    },
+    {
+      key: 'atualizacoes',
+      label: 'Atualizações',
+      value: summary.atualizacoes,
+      className: 'border-sky-200 bg-sky-50/70 text-sky-800',
+      labelClass: 'text-sky-700',
+    },
+    {
+      key: 'erros',
+      label: 'Erros',
+      value: summary.erros,
+      className: 'border-red-200 bg-red-50/70 text-red-800',
+      labelClass: 'text-red-700',
+    },
+  ]
+
   return (
     <div className="grid grid-cols-3 gap-3">
-      <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 px-3 py-2 text-center">
-        <p className="text-lg font-semibold text-emerald-800">{summary.novos}</p>
-        <p className="text-xs font-medium text-emerald-700">Novos</p>
-      </div>
-      <div className="rounded-xl border border-sky-200 bg-sky-50/60 px-3 py-2 text-center">
-        <p className="text-lg font-semibold text-sky-800">
-          {summary.atualizacoes}
-        </p>
-        <p className="text-xs font-medium text-sky-700">Atualizações</p>
-      </div>
-      <div className="rounded-xl border border-red-200 bg-red-50/60 px-3 py-2 text-center">
-        <p className="text-lg font-semibold text-red-800">{summary.erros}</p>
-        <p className="text-xs font-medium text-red-700">Erros</p>
-      </div>
+      {items.map((item) => (
+        <div
+          key={item.key}
+          className={[
+            'rounded-2xl border px-3 py-3 text-center shadow-sm sm:px-4',
+            item.className,
+          ].join(' ')}
+        >
+          <p className="text-xl font-semibold tabular-nums sm:text-2xl">
+            {item.value}
+          </p>
+          <p
+            className={[
+              'mt-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.12em]',
+              item.labelClass,
+            ].join(' ')}
+          >
+            {item.label}
+          </p>
+        </div>
+      ))}
     </div>
   )
 }

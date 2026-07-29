@@ -1,35 +1,11 @@
 import { IconCalendar, IconDollarSign, IconUser } from './icons'
 import { Button } from './ui/Button'
+import {
+  isPedidoStatus,
+  statusBadgeClass,
+  statusLabelPt,
+} from '../constants/simulationStatus'
 import { formatBRL } from '../utils/money'
-
-function statusLabelPt(status) {
-  switch (status) {
-    case 'draft':
-      return 'Rascunho'
-    case 'pending':
-      return 'Aguardando aprovação'
-    case 'approved':
-      return 'Aprovado'
-    case 'rejected':
-      return 'Reprovado'
-    case 'converted':
-      return 'Convertido'
-  }
-}
-
-function statusBadgeClass(status) {
-  switch (status) {
-    case 'approved':
-    case 'converted':
-      return 'bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200'
-    case 'pending':
-      return 'bg-amber-50 text-amber-800 ring-1 ring-amber-200'
-    case 'rejected':
-      return 'bg-red-50 text-red-800 ring-1 ring-red-200'
-    default:
-      return 'bg-slate-100 text-slate-700 ring-1 ring-slate-200'
-  }
-}
 
 export function SimulationListCard({
   row,
@@ -102,7 +78,7 @@ export function SimulationListCard({
           <Button
             type="button"
             className="w-full"
-            onClick={() => onContinueEdit(row.id)}
+            onClick={() => onContinueEdit(row.id, row.status)}
           >
             Continuar edição
           </Button>
@@ -111,18 +87,31 @@ export function SimulationListCard({
             type="button"
             variant="primary"
             className="w-full"
-            onClick={() => onViewDetails(row.id)}
+            onClick={() => onViewDetails(row.id, row.status)}
           >
             Revisar
+          </Button>
+        ) : isPedidoStatus(row.status) && !isGestor && row.status !== 'converted' ? (
+          <p className="text-center text-sm text-slate-500">
+            Aguardando aprovação do gestor
+          </p>
+        ) : row.status === 'order_pending' && isGestor ? (
+          <Button
+            type="button"
+            variant="primary"
+            className="w-full"
+            onClick={() => onViewDetails(row.id, row.status)}
+          >
+            Revisar pedido
           </Button>
         ) : (
           <Button
             type="button"
             variant="secondary"
             className="w-full"
-            onClick={() => onViewDetails(row.id)}
+            onClick={() => onViewDetails(row.id, row.status)}
           >
-            {row.status === 'converted' ? 'Ver pedido' : 'Ver detalhes'}
+            {isPedidoStatus(row.status) ? 'Ver pedido' : 'Ver detalhes'}
           </Button>
         )}
       </footer>

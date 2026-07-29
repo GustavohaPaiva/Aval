@@ -5,12 +5,20 @@ import {
   isValidFertilizante,
   normalizeFertilizante,
 } from '../utils/normalizeSku'
+import { classifyProdutoClasse } from '../utils/produtoClasse'
 import {
   calcCustoBrlComDesconto,
+  calcCustoIcmsFromBrl,
+  DEFAULT_ICMS_PERCENTUAL,
   DEFAULT_TAXA_ANTECIPACAO,
   DEFAULT_TAXA_JUROS,
 } from '../utils/pricingCalculations'
+import {
+  planOfficialMetadataCascade,
+  summarizeCascadeCounts,
+} from '../utils/loteMetadataCascade'
 import { formatSupabaseError } from '../utils/supabaseErrors'
+import { fetchParametrosSistema } from './parametrosService'
 
 const STAGING_ROW_FIELDS =
   'id, lote_id, sku_fornecedor, nome, referencia_complementar, estado, classe, quarter, preco_original, moeda, desconto_usd, status_linha, dados_brutos'
@@ -33,7 +41,10 @@ const LOTE_DETAIL_SELECT = `
     `
 
 const PRODUTO_LIST_FIELDS =
-  'id, fornecedor_id, sku_fornecedor, nome, referencia_complementar, estado, classe, quarter, moeda_origem, preco_original, desconto_usd, preco_interno_calculado, custo_icms, lote_id, vencimento_lista, ativo, fornecedores(nome), lotes_importacao(id, quarter_calculado, data_validade, ativo)'
+  'id, fornecedor_id, sku_fornecedor, nome, referencia_complementar, estado, classe, quarter, moeda_origem, preco_original, desconto_usd, preco_interno_calculado, custo_icms, lote_id, vencimento_lista, taxa_antecipacao, taxa_juros, ativo, fornecedores(nome), lotes_importacao(id, quarter_calculado, data_validade, ativo)'
+
+const PRODUTO_LOTE_FIELDS =
+  'id, fornecedor_id, sku_fornecedor, nome, referencia_complementar, estado, classe, quarter, moeda_origem, preco_original, desconto_usd, preco_interno_calculado, custo_icms, lote_id, vencimento_lista, taxa_antecipacao, taxa_juros, ativo'
 
 function normalizeEstado(value) {
   const estado = String(value ?? '').trim().toUpperCase()
@@ -404,7 +415,114 @@ export async function fetchLoteById(loteId) {
   }
 }
 
+async function applySimpleOfficialCascade(loteId, op) {
+  let query = supabase
+    .from('produtos_oficiais')
+    .update({ [op.productColumn]: op.newValue })
+    .eq('lote_id', loteId)
+
+  if (op.oldValue === null || op.oldValue === '') {
+    query = query.is(op.productColumn, null)
+  } else {
+    query = query.eq(op.productColumn, op.oldValue)
+  }
+
+  const { data, error } = await query.select('id')
+  if (error) return { ok: false, error: formatSupabaseError(error) }
+  return { ok: true, key: op.key, updated: (data ?? []).length }
+}
+
+async function applyDescontoOfficialCascade(loteId, op) {
+  const { data: products, error } = await supabase
+    .from('produtos_oficiais')
+    .select('id, preco_original, moeda_origem, desconto_usd')
+    .eq('lote_id', loteId)
+    .eq('desconto_usd', op.oldValue)
+
+  if (error) return { ok: false, error: formatSupabaseError(error) }
+  if (!products?.length) {
+    return { ok: true, key: op.key, updated: 0 }
+  }
+
+  const parametrosRes = await fetchParametrosSistema()
+  const icmsPercentual = parametrosRes.ok
+    ? Number(parametrosRes.row.icms_percentual ?? DEFAULT_ICMS_PERCENTUAL)
+    : DEFAULT_ICMS_PERCENTUAL
+
+  const taxaByMoeda = new Map()
+  let updated = 0
+
+  for (const product of products) {
+    const moeda = String(product.moeda_origem ?? 'USD').toUpperCase()
+    let taxa = taxaByMoeda.get(moeda)
+    if (taxa === undefined) {
+      taxa = await getTaxaConversao(moeda)
+      taxaByMoeda.set(moeda, taxa)
+    }
+    if (taxa === null) {
+      return {
+        ok: false,
+        error: `Cotação não encontrada para moeda ${moeda}. Cadastre em Parâmetros.`,
+      }
+    }
+
+    const preco_interno_calculado = calcCustoBrlComDesconto(
+      product.preco_original,
+      op.newValue,
+      taxa,
+    )
+    const custo_icms = calcCustoIcmsFromBrl(
+      preco_interno_calculado,
+      icmsPercentual,
+    )
+
+    const { error: updateError } = await supabase
+      .from('produtos_oficiais')
+      .update({
+        desconto_usd: op.newValue,
+        preco_interno_calculado,
+        custo_icms,
+      })
+      .eq('id', product.id)
+      .eq('desconto_usd', op.oldValue)
+
+    if (updateError) {
+      return { ok: false, error: formatSupabaseError(updateError) }
+    }
+    updated += 1
+  }
+
+  return { ok: true, key: op.key, updated }
+}
+
+/**
+ * Propaga padrões do lote para produtos oficiais que ainda têm o valor antigo.
+ * Produtos com valor diferente (editados individualmente) são preservados.
+ */
+export async function cascadeLoteMetadataToOficiais(loteId, previous, payload) {
+  const ops = planOfficialMetadataCascade(previous, payload)
+  if (ops.length === 0) {
+    return { ok: true, cascade: { counts: {}, updatedCount: 0 } }
+  }
+
+  const results = []
+  for (const op of ops) {
+    const res =
+      op.kind === 'desconto'
+        ? await applyDescontoOfficialCascade(loteId, op)
+        : await applySimpleOfficialCascade(loteId, op)
+    if (!res.ok) return res
+    results.push(res)
+  }
+
+  return { ok: true, cascade: summarizeCascadeCounts(results) }
+}
+
 export async function updateLoteMetadata(loteId, patch) {
+  const previousRes = await fetchLoteById(loteId)
+  if (!previousRes.ok) return previousRes
+  const previous = previousRes.row
+
   const payload = {}
   if (patch.data_validade !== undefined) {
     payload.data_validade = patch.data_validade || null
@@ -428,6 +546,10 @@ export async function updateLoteMetadata(loteId, patch) {
     payload.taxa_juros = Number.isFinite(n) && n >= 0 ? n : DEFAULT_TAXA_JUROS
   }
 
+  if (Object.keys(payload).length === 0) {
+    return { ok: true, row: previous, cascade: { counts: {}, updatedCount: 0 } }
+  }
+
   const { data, error } = await supabase
     .from('lotes_importacao')
     .update(payload)
@@ -438,6 +560,34 @@ export async function updateLoteMetadata(loteId, patch) {
     .single()
 
   if (error) return { ok: false, error: formatSupabaseError(error) }
+
+  if (previous.status === 'concluido') {
+    const cascadeRes = await cascadeLoteMetadataToOficiais(
+      loteId,
+      previous,
+      payload,
+    )
+    if (!cascadeRes.ok) return cascadeRes
+    return {
+      ok: true,
+      row: {
+        ...data,
+        status: previous.status,
+        data_upload: previous.data_upload,
+        fornecedor_id: previous.fornecedor_id,
+        fornecedor_nome: previous.fornecedor_nome,
+        taxa_antecipacao: Number(
+          data.taxa_antecipacao ?? DEFAULT_TAXA_ANTECIPACAO,
+        ),
+        taxa_juros: Number(data.taxa_juros ?? DEFAULT_TAXA_JUROS),
+        desconto_usd: Number(data.desconto_usd ?? 0),
+        estado_padrao: data.estado_padrao ?? '',
+        quarter_calculado: data.quarter_calculado ?? '',
+        data_validade: data.data_validade ?? '',
+      },
+      cascade: cascadeRes.cascade,
+    }
+  }
 
   if (patch.estado_padrao !== undefined && patch.estado_padrao) {
     const bulkRes = await bulkUpdateStagingEstado(loteId, patch.estado_padrao)
@@ -460,7 +610,25 @@ export async function updateLoteMetadata(loteId, patch) {
     if (!bulkRes.ok) return bulkRes
   }
 
-  return { ok: true, row: data }
+  return {
+    ok: true,
+    row: {
+      ...data,
+      status: previous.status,
+      data_upload: previous.data_upload,
+      fornecedor_id: previous.fornecedor_id,
+      fornecedor_nome: previous.fornecedor_nome,
+      taxa_antecipacao: Number(
+        data.taxa_antecipacao ?? DEFAULT_TAXA_ANTECIPACAO,
+      ),
+      taxa_juros: Number(data.taxa_juros ?? DEFAULT_TAXA_JUROS),
+      desconto_usd: Number(data.desconto_usd ?? 0),
+      estado_padrao: data.estado_padrao ?? '',
+      quarter_calculado: data.quarter_calculado ?? '',
+      data_validade: data.data_validade ?? '',
+    },
+    cascade: { counts: {}, updatedCount: 0 },
+  }
 }
 
 export async function bulkUpdateStagingQuarter(loteId, quarter) {
@@ -588,7 +756,11 @@ function mapRowToStagingPayload({
     nome: fertilizante,
     referencia_complementar: referencia,
     estado: loteEstado,
-    classe: loteClasse,
+    // Classificação automática por prefixo do nome; loteClasse só como fallback
+    // se o nome estiver vazio (não deveria ocorrer após o filtro de fertilizante).
+    classe: fertilizante
+      ? classifyProdutoClasse(fertilizante)
+      : loteClasse || 'Convencional',
     quarter: loteQuarter,
     desconto_usd: Math.max(0, Number(loteDescontoUsd) || 0),
     dados_brutos: {
@@ -925,7 +1097,8 @@ export async function createStagingRow(loteId, payload) {
       payload.referencia_complementar ?? payload.sku_fornecedor ?? '',
     ).trim(),
     estado,
-    classe: String(payload.classe ?? 'Convencional').trim() || 'Convencional',
+    classe:
+      String(payload.classe ?? '').trim() || classifyProdutoClasse(nome),
     quarter: String(payload.quarter ?? '').trim(),
     preco_original: preco,
     moeda: String(payload.moeda ?? 'USD').toUpperCase().slice(0, 8),
@@ -966,6 +1139,45 @@ export async function promoverLote(loteId) {
 
   if (error) return { ok: false, error: error.message }
   return { ok: true, result: data }
+}
+
+export async function fetchProdutosOficiaisByLote(loteId) {
+  if (!loteId) return { ok: true, rows: [] }
+
+  const { data, error } = await supabase
+    .from('produtos_oficiais')
+    .select(PRODUTO_LOTE_FIELDS)
+    .eq('lote_id', loteId)
+    .order('nome', { ascending: true })
+
+  if (error) return { ok: false, error: formatSupabaseError(error) }
+
+  const rows = (data ?? []).map((row) => ({
+    id: row.id,
+    lote_id: row.lote_id,
+    sku_fornecedor: row.sku_fornecedor ?? '',
+    nome: row.nome ?? '',
+    referencia_complementar: row.referencia_complementar ?? '',
+    estado: row.estado ?? '',
+    classe: row.classe ?? 'Convencional',
+    quarter: row.quarter ?? '',
+    preco_original: Number(row.preco_original ?? 0),
+    moeda: row.moeda_origem ?? 'USD',
+    desconto_usd: Number(row.desconto_usd ?? 0),
+    taxa_antecipacao: Number(
+      row.taxa_antecipacao ?? DEFAULT_TAXA_ANTECIPACAO,
+    ),
+    taxa_juros: Number(row.taxa_juros ?? DEFAULT_TAXA_JUROS),
+    vencimento_lista: row.vencimento_lista ?? '',
+    ativo: row.ativo ?? true,
+    // Shape compatible with StagingProductsTable (read-only launched view).
+    status_linha: 'atualizacao',
+    staging_erros: [],
+    dados_brutos: {},
+    _fonte: 'oficial',
+  }))
+
+  return { ok: true, rows }
 }
 
 export async function fetchProdutosOficiaisByFornecedor(fornecedorId) {
@@ -1165,7 +1377,7 @@ export async function upsertProdutoOficialManual({
     nome: fertilizante,
     referencia_complementar: referencia,
     estado: estadoVal,
-    classe: String(classe ?? 'Convencional').trim() || 'Convencional',
+    classe: String(classe ?? '').trim() || classifyProdutoClasse(fertilizante),
     quarter: quarterVal,
     moeda_origem: moeda,
     preco_original: preco,
@@ -1242,13 +1454,7 @@ export async function excluirListaImportacao(loteId) {
   })
 
   if (error) {
-    return {
-      ok: false,
-      error:
-        error.code === '23503'
-          ? 'Não é possível excluir: esta lista de produtos possui registros vinculados. Inative a lista em vez de excluir.'
-          : formatSupabaseError(error),
-    }
+    return { ok: false, error: formatSupabaseError(error) }
   }
 
   return { ok: true, result: data }
