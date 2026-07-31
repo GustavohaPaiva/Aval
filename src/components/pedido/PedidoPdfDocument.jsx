@@ -136,10 +136,10 @@ export function PedidoPdfDocument({
 
         <div
           style={{
-            marginTop: 18,
+            marginTop: 14,
             display: 'grid',
-            gridTemplateColumns: '1fr 1fr 1fr',
-            gap: 10,
+            gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
+            gap: 5,
           }}
         >
           {SYAGRI_COMPANY.sites.map((site) => (
@@ -148,34 +148,60 @@ export function PedidoPdfDocument({
               style={{
                 background: 'rgba(255,255,255,0.08)',
                 border: '1px solid rgba(255,255,255,0.12)',
-                borderRadius: 10,
-                padding: '10px 12px',
+                borderRadius: 6,
+                padding: '6px 5px',
+                minWidth: 0,
               }}
             >
               <p
                 style={{
                   margin: 0,
-                  fontSize: 9,
+                  fontSize: 7,
                   fontWeight: 700,
-                  letterSpacing: '0.08em',
+                  letterSpacing: '0.02em',
                   textTransform: 'uppercase',
-                  opacity: 0.7,
+                  opacity: 0.75,
+                  lineHeight: 1.25,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
                 }}
               >
-                {site.label} · {site.city}
+                {site.label}
               </p>
               <p
                 style={{
-                  margin: '4px 0 0',
-                  fontSize: 9.5,
-                  lineHeight: 1.35,
-                  opacity: 0.92,
+                  margin: '2px 0 0',
+                  fontSize: 6.5,
+                  opacity: 0.9,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {site.cnpj}
+              </p>
+              <p
+                style={{
+                  margin: '2px 0 0',
+                  fontSize: 6.5,
+                  lineHeight: 1.25,
+                  opacity: 0.9,
+                  wordBreak: 'break-word',
                 }}
               >
                 {site.address}
               </p>
-              <p style={{ margin: '3px 0 0', fontSize: 9.5, opacity: 0.85 }}>
-                CEP {site.cep} · {site.phone}
+              <p
+                style={{
+                  margin: '2px 0 0',
+                  fontSize: 6.5,
+                  opacity: 0.85,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                CEP {site.cep}
+              </p>
+              <p style={{ margin: '1px 0 0', fontSize: 6.5, opacity: 0.85 }}>
+                {site.phone}
               </p>
             </div>
           ))}
