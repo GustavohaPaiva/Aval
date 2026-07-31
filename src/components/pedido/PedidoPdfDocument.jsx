@@ -1,4 +1,5 @@
 import { SYAGRI_COMPANY } from '../../constants/company'
+import { formatProdutoDisplayNome } from '../../constants/mapeamentoCampos'
 import { displayCpfCnpj, displayPhone } from '../../utils/dataFormatters'
 import { formatBRL } from '../../utils/money'
 import { roundMoney } from '../../utils/roundMoney'
@@ -357,7 +358,16 @@ export function PedidoPdfDocument({
                     <Td align="right" mono>
                       {item.volume}
                     </Td>
-                    <Td strong>{item.product?.nome ?? '—'}</Td>
+                    <Td strong>
+                      {item.product
+                        ? formatProdutoDisplayNome({
+                            nome: item.product.nome,
+                            referencia_complementar:
+                              item.product.referencia_complementar,
+                            fornecedor_nome: item.product.fornecedor_nome,
+                          }) || '—'
+                        : '—'}
+                    </Td>
                     <Td>{item.cultura || '—'}</Td>
                     <Td align="right" mono>
                       {formatBRL(item.proposta)}

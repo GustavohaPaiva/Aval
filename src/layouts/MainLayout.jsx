@@ -6,6 +6,7 @@ import { ProfileModal } from "../components/layout/ProfileModal";
 import { BrandMark } from "../components/brand/BrandLogo";
 import {
   IconBell,
+  IconChevronDown,
   IconChevronsLeft,
   IconClipboardList,
   IconDollarSign,
@@ -66,49 +67,93 @@ function CloseIcon() {
   );
 }
 
-function navItemsForRole(role) {
+function pathMatchesItem(pathname, to) {
+  if (pathname === to) return true;
+  if (to === "/dashboard") return false;
+  return pathname.startsWith(`${to}/`);
+}
+
+function sectionContainsPath(section, pathname) {
+  return section.items.some((item) => pathMatchesItem(pathname, item.to));
+}
+
+function navSectionsForRole(role) {
   if (role === "gestor") {
     return [
       {
-        to: "/dashboard",
-        label: "Dashboard",
-        icon: IconLayoutDashboard,
+        items: [
+          {
+            to: "/dashboard",
+            label: "Dashboard",
+            icon: IconLayoutDashboard,
+          },
+        ],
       },
       {
-        to: "/admin/importacao",
-        label: "Lançamento de Produtos",
-        icon: IconPackage,
-      },
-      {
-        to: "/admin/produtos",
+        id: "produtos",
         label: "Produtos",
         icon: IconLeaf,
+        items: [
+          { to: "/admin/produtos", label: "Catálogo", icon: IconLeaf },
+          { to: "/admin/listas", label: "Listas", icon: IconFileSpreadsheet },
+          {
+            to: "/admin/importacao",
+            label: "Lançamento",
+            icon: IconPackage,
+          },
+        ],
       },
       {
-        to: "/admin/listas",
-        label: "Listas de produtos",
-        icon: IconFileSpreadsheet,
-      },
-      { to: "/clientes", label: "Clientes", icon: IconUser },
-      { to: "/simulacoes", label: "Todas Simulações", icon: IconClipboardList },
-      { to: "/pedidos", label: "Pedidos", icon: IconPackage },
-      { to: "/notificacoes", label: "Notificações", icon: IconBell },
-      { to: "/frete", label: "Fretes", icon: IconTruck },
-      {
-        to: "/admin/consultores",
-        label: "Gestão de Consultores",
+        id: "cadastros",
+        label: "Cadastros",
         icon: IconUsers,
+        items: [
+          { to: "/clientes", label: "Clientes", icon: IconUser },
+          {
+            to: "/admin/consultores",
+            label: "Consultores",
+            icon: IconUsers,
+          },
+          { to: "/frete", label: "Fretes", icon: IconTruck },
+        ],
       },
-      { to: "/comissao", label: "Comissão", icon: IconDollarSign },
-      { to: "/parametros", label: "Parâmetros", icon: IconSliders },
+      {
+        id: "vendas",
+        label: "Vendas",
+        icon: IconClipboardList,
+        items: [
+          {
+            to: "/simulacoes",
+            label: "Simulações",
+            icon: IconClipboardList,
+          },
+          { to: "/pedidos", label: "Pedidos", icon: IconPackage },
+        ],
+      },
+      {
+        items: [
+          { to: "/comissao", label: "Comissão", icon: IconDollarSign },
+          { to: "/notificacoes", label: "Notificações", icon: IconBell },
+          { to: "/parametros", label: "Parâmetros", icon: IconSliders },
+        ],
+      },
     ];
   }
+
   return [
-    { to: "/dashboard", label: "Dashboard", icon: IconLayoutDashboard },
-    { to: "/simulacoes", label: "Minhas Simulações", icon: IconClipboardList },
-    { to: "/pedidos", label: "Pedidos", icon: IconPackage },
-    { to: "/clientes", label: "Clientes", icon: IconUser },
-    { to: "/notificacoes", label: "Notificações", icon: IconBell },
+    {
+      items: [
+        { to: "/dashboard", label: "Dashboard", icon: IconLayoutDashboard },
+        {
+          to: "/simulacoes",
+          label: "Minhas Simulações",
+          icon: IconClipboardList,
+        },
+        { to: "/pedidos", label: "Pedidos", icon: IconPackage },
+        { to: "/clientes", label: "Clientes", icon: IconUser },
+        { to: "/notificacoes", label: "Notificações", icon: IconBell },
+      ],
+    },
   ];
 }
 
@@ -123,6 +168,77 @@ function readAvatarUrl(metadata) {
   return typeof url === "string" && url.trim().length > 0 ? url.trim() : null;
 }
 
+function SidebarNavLink({
+  item,
+  collapsed,
+  indented = false,
+  unreadCount = 0,
+  onNavigate,
+}) {
+  const Icon = item.icon;
+
+  return (
+    <NavLink
+      to={item.to}
+      end={item.to === "/dashboard"}
+      onClick={onNavigate}
+      title={collapsed ? item.label : undefined}
+      className={({ isActive }) =>
+        [
+          "group relative flex notranslate items-center rounded-2xl text-sm font-medium transition-colors duration-200",
+          collapsed
+            ? "justify-center px-0 py-2"
+            : indented
+              ? "gap-2.5 py-2 pl-8 pr-2.5"
+              : "gap-2.5 px-2.5 py-2",
+          isActive
+            ? "bg-primary-50 text-primary-700"
+            : "text-slate-600 hover:bg-slate-50 hover:text-slate-900",
+        ].join(" ")
+      }
+    >
+      {({ isActive }) => (
+        <>
+          {isActive && !collapsed ? (
+            <span
+              className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-r-full bg-primary-600"
+              aria-hidden
+            />
+          ) : null}
+          <Icon
+            className={[
+              "size-[1.125rem] shrink-0 transition-colors",
+              isActive
+                ? "text-primary-600"
+                : "text-slate-400 group-hover:text-slate-600",
+            ].join(" ")}
+          />
+          <span
+            className={[
+              "sidebar-reveal truncate",
+              collapsed ? "is-collapsed" : "is-expanded",
+            ].join(" ")}
+          >
+            {item.label}
+          </span>
+          {item.to === "/notificacoes" && unreadCount > 0 ? (
+            <span
+              className={[
+                "inline-flex min-w-5 items-center justify-center rounded-full bg-primary-600 px-1.5 text-[0.65rem] font-bold text-white",
+                collapsed
+                  ? "absolute -right-0.5 -top-0.5 size-2 min-w-0 p-0"
+                  : "ml-auto",
+              ].join(" ")}
+            >
+              {collapsed ? null : unreadCount > 9 ? "9+" : unreadCount}
+            </span>
+          ) : null}
+        </>
+      )}
+    </NavLink>
+  );
+}
+
 export function MainLayout() {
   const { profile, user, role, clearAuth } = useAuth();
   const location = useLocation();
@@ -133,14 +249,35 @@ export function MainLayout() {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem(COLLAPSE_STORAGE_KEY) === "1";
   });
+  const [openSectionId, setOpenSectionId] = useState(null);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [sectionSynced, setSectionSynced] = useState(false);
 
   const pathKey = `${location.pathname}${location.search}`;
   const [lastPathKey, setLastPathKey] = useState(pathKey);
+  const [lastRole, setLastRole] = useState(role);
+
+  const sections = navSectionsForRole(role);
+  const activeGroupId =
+    sections.find(
+      (section) =>
+        section.id && sectionContainsPath(section, location.pathname),
+    )?.id ?? null;
+
+  if (!sectionSynced) {
+    setSectionSynced(true);
+    if (activeGroupId) setOpenSectionId(activeGroupId);
+  }
 
   if (pathKey !== lastPathKey) {
     setLastPathKey(pathKey);
     if (mobileOpen) setMobileOpen(false);
+    setOpenSectionId(activeGroupId);
+  }
+
+  if (role !== lastRole) {
+    setLastRole(role);
+    setOpenSectionId(activeGroupId);
   }
 
   useEffect(() => {
@@ -188,7 +325,10 @@ export function MainLayout() {
     void handleSignOut();
   }
 
-  const items = navItemsForRole(role);
+  function toggleSection(sectionId) {
+    setOpenSectionId((current) => (current === sectionId ? null : sectionId));
+  }
+
   const displayName = profile?.nome?.trim() || user?.email || "Usuário";
   const avatarUrl = readAvatarUrl(user?.user_metadata);
   const roleLabel = cargoLabel(role);
@@ -277,75 +417,90 @@ export function MainLayout() {
           <nav
             id="main-sidebar-nav"
             className={[
-              "flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto py-3",
-              collapsed ? "px-1.5" : "px-2.5",
+              "flex min-h-0 flex-1 flex-col overflow-y-auto py-3",
+              collapsed ? "gap-0.5 px-1.5" : "gap-1 px-2.5",
             ].join(" ")}
           >
-            {items.map((item) => {
-              const Icon = item.icon;
+            {sections.map((section, sectionIndex) => {
+              const isGroup = Boolean(section.id);
+              const isOpen = isGroup && openSectionId === section.id;
+              const GroupIcon = section.icon;
+              const groupActive =
+                isGroup && sectionContainsPath(section, location.pathname);
+
               return (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  end={item.to === "/dashboard"}
-                  onClick={() => setMobileOpen(false)}
-                  title={collapsed ? item.label : undefined}
-                  className={({ isActive }) =>
-                    [
-                      "group relative flex notranslate items-center rounded-2xl text-sm font-medium transition-colors duration-200",
-                      collapsed
-                        ? "justify-center px-0 py-2"
-                        : "gap-2.5 px-2.5 py-2",
-                      isActive
-                        ? "bg-primary-50 text-primary-700"
-                        : "text-slate-600 hover:bg-slate-50 hover:text-slate-900",
-                    ].join(" ")
-                  }
+                <div
+                  key={section.id ?? section.label ?? `section-${sectionIndex}`}
+                  className="flex flex-col gap-0.5"
                 >
-                  {({ isActive }) => (
+                  {isGroup ? (
                     <>
-                      {isActive && !collapsed ? (
-                        <span
-                          className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-r-full bg-primary-600"
-                          aria-hidden
-                        />
-                      ) : null}
-                      <Icon
+                      <button
+                        type="button"
+                        aria-expanded={isOpen}
+                        title={collapsed ? section.label : undefined}
+                        onClick={() => toggleSection(section.id)}
                         className={[
-                          "size-[1.125rem] shrink-0 transition-colors",
-                          isActive
-                            ? "text-primary-600"
-                            : "text-slate-400 group-hover:text-slate-600",
-                        ].join(" ")}
-                      />
-                      <span
-                        className={[
-                          "sidebar-reveal truncate",
-                          collapsed ? "is-collapsed" : "is-expanded",
+                          "group relative flex w-full items-center rounded-2xl text-sm font-medium transition-colors duration-200",
+                          collapsed
+                            ? "justify-center px-0 py-2"
+                            : "gap-2.5 px-2.5 py-2",
+                          groupActive
+                            ? "bg-slate-100 text-slate-900"
+                            : "text-slate-600 hover:bg-slate-50 hover:text-slate-900",
                         ].join(" ")}
                       >
-                        {item.label}
-                      </span>
-                      {item.to === "/notificacoes" &&
-                      effectiveUnreadNotifications > 0 ? (
+                        {GroupIcon ? (
+                          <GroupIcon
+                            className={[
+                              "size-[1.125rem] shrink-0 transition-colors",
+                              groupActive
+                                ? "text-primary-600"
+                                : "text-slate-400 group-hover:text-slate-600",
+                            ].join(" ")}
+                          />
+                        ) : null}
                         <span
                           className={[
-                            "inline-flex min-w-5 items-center justify-center rounded-full bg-primary-600 px-1.5 text-[0.65rem] font-bold text-white",
-                            collapsed
-                              ? "absolute -right-0.5 -top-0.5 size-2 min-w-0 p-0"
-                              : "ml-auto",
+                            "sidebar-reveal truncate",
+                            collapsed ? "is-collapsed" : "is-expanded",
                           ].join(" ")}
                         >
-                          {collapsed
-                            ? null
-                            : effectiveUnreadNotifications > 9
-                              ? "9+"
-                              : effectiveUnreadNotifications}
+                          {section.label}
                         </span>
-                      ) : null}
+                        <IconChevronDown
+                          className={[
+                            "ml-auto size-4 shrink-0 text-slate-400 transition-transform duration-200",
+                            collapsed ? "hidden" : "",
+                            isOpen ? "rotate-180" : "",
+                          ].join(" ")}
+                        />
+                      </button>
+                      {isOpen
+                        ? section.items.map((item) => (
+                            <SidebarNavLink
+                              key={item.to}
+                              item={item}
+                              collapsed={collapsed}
+                              indented={!collapsed}
+                              unreadCount={effectiveUnreadNotifications}
+                              onNavigate={() => setMobileOpen(false)}
+                            />
+                          ))
+                        : null}
                     </>
+                  ) : (
+                    section.items.map((item) => (
+                      <SidebarNavLink
+                        key={item.to}
+                        item={item}
+                        collapsed={collapsed}
+                        unreadCount={effectiveUnreadNotifications}
+                        onNavigate={() => setMobileOpen(false)}
+                      />
+                    ))
                   )}
-                </NavLink>
+                </div>
               );
             })}
           </nav>

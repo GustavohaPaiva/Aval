@@ -7,6 +7,7 @@ import {
     notifyConsultorSimulationDecision,
     notifyGestoresOrderConversionRequest,
     notifyGestoresOrderPending,
+    notifyGestoresSimulationSaved,
 } from './notificationService';
 import {
     syncComissaoRegistroFromSimulation,
@@ -573,7 +574,37 @@ export async function saveDraftSimulation(input) {
     if (input.lines.some((line) => !line.productId)) {
         return { ok: false, error: 'Selecione o produto em todas as linhas.' };
     }
-    return upsertSimulationWithItems(input, 'draft', auth.user.id);
+
+    const result = await upsertSimulationWithItems(
+        input,
+        'draft',
+        auth.user.id,
+    );
+    if (!result.ok) return result;
+
+    const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', auth.user.id)
+        .maybeSingle();
+    if (profileError) {
+        return { ...result, notifyWarning: profileError.message };
+    }
+    if (profile?.role !== 'consultor') {
+        return result;
+    }
+
+    const clientLabel = (input.clientName ?? '').trim() || 'Cliente';
+    const notifyResult = await notifyGestoresSimulationSaved({
+        simulationId: result.simulationId,
+        title: `Simulação salva — ${clientLabel}`,
+        body: `Proposta de ${formatBRL(input.totalProposta)} salva pelo consultor.`,
+    });
+    if (!notifyResult.ok) {
+        return { ...result, notifyWarning: notifyResult.error };
+    }
+
+    return result;
 }
 
 export async function persistApprovedSimulation(input) {

@@ -174,7 +174,7 @@ export function GerenciarListas() {
       .join(' ')
     if (
       !window.confirm(
-        `Excluir a lista de produtos${label ? ` de ${label}` : ''}? Os produtos do catálogo, simulações e pedidos permanecem inalterados. Esta ação não pode ser desfeita.`,
+        `Excluir a lista de produtos${label ? ` de ${label}` : ''} e todos os produtos do catálogo vinculados? Simulações e pedidos não são alterados; se algum produto estiver em uso, a exclusão será bloqueada. Esta ação não pode ser desfeita.`,
       )
     ) {
       return

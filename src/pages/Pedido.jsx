@@ -527,7 +527,7 @@ export function Pedido({ simulationId }) {
           />
           {isGestor && canEditPedido ? (
             <Select
-              label="Prazo"
+              label="Prazo de entrega"
               value={String(prazoDias)}
               onChange={(e) => {
                 setPrazoDias(normalizePrazoDias(e.target.value))
@@ -538,7 +538,7 @@ export function Pedido({ simulationId }) {
             />
           ) : (
             <Input
-              label="Prazo"
+              label="Prazo de entrega"
               value={`${normalizePrazoDias(prazoDias)} dias`}
               disabled
               readOnly

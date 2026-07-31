@@ -422,10 +422,12 @@ export function Simulador() {
   );
 
   const canGeneratePdf =
-    sim.isGestor &&
-    sim.canConvert &&
     Boolean(sim.clientName.trim()) &&
-    sim.lines.length > 0;
+    sim.lines.length > 0 &&
+    (!sim.isReadOnly || Boolean(simulationId));
+
+  const isDraftEditable =
+    !sim.isReadOnly && (!remoteStatus || remoteStatus === "draft");
 
   const pdfNomeFallback = useMemo(() => {
     const safeName = (sim.clientName || "cliente")
@@ -451,14 +453,49 @@ export function Simulador() {
   async function handleGerarPdf() {
     if (!canGeneratePdf || !pdfPrintRef.current) return;
 
-    const blockReason = getSaveBlockReason();
-    if (blockReason) {
-      setPdfError(blockReason);
+    setPdfError(null);
+
+    const needsDraftSave = isDraftEditable;
+
+    if (needsDraftSave) {
+      const blockReason = getSaveBlockReason();
+      if (blockReason) {
+        setPdfError(blockReason);
+        return;
+      }
+      if (!ensureValidClientDocument()) return;
+
+      setSavingDraft(true);
+      try {
+        const result = await saveDraftSimulation(buildSimulationPayload());
+        if (!result.ok) {
+          setPdfError(result.error);
+          return;
+        }
+        sim.clearDraft();
+        setRemoteStatus("draft");
+        if (!simulationId) {
+          navigate(
+            `/simulador?simulationId=${encodeURIComponent(result.simulationId)}`,
+            { replace: true },
+          );
+        }
+        setPdfPreview({
+          titulo: "Proposta comercial",
+          gerador: gerarPdfSimulacao,
+          nomeFallback: pdfNomeFallback,
+        });
+      } finally {
+        setSavingDraft(false);
+      }
       return;
     }
-    if (!ensureValidClientDocument()) return;
 
-    setPdfError(null);
+    if (!simulationId) {
+      setPdfError("Salve a simulação antes de gerar o PDF.");
+      return;
+    }
+
     setPdfPreview({
       titulo: "Proposta comercial",
       gerador: gerarPdfSimulacao,
@@ -1093,9 +1130,13 @@ export function Simulador() {
                   type="button"
                   variant="secondary"
                   className="w-full sm:flex-1"
+                  loading={savingDraft && isDraftEditable}
+                  disabled={savingDraft}
                   onClick={() => void handleGerarPdf()}
                 >
-                  Gerar Proposta p/ Cliente
+                  {savingDraft && isDraftEditable
+                    ? "Salvando…"
+                    : "Gerar Proposta p/ Cliente"}
                 </Button>
               ) : null}
               {!sim.isReadOnly && !showGestorReview ? (

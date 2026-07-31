@@ -1,4 +1,5 @@
 import { SYAGRI_COMPANY } from '../../constants/company'
+import { formatProdutoDisplayNome } from '../../constants/mapeamentoCampos'
 
 function freightLabel(tipo) {
   if (tipo === 'CIF') return 'CIF — Posto Fazenda'
@@ -368,7 +369,15 @@ export function PedidoFornecedorPdfDocument({
                       <Td align="right" mono>
                         {formatVolume(item.volume)}
                       </Td>
-                      <Td strong>{p?.nome ?? '—'}</Td>
+                      <Td strong>
+                        {p
+                          ? formatProdutoDisplayNome({
+                              nome: p.nome,
+                              referencia_complementar: p.referencia_complementar,
+                              fornecedor_nome: p.fornecedor_nome,
+                            }) || '—'
+                          : '—'}
+                      </Td>
                       <Td mono muted>
                         {productRef(p)}
                       </Td>

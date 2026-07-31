@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { AlertMessage } from '../components/ui/AlertMessage'
 import { Button } from '../components/ui/Button'
 import { DataTable } from '../components/ui/DataTable'
@@ -20,6 +21,11 @@ import {
 import { TIPOS_COMISSAO_PRODUTO } from '../utils/comissaoCalculations'
 import { formatShortDate } from '../utils/formatShortDate'
 import { formatBRL } from '../utils/money'
+
+function pedidoPath(simulationId) {
+  if (!simulationId) return null
+  return `/pedido/${encodeURIComponent(simulationId)}`
+}
 
 const STATUS_FILTERS = [
   { key: 'all', label: 'Todos' },
@@ -366,12 +372,38 @@ function clienteNome(row) {
   return row.simulations?.clients?.nome ?? '—'
 }
 
+function ComissaoValorLink({ row }) {
+  const path = pedidoPath(row.simulation_id)
+  const label = formatBRL(Number(row.comissao_valor) || 0)
+  if (!path) {
+    return (
+      <span className="finance-text font-semibold text-slate-900">{label}</span>
+    )
+  }
+  return (
+    <Link
+      to={path}
+      className="finance-text font-semibold text-primary-700 underline-offset-2 hover:text-primary-800 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
+      title="Abrir pedido desta comissão"
+    >
+      {label}
+    </Link>
+  )
+}
+
 export function ComissaoPage() {
+  const navigate = useNavigate()
   const [registros, setRegistros] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [statusFilter, setStatusFilter] = useState('all')
   const [paramsOpen, setParamsOpen] = useState(false)
+
+  function openPedido(row) {
+    const path = pedidoPath(row.simulation_id)
+    if (!path) return
+    navigate(path)
+  }
 
   const loadPage = useCallback(async (isActive) => {
     setLoading(true)
@@ -424,11 +456,7 @@ export function ComissaoPage() {
         key: 'valor',
         header: 'Comissão',
         align: 'right',
-        cell: (row) => (
-          <span className="finance-text font-semibold text-slate-900">
-            {formatBRL(Number(row.comissao_valor) || 0)}
-          </span>
-        ),
+        cell: (row) => <ComissaoValorLink row={row} />,
       },
       {
         key: 'data',
@@ -526,6 +554,7 @@ export function ComissaoPage() {
             loading={loading}
             emptyMessage="Nenhuma comissão encontrada."
             getRowKey={(row) => row.id}
+            onRowClick={openPedido}
           />
 
           <MobileCardList
@@ -533,31 +562,34 @@ export function ComissaoPage() {
             loading={loading}
             emptyMessage="Nenhuma comissão encontrada."
             renderItem={(row) => (
-              <li
-                key={row.id}
-                className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-sm"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="font-semibold text-slate-900">
-                      {consultorNome(row)}
-                    </p>
-                    <p className="mt-0.5 truncate text-sm text-slate-500">
-                      {clienteNome(row)}
-                    </p>
+              <li key={row.id}>
+                <button
+                  type="button"
+                  onClick={() => openPedido(row)}
+                  className="w-full rounded-2xl border border-slate-200/90 bg-white p-4 text-left shadow-sm transition-colors hover:bg-slate-50/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-slate-900">
+                        {consultorNome(row)}
+                      </p>
+                      <p className="mt-0.5 truncate text-sm text-slate-500">
+                        {clienteNome(row)}
+                      </p>
+                    </div>
+                    <StatusBadge status={row.status} />
                   </div>
-                  <StatusBadge status={row.status} />
-                </div>
-                <div className="mt-3 flex items-end justify-between gap-3">
-                  <p className="text-sm text-slate-500">
-                    {row.calculado_em
-                      ? formatShortDate(row.calculado_em)
-                      : '—'}
-                  </p>
-                  <p className="finance-text text-base font-semibold text-slate-900">
-                    {formatBRL(Number(row.comissao_valor) || 0)}
-                  </p>
-                </div>
+                  <div className="mt-3 flex items-end justify-between gap-3">
+                    <p className="text-sm text-slate-500">
+                      {row.calculado_em
+                        ? formatShortDate(row.calculado_em)
+                        : '—'}
+                    </p>
+                    <span className="finance-text text-base font-semibold text-primary-700 underline-offset-2">
+                      {formatBRL(Number(row.comissao_valor) || 0)}
+                    </span>
+                  </div>
+                </button>
               </li>
             )}
           />

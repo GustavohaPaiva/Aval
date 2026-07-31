@@ -106,6 +106,17 @@ export async function notifyGestoresSimulationPending(input) {
   return { ok: true }
 }
 
+export async function notifyGestoresSimulationSaved(input) {
+  const { error } = await supabase.rpc('notify_gestores_simulation_saved', {
+    p_simulation_id: input.simulationId,
+    p_title: input.title,
+    p_body: input.body ?? null,
+  })
+
+  if (error) return { ok: false, error: error.message }
+  return { ok: true }
+}
+
 export async function notifyConsultorSimulationDecision(input) {
   const { error } = await supabase.rpc('notify_consultor_simulation_decision', {
     p_simulation_id: input.simulationId,
@@ -159,6 +170,8 @@ export function notificationTypeLabel(type) {
   switch (type) {
     case 'approval_request':
       return 'Solicitação de aprovação'
+    case 'simulation_saved':
+      return 'Simulação salva'
     case 'simulation_approved':
       return 'Simulação aprovada'
     case 'simulation_rejected':

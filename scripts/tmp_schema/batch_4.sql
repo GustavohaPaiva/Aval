@@ -1014,50 +1014,8 @@ COMMENT ON COLUMN public.simulations.pedido_uf IS 'UF do pedido (MG ou SP)';
 COMMENT ON COLUMN public.simulations.prazo_dias IS 'Prazo de validade da proposta em dias (7, 14 ou 21)';
 
 -- >>> FILE: 20260727180000_excluir_lista_importacao.sql
--- Exclui apenas a lista (lote). Produtos oficiais permanecem (lote_id → NULL via FK).
--- Staging é removido por ON DELETE CASCADE. Simulações e demais vínculos não são alterados.
-
-CREATE OR REPLACE FUNCTION public.excluir_lista_importacao(p_lote_id uuid)
-RETURNS jsonb
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_produtos_desvinculados int;
-BEGIN
-  IF auth.uid() IS NULL THEN
-    RAISE EXCEPTION 'Sessão inválida.';
-  END IF;
-
-  IF NOT public.is_gestor() THEN
-    RAISE EXCEPTION 'Acesso negado.';
-  END IF;
-
-  IF NOT EXISTS (
-    SELECT 1 FROM public.lotes_importacao WHERE id = p_lote_id
-  ) THEN
-    RAISE EXCEPTION 'Lista de produtos não encontrada.';
-  END IF;
-
-  SELECT count(*)::int INTO v_produtos_desvinculados
-  FROM public.produtos_oficiais
-  WHERE lote_id = p_lote_id;
-
-  DELETE FROM public.lotes_importacao
-  WHERE id = p_lote_id;
-
-  RETURN jsonb_build_object(
-    'produtos_desvinculados', v_produtos_desvinculados,
-    'lista_excluida', true
-  );
-END;
-$function$;
-
-REVOKE EXECUTE ON FUNCTION public.excluir_lista_importacao(uuid) FROM anon, PUBLIC;
-GRANT EXECUTE ON FUNCTION public.excluir_lista_importacao(uuid) TO authenticated;
-
-NOTIFY pgrst, 'reload schema';
+-- (substituído por 20260730180000_excluir_lista_importacao_delete_produtos — ver batch_6.sql)
+-- Histórico: versão inicial só desvinculava produtos (ON DELETE SET NULL).
 
 -- >>> FILE: 20260727190000_parametros_sistema_seed_upsert.sql
 -- Garante o singleton de parâmetros e permite upsert pelo gestor.
