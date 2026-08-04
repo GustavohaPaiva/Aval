@@ -168,7 +168,7 @@ export function Combobox({
                         onClick={() => handleSelect(opt)}
                         className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left text-sm text-slate-800 transition-colors hover:bg-slate-50"
                       >
-                        <span className="whitespace-nowrap font-medium">
+                        <span className="wrap-break-word whitespace-normal font-medium">
                           {opt.label}
                         </span>
                         {opt.sublabel ? (

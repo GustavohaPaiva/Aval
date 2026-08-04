@@ -390,7 +390,9 @@ export const Select = forwardRef(function Select(
                                 : "text-slate-800 hover:bg-slate-50",
                             )}
                           >
-                            <span className="whitespace-nowrap">{option.label}</span>
+                            <span className="wrap-break-word whitespace-normal">
+                              {option.label}
+                            </span>
                           </button>
                         </li>
                       );

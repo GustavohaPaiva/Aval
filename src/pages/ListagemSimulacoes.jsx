@@ -13,7 +13,6 @@ import { EmptyState } from "../components/ui/EmptyState";
 import { PageHeader } from "../components/ui/PageHeader";
 import { PageInfoBanner } from "../components/ui/InfoStatCard";
 import { PaginationBar } from "../components/ui/PaginationBar";
-import { isPedidoStatus } from "../constants/simulationStatus";
 import { useSyncPageLoading } from "../contexts/PageLoadingContext";
 import { useAbortableAsync } from "../hooks/useAbortableAsync";
 import { useAuth } from "../hooks/useAuth";
@@ -110,11 +109,7 @@ export function ListagemSimulacoes() {
     canFetch,
   );
 
-  function openSimulacao(simulationId, status) {
-    if (isPedidoStatus(status)) {
-      navigate(`/pedido/${encodeURIComponent(simulationId)}`);
-      return;
-    }
+  function openSimulacao(simulationId) {
     navigate(`/simulador?simulationId=${encodeURIComponent(simulationId)}`);
   }
 
@@ -216,6 +211,7 @@ export function ListagemSimulacoes() {
               row={row}
               isGestor={isGestor}
               consultorNome={consultorNomeById[row.user_id]}
+              listKind="simulacoes"
               onContinueEdit={openSimulacao}
               onViewDetails={openSimulacao}
             />

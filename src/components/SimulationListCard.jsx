@@ -7,10 +7,21 @@ import {
 } from '../constants/simulationStatus'
 import { formatBRL } from '../utils/money'
 
+/**
+ * @param {{
+ *   row: object,
+ *   consultorNome?: string,
+ *   isGestor?: boolean,
+ *   listKind?: 'simulacoes' | 'pedidos',
+ *   onContinueEdit?: (id: string, status: string) => void,
+ *   onViewDetails?: (id: string, status: string) => void,
+ * }} props
+ */
 export function SimulationListCard({
   row,
   consultorNome,
   isGestor,
+  listKind = 'simulacoes',
   onContinueEdit,
   onViewDetails,
 }) {
@@ -21,6 +32,17 @@ export function SimulationListCard({
     hour: '2-digit',
     minute: '2-digit',
   })
+
+  const isPedidosList = listKind === 'pedidos'
+  const viewLabel = isPedidosList
+    ? isPedidoStatus(row.status)
+      ? row.status === 'order_pending' && isGestor
+        ? 'Revisar pedido'
+        : 'Ver pedido'
+      : 'Ver detalhes'
+    : isPedidoStatus(row.status) || row.status !== 'draft'
+      ? 'Ver simulação'
+      : 'Continuar edição'
 
   return (
     <article className="group flex flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition-[box-shadow,border-color] hover:border-primary-200 hover:shadow-md">
@@ -74,33 +96,36 @@ export function SimulationListCard({
       </div>
 
       <footer className="mt-auto border-t border-slate-100 bg-slate-50/50 p-4">
-        {row.status === 'draft' ? (
+        {!isPedidosList && row.status === 'draft' ? (
           <Button
             type="button"
             className="w-full"
-            onClick={() => onContinueEdit(row.id, row.status)}
+            onClick={() => onContinueEdit?.(row.id, row.status)}
           >
             Continuar edição
           </Button>
-        ) : row.status === 'pending' && isGestor ? (
+        ) : !isPedidosList && row.status === 'pending' && isGestor ? (
           <Button
             type="button"
             variant="primary"
             className="w-full"
-            onClick={() => onViewDetails(row.id, row.status)}
+            onClick={() => onViewDetails?.(row.id, row.status)}
           >
             Revisar
           </Button>
-        ) : isPedidoStatus(row.status) && !isGestor && row.status !== 'converted' ? (
+        ) : isPedidosList &&
+          isPedidoStatus(row.status) &&
+          !isGestor &&
+          row.status !== 'converted' ? (
           <p className="text-center text-sm text-slate-500">
             Aguardando aprovação do gestor
           </p>
-        ) : row.status === 'order_pending' && isGestor ? (
+        ) : isPedidosList && row.status === 'order_pending' && isGestor ? (
           <Button
             type="button"
             variant="primary"
             className="w-full"
-            onClick={() => onViewDetails(row.id, row.status)}
+            onClick={() => onViewDetails?.(row.id, row.status)}
           >
             Revisar pedido
           </Button>
@@ -109,9 +134,9 @@ export function SimulationListCard({
             type="button"
             variant="secondary"
             className="w-full"
-            onClick={() => onViewDetails(row.id, row.status)}
+            onClick={() => onViewDetails?.(row.id, row.status)}
           >
-            {isPedidoStatus(row.status) ? 'Ver pedido' : 'Ver detalhes'}
+            {viewLabel}
           </Button>
         )}
       </footer>

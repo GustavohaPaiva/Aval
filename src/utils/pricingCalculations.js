@@ -77,6 +77,21 @@ export function calcFatorJuros(dias, taxa = DEFAULT_TAXA_JUROS) {
   return (100 - (t / 30) * Number(dias)) / 100
 }
 
+/** Default histórico (15%) — usado quando o parâmetro de margem não está disponível. */
+export const DEFAULT_MARGEM_PERCENTUAL = 15
+
+/**
+ * Converte margem % dos parâmetros no ratio da planilha.
+ * Ex.: 15% → 0.85 → preço = financeiro / 0.85
+ */
+export function calcMargemRatio(margemPercentual = DEFAULT_MARGEM_PERCENTUAL) {
+  const p = Number(margemPercentual)
+  if (!Number.isFinite(p) || p < 0 || p >= 100) {
+    return (100 - DEFAULT_MARGEM_PERCENTUAL) / 100
+  }
+  return (100 - p) / 100
+}
+
 /**
  * Cadeia de preço só na simulação (planilha Base de dados):
  * 1. valor_com_frete (base) = custo_icms + frete
@@ -84,7 +99,8 @@ export function calcFatorJuros(dias, taxa = DEFAULT_TAXA_JUROS) {
  *    - dias < 0 → divide pelo fator de antecipação
  *    - dias > 0 → divide pelo fator de juros
  *    - dias = 0 → sem alteração
- * 3. valor_com_margem (preço final) = financeiro / 0.85
+ * 3. valor_com_margem (preço final) = financeiro / margemRatio
+ *    margemRatio vem de parametros_sistema.margem_percentual (ex.: 15% → 0.85)
  *
  * A planilha usa divisão (R/L ou R/M), não multiplicação.
  */
@@ -92,7 +108,7 @@ export function calcPrecoSimulacao({
   custoIcms,
   freteUnitario = 0,
   diasAntecipacao = 0,
-  margemRatio = 0.85,
+  margemPercentual = DEFAULT_MARGEM_PERCENTUAL,
   taxaAntecipacao = DEFAULT_TAXA_ANTECIPACAO,
   taxaJuros = DEFAULT_TAXA_JUROS,
 }) {
@@ -108,7 +124,11 @@ export function calcPrecoSimulacao({
 
   const valorAjustado =
     fator > 0 ? roundMoney(valorComFrete / fator) : valorComFrete
-  const precoFinal = roundMoney(valorAjustado / margemRatio)
+  const margemRatio = calcMargemRatio(margemPercentual)
+  const precoFinal =
+    margemRatio > 0
+      ? roundMoney(valorAjustado / margemRatio)
+      : valorAjustado
 
   return {
     base: valorComFrete,
@@ -116,20 +136,28 @@ export function calcPrecoSimulacao({
     fator,
     financeiro: valorAjustado,
     valorAjustado,
+    margemRatio,
     precoFinal,
   }
 }
 
 /**
- * Margem de lucro da planilha (Simulador_Negociação):
- * (proposta - proposta*0.04 - proposta*0.01 - financeiro) / proposta
- * = (proposta * 0.95 - financeiro) / proposta
+ * Lucro real sobre o custo financeiro (após frete/juros/antecipação):
+ * (proposta − financeiro) / financeiro
  */
 export function calcMargemLucro(proposta, financeiro) {
   const p = Number(proposta)
   const f = Number(financeiro)
-  if (!Number.isFinite(p) || p <= 0 || !Number.isFinite(f)) return null
-  return (p * 0.95 - f) / p
+  if (!Number.isFinite(p) || !Number.isFinite(f) || f <= 0) return null
+  return (p - f) / f
+}
+
+/** Lucro em R$ = proposta − financeiro (mesma base do %). */
+export function calcMargemLucroValor(proposta, financeiro) {
+  const p = Number(proposta)
+  const f = Number(financeiro)
+  if (!Number.isFinite(p) || !Number.isFinite(f)) return null
+  return roundMoney(p - f)
 }
 
 export function calcCustoBrlComDesconto(custoUsd, descontoUsd, taxa) {

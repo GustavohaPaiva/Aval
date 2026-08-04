@@ -1,4 +1,5 @@
 import { SYAGRI_COMPANY } from '../../constants/company'
+import { PEDIDO_CONDICOES_VENDA } from '../../constants/pedidoCondicoesVenda'
 import { formatProdutoDisplayNome } from '../../constants/mapeamentoCampos'
 import { displayCpfCnpj, displayPhone } from '../../utils/dataFormatters'
 import { formatBRL } from '../../utils/money'
@@ -222,7 +223,7 @@ export function PedidoPdfDocument({
             { label: 'Data', value: formatDateBr(simulation.created_at) },
             { label: 'Vendedor', value: vendedorNome || '—' },
             { label: 'Validade / Pagamento', value: formatDateBr(simulation.data_pagamento) },
-            { label: 'Prazo', value: prazoLabel },
+            { label: 'Prazo de entrga', value: prazoLabel },
             { label: 'Frete', value: freightLabel(simulation.tipo_frete) },
             { label: 'Fazenda', value: simulation.fazenda?.trim() || '—' },
           ].map((field) => (
@@ -527,16 +528,61 @@ export function PedidoPdfDocument({
           </p>
         </section>
 
-        <p
+        {/* Condições de venda */}
+        <section
           style={{
-            margin: '0 0 18px',
-            fontSize: 10,
-            lineHeight: 1.45,
-            color: '#64748b',
+            borderRadius: 14,
+            border: '1px solid #e2e8f0',
+            padding: '12px 14px',
+            marginBottom: 18,
           }}
         >
-          {SYAGRI_COMPANY.terms}
-        </p>
+          <p
+            style={{
+              margin: '0 0 8px',
+              fontSize: 9,
+              fontWeight: 700,
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+              color: '#64748b',
+            }}
+          >
+            Condições de venda
+          </p>
+          <ol
+            style={{
+              margin: 0,
+              padding: 0,
+              listStyle: 'none',
+            }}
+          >
+            {PEDIDO_CONDICOES_VENDA.map((texto, index) => (
+              <li
+                key={index}
+                style={{
+                  display: 'flex',
+                  gap: 8,
+                  marginBottom: index === PEDIDO_CONDICOES_VENDA.length - 1 ? 0 : 6,
+                  fontSize: 8.5,
+                  lineHeight: 1.4,
+                  color: '#475569',
+                }}
+              >
+                <span
+                  style={{
+                    flexShrink: 0,
+                    fontWeight: 700,
+                    color: '#0f172a',
+                    minWidth: 18,
+                  }}
+                >
+                  {String(index + 1).padStart(2, '0')}
+                </span>
+                <span>{texto}</span>
+              </li>
+            ))}
+          </ol>
+        </section>
 
         {/* Assinaturas */}
         <div

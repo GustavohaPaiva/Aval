@@ -1,6 +1,49 @@
 import { supabase } from './supabase'
+import {
+  DEFAULT_AUTONOMIA_PARAMS,
+  normalizeAutonomiaParams,
+} from '../utils/autonomiaDesconto'
 
 export const DEFAULT_ICMS_PERCENTUAL = 4
+
+const PARAMETROS_SELECT =
+  'id, icms_percentual, pis_cofins_percentual, margem_percentual, autonomia_dias_limiar, autonomia_especial_longo, autonomia_convencional_longo, autonomia_especial_curto, autonomia_convencional_curto, updated_at'
+
+function emptyParametrosRow() {
+  return {
+    id: 1,
+    icms_percentual: DEFAULT_ICMS_PERCENTUAL,
+    pis_cofins_percentual: null,
+    margem_percentual: null,
+    ...DEFAULT_AUTONOMIA_PARAMS,
+    updated_at: null,
+  }
+}
+
+function parseOptionalPercent(value, label) {
+  if (value === null || value === '' || value === undefined) {
+    return { ok: true, value: null }
+  }
+  const num = Number(value)
+  if (!Number.isFinite(num) || num < 0 || num >= 100) {
+    return {
+      ok: false,
+      error: `Informe um ${label} válido entre 0 e 100.`,
+    }
+  }
+  return { ok: true, value: num }
+}
+
+function parseRequiredAutonomiaPercent(value, label) {
+  const num = Number(value)
+  if (!Number.isFinite(num) || num < 0 || num >= 100) {
+    return {
+      ok: false,
+      error: `Informe ${label} válido entre 0 e 100.`,
+    }
+  }
+  return { ok: true, value: num }
+}
 
 /**
  * Lê o registro singleton de parâmetros do sistema.
@@ -9,37 +52,37 @@ export const DEFAULT_ICMS_PERCENTUAL = 4
 export async function fetchParametrosSistema() {
   const { data, error } = await supabase
     .from('parametros_sistema')
-    .select(
-      'id, icms_percentual, pis_cofins_percentual, margem_percentual, updated_at',
-    )
+    .select(PARAMETROS_SELECT)
     .eq('id', 1)
     .maybeSingle()
 
   if (error) return { ok: false, error: error.message }
 
   if (!data) {
-    return {
-      ok: true,
-      row: {
-        id: 1,
-        icms_percentual: DEFAULT_ICMS_PERCENTUAL,
-        pis_cofins_percentual: null,
-        margem_percentual: null,
-        updated_at: null,
-      },
-    }
+    return { ok: true, row: emptyParametrosRow() }
   }
 
-  return { ok: true, row: data }
+  return {
+    ok: true,
+    row: {
+      ...data,
+      ...normalizeAutonomiaParams(data),
+    },
+  }
 }
 
 /**
- * Atualiza ICMS, PIS/COFINS e/ou Margem (não altera cotação de dólar).
+ * Atualiza ICMS, PIS/COFINS, Margem e/ou autonomia (não altera cotação de dólar).
  */
 export async function updateParametrosSistema({
   icms_percentual,
   pis_cofins_percentual,
   margem_percentual,
+  autonomia_dias_limiar,
+  autonomia_especial_longo,
+  autonomia_convencional_longo,
+  autonomia_especial_curto,
+  autonomia_convencional_curto,
 } = {}) {
   const {
     data: { session },
@@ -67,15 +110,9 @@ export async function updateParametrosSistema({
   }
 
   if (pis_cofins_percentual !== undefined) {
-    if (pis_cofins_percentual === null || pis_cofins_percentual === '') {
-      payload.pis_cofins_percentual = null
-    } else {
-      const pis = Number(pis_cofins_percentual)
-      if (!Number.isFinite(pis) || pis < 0 || pis >= 100) {
-        return { ok: false, error: 'Informe um PIS/COFINS válido entre 0 e 100.' }
-      }
-      payload.pis_cofins_percentual = pis
-    }
+    const parsed = parseOptionalPercent(pis_cofins_percentual, 'PIS/COFINS')
+    if (!parsed.ok) return parsed
+    payload.pis_cofins_percentual = parsed.value
   }
 
   if (margem_percentual !== undefined) {
@@ -90,14 +127,62 @@ export async function updateParametrosSistema({
     }
   }
 
+  if (autonomia_dias_limiar !== undefined) {
+    const limiar = Number(autonomia_dias_limiar)
+    if (!Number.isFinite(limiar) || limiar <= 0) {
+      return { ok: false, error: 'Informe um limiar de dias válido maior que zero.' }
+    }
+    payload.autonomia_dias_limiar = Math.round(limiar)
+  }
+
+  if (autonomia_especial_longo !== undefined) {
+    const parsed = parseRequiredAutonomiaPercent(
+      autonomia_especial_longo,
+      'autonomia especiais (prazo longo)',
+    )
+    if (!parsed.ok) return parsed
+    payload.autonomia_especial_longo = parsed.value
+  }
+
+  if (autonomia_convencional_longo !== undefined) {
+    const parsed = parseRequiredAutonomiaPercent(
+      autonomia_convencional_longo,
+      'autonomia convencionais (prazo longo)',
+    )
+    if (!parsed.ok) return parsed
+    payload.autonomia_convencional_longo = parsed.value
+  }
+
+  if (autonomia_especial_curto !== undefined) {
+    const parsed = parseRequiredAutonomiaPercent(
+      autonomia_especial_curto,
+      'autonomia especiais (prazo curto)',
+    )
+    if (!parsed.ok) return parsed
+    payload.autonomia_especial_curto = parsed.value
+  }
+
+  if (autonomia_convencional_curto !== undefined) {
+    const parsed = parseRequiredAutonomiaPercent(
+      autonomia_convencional_curto,
+      'autonomia convencionais (prazo curto)',
+    )
+    if (!parsed.ok) return parsed
+    payload.autonomia_convencional_curto = parsed.value
+  }
+
   const { data, error } = await supabase
     .from('parametros_sistema')
     .upsert(payload, { onConflict: 'id' })
-    .select(
-      'id, icms_percentual, pis_cofins_percentual, margem_percentual, updated_at',
-    )
+    .select(PARAMETROS_SELECT)
     .single()
 
   if (error) return { ok: false, error: error.message }
-  return { ok: true, row: data }
+  return {
+    ok: true,
+    row: {
+      ...data,
+      ...normalizeAutonomiaParams(data),
+    },
+  }
 }

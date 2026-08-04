@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { IGNORE_COLUMN_VALUE } from '../constants/mapeamentoCampos'
+import { ESTADO_UF_VALUES } from '../constants/simulator'
 import { parsePrecoValue } from '../utils/spreadsheetAnalyzer'
 import {
   isValidFertilizante,
@@ -48,7 +49,7 @@ const PRODUTO_LOTE_FIELDS =
 
 function normalizeEstado(value) {
   const estado = String(value ?? '').trim().toUpperCase()
-  return ['MG', 'SP'].includes(estado) ? estado : null
+  return ESTADO_UF_VALUES.includes(estado) ? estado : null
 }
 
 function prepareStagingInsertRows(rows) {
@@ -648,8 +649,8 @@ export async function bulkUpdateStagingQuarter(loteId, quarter) {
 
 export async function bulkUpdateStagingEstado(loteId, estado, rowIds = null) {
   const estadoTrim = String(estado ?? '').trim()
-  if (!['MG', 'SP'].includes(estadoTrim)) {
-    return { ok: false, error: 'Informe o estado (MG ou SP).' }
+  if (!ESTADO_UF_VALUES.includes(estadoTrim)) {
+    return { ok: false, error: 'Informe o estado.' }
   }
 
   let q = supabase
@@ -841,8 +842,8 @@ export function getStagingRowErrors(
 
   const estado =
     String(row.estado ?? '').trim() || String(loteEstadoPadrao ?? '').trim()
-  if (!['MG', 'SP'].includes(estado)) {
-    errors.push('Estado (MG ou SP) não informado')
+  if (!ESTADO_UF_VALUES.includes(estado)) {
+    errors.push('Estado não informado')
   }
 
   const identityKey = stagingRowIdentityKey(row)
@@ -1068,7 +1069,7 @@ export async function createStagingRow(loteId, payload) {
 
   const estado = normalizeEstado(payload.estado)
   if (!estado) {
-    return { ok: false, error: 'Selecione o estado (MG ou SP).' }
+    return { ok: false, error: 'Selecione o estado.' }
   }
 
   const preco = Number(payload.preco_original ?? 0)
@@ -1338,8 +1339,8 @@ export async function upsertProdutoOficialManual({
   }
 
   const estadoVal = String(estado ?? '').trim().toUpperCase()
-  if (!['MG', 'SP'].includes(estadoVal)) {
-    return { ok: false, error: 'Selecione o estado (MG ou SP).' }
+  if (!ESTADO_UF_VALUES.includes(estadoVal)) {
+    return { ok: false, error: 'Selecione o estado.' }
   }
 
   const referencia = String(

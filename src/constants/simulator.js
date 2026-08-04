@@ -1,7 +1,10 @@
 export const STATES = [
   { value: 'MG', label: 'Minas Gerais' },
   { value: 'SP', label: 'São Paulo' },
+  { value: 'RS', label: 'Rio Grande do Sul' },
 ]
+
+export const ESTADO_UF_VALUES = ['MG', 'SP', 'RS']
 
 /** Prazo de validade da proposta (dias) — padrão 14. */
 export const PRAZO_DIAS_DEFAULT = 14

@@ -29,6 +29,7 @@ export const MAPPING_TARGET_LABELS = Object.fromEntries(
 export const ESTADOS_PRODUTO = [
   { value: 'MG', label: 'Minas Gerais' },
   { value: 'SP', label: 'São Paulo' },
+  { value: 'RS', label: 'Rio Grande do Sul' },
 ]
 
 export const CLASSES_PRODUTO = [

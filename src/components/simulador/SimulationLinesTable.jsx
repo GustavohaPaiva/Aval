@@ -4,6 +4,10 @@ import { Select } from "../ui/Select";
 import { IconSliders } from "../icons";
 import { RemoveLineButton } from "./RemoveLineButton";
 import { LineCostOverrideEditor } from "./LineCostOverrideEditor";
+import {
+  LineAutonomiaBadge,
+  getLineAutonomiaTintClass,
+} from "./LineAutonomiaBadge";
 import { formatBRL, formatPercent } from "../../utils/money";
 
 const SimulationLinesTableRow = memo(function SimulationLinesTableRow({
@@ -31,9 +35,7 @@ const SimulationLinesTableRow = memo(function SimulationLinesTableRow({
     <tr
       className={[
         "border-b border-slate-100 transition-colors",
-        row.isLineBelowFloor && !canOverrideFloor
-          ? "bg-amber-50/50"
-          : "bg-white hover:bg-slate-50/80",
+        getLineAutonomiaTintClass(row.isLineBelowFloor),
       ].join(" ")}
     >
       <td className={cell}>
@@ -97,19 +99,10 @@ const SimulationLinesTableRow = memo(function SimulationLinesTableRow({
         </td>
       ) : null}
       <td className={cell}>
-        {row.isLineBelowFloor && !canOverrideFloor ? (
-          <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800">
-            Pendente
-          </span>
-        ) : row.isLineBelowFloor && canOverrideFloor ? (
-          <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
-            Especial
-          </span>
-        ) : (
-          <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-800">
-            OK
-          </span>
-        )}
+        <LineAutonomiaBadge
+          isLineBelowFloor={row.isLineBelowFloor}
+          canOverrideFloor={canOverrideFloor}
+        />
       </td>
       <td className={cell}>
         <div className="inline-flex items-center justify-center gap-0.5">
@@ -165,6 +158,7 @@ export function SimulationLinesTable({
   productOptions,
   isReadOnly,
   canOverrideFloor,
+  showMargem: showMargemProp,
   onVolumeChange,
   onCulturaChange,
   onProductChange,
@@ -174,7 +168,7 @@ export function SimulationLinesTable({
   onRemove,
 }) {
   const cell = "px-3 py-2.5 text-center align-middle";
-  const showMargem = canOverrideFloor;
+  const showMargem = showMargemProp ?? canOverrideFloor;
   const colSpan = showMargem ? 10 : 9;
 
   return (

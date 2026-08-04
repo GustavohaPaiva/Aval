@@ -80,7 +80,7 @@ export function ModalProdutoOficialForm({
       return
     }
     if (!form.estado) {
-      setError('Selecione o estado (MG ou SP).')
+      setError('Selecione o estado.')
       return
     }
 

@@ -2,11 +2,24 @@ import { useCallback, useEffect, useState } from "react";
 
 const DEFAULT_MAX_HEIGHT = 240;
 const GAP = 4;
+const MAX_PANEL_REM = 28;
+const REM_PX = 16;
 
 /**
- * Calcula posição fixed para dropdown portaled, com flip para cima quando necessário.
+ * Calcula posição fixed para dropdown portaled, com flip vertical e clamp horizontal.
+ *
+ * @param {boolean} isOpen
+ * @param {React.RefObject<HTMLElement | null>} triggerRef
+ * @param {number} [maxHeight]
+ * @param {{ preferredWidth?: number }} [options] preferredWidth em px (ex.: calendário)
  */
-export function useDropdownPosition(isOpen, triggerRef, maxHeight = DEFAULT_MAX_HEIGHT) {
+export function useDropdownPosition(
+  isOpen,
+  triggerRef,
+  maxHeight = DEFAULT_MAX_HEIGHT,
+  options = {},
+) {
+  const { preferredWidth } = options;
   const [style, setStyle] = useState(null);
 
   const updatePosition = useCallback(() => {
@@ -18,17 +31,36 @@ export function useDropdownPosition(isOpen, triggerRef, maxHeight = DEFAULT_MAX_
     const spaceAbove = rect.top - GAP;
     const openUpward = spaceBelow < maxHeight && spaceAbove > spaceBelow;
 
+    const maxWidthPx = Math.min(
+      window.innerWidth - 2 * GAP,
+      MAX_PANEL_REM * REM_PX,
+    );
+    const minWidth = Math.min(rect.width, maxWidthPx);
+
+    const hasFixedWidth =
+      typeof preferredWidth === "number" && preferredWidth > 0;
+    const widthPx = hasFixedWidth
+      ? Math.min(preferredWidth, maxWidthPx)
+      : null;
+    const clampWidth = widthPx ?? maxWidthPx;
+
+    let left = rect.left;
+    if (left + clampWidth > window.innerWidth - GAP) {
+      left = window.innerWidth - GAP - clampWidth;
+    }
+    left = Math.max(GAP, left);
+
     setStyle({
       position: "fixed",
-      left: rect.left,
-      minWidth: rect.width,
-      width: "max-content",
-      maxWidth: "min(90vw, 28rem)",
+      left,
+      minWidth,
+      width: widthPx ?? "max-content",
+      maxWidth: maxWidthPx,
       top: openUpward ? undefined : rect.bottom + GAP,
       bottom: openUpward ? window.innerHeight - rect.top + GAP : undefined,
       zIndex: 100,
     });
-  }, [triggerRef, maxHeight]);
+  }, [triggerRef, maxHeight, preferredWidth]);
 
   useEffect(() => {
     if (!isOpen) return;

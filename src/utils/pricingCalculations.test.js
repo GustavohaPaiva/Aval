@@ -6,7 +6,10 @@ import {
   calcFatorJuros,
   calcCustoIcmsFromBrl,
   calcMargemLucro,
+  calcMargemLucroValor,
+  calcMargemRatio,
   calcPrecoSimulacao,
+  DEFAULT_MARGEM_PERCENTUAL,
 } from './pricingCalculations'
 
 describe('pricingCalculations', () => {
@@ -22,6 +25,14 @@ describe('pricingCalculations', () => {
     ).toBe(-14)
   })
 
+  it('converte margem % dos parâmetros no ratio da planilha', () => {
+    expect(calcMargemRatio(15)).toBeCloseTo(0.85, 6)
+    expect(calcMargemRatio(10)).toBeCloseTo(0.9, 6)
+    expect(calcMargemRatio(DEFAULT_MARGEM_PERCENTUAL)).toBeCloseTo(0.85, 6)
+    expect(calcMargemRatio(100)).toBeCloseTo(0.85, 6)
+    expect(calcMargemRatio(-1)).toBeCloseTo(0.85, 6)
+  })
+
   it('pagamento antes do vencimento: divide pelo fator de antecipação', () => {
     const dias = -30
     const fator = calcFatorAntecipacao(dias)
@@ -35,7 +46,10 @@ describe('pricingCalculations', () => {
     expect(result.valorComFrete).toBe(1050)
     expect(result.fator).toBeCloseTo(fator, 6)
     expect(result.valorAjustado).toBeCloseTo(1050 / fator, 2)
-    expect(result.precoFinal).toBeCloseTo(result.valorAjustado / 0.85, 2)
+    expect(result.precoFinal).toBeCloseTo(
+      result.valorAjustado / calcMargemRatio(DEFAULT_MARGEM_PERCENTUAL),
+      2,
+    )
     // antecipação reduz o base financeiro (desconto)
     expect(result.valorAjustado).toBeLessThan(result.valorComFrete)
   })
@@ -53,7 +67,10 @@ describe('pricingCalculations', () => {
     expect(result.valorComFrete).toBe(1050)
     expect(result.fator).toBeCloseTo(fator, 6)
     expect(result.valorAjustado).toBeCloseTo(1050 / fator, 2)
-    expect(result.precoFinal).toBeCloseTo(result.valorAjustado / 0.85, 2)
+    expect(result.precoFinal).toBeCloseTo(
+      result.valorAjustado / calcMargemRatio(DEFAULT_MARGEM_PERCENTUAL),
+      2,
+    )
     // juros elevam o base financeiro (acréscimo)
     expect(result.valorAjustado).toBeGreaterThan(result.valorComFrete)
   })
@@ -67,18 +84,30 @@ describe('pricingCalculations', () => {
     expect(result.valorComFrete).toBe(850)
     expect(result.fator).toBe(1)
     expect(result.valorAjustado).toBe(850)
-    expect(result.precoFinal).toBeCloseTo(850 / 0.85, 2)
+    expect(result.precoFinal).toBeCloseTo(
+      850 / calcMargemRatio(DEFAULT_MARGEM_PERCENTUAL),
+      2,
+    )
   })
 
-  it('aplica margem de 15% sobre o valor ajustado, não sobre o frete bruto', () => {
+  it('aplica margem parametrizada sobre o valor ajustado, não sobre o frete bruto', () => {
     const result = calcPrecoSimulacao({
       custoIcms: 1000,
       freteUnitario: 0,
       diasAntecipacao: -30,
+      margemPercentual: 15,
     })
     const ajustado = 1000 / calcFatorAntecipacao(-30)
     expect(result.precoFinal).toBeCloseTo(ajustado / 0.85, 2)
     expect(result.precoFinal).not.toBeCloseTo(1000 / 0.85, 2)
+
+    const result10 = calcPrecoSimulacao({
+      custoIcms: 1000,
+      freteUnitario: 0,
+      diasAntecipacao: 0,
+      margemPercentual: 10,
+    })
+    expect(result10.precoFinal).toBeCloseTo(1000 / 0.9, 2)
   })
 
   it('aceita taxas customizadas de antecipação e juros', () => {
@@ -109,11 +138,19 @@ describe('pricingCalculations', () => {
     expect(resultJuros.valorAjustado).toBeCloseTo(1000 / fatorJuros, 2)
   })
 
-  it('calcula margem de lucro da planilha (proposta - 4% - 1% - financeiro)', () => {
-    // (3950 - 3950*0.04 - 3950*0.01 - 3000) / 3950
-    expect(calcMargemLucro(3950, 3000)).toBeCloseTo((3950 * 0.95 - 3000) / 3950, 6)
-    expect(calcMargemLucro(0, 100)).toBeNull()
-    expect(calcMargemLucro(1000, 950)).toBeCloseTo(0, 6)
+  it('calcula lucro real sobre o custo financeiro', () => {
+    // (proposta − financeiro) / financeiro
+    expect(calcMargemLucro(3950, 3000)).toBeCloseTo((3950 - 3000) / 3000, 6)
+    expect(calcMargemLucro(0, 100)).toBeCloseTo(-1, 6)
+    expect(calcMargemLucro(1000, 1000)).toBeCloseTo(0, 6)
+    expect(calcMargemLucro(1100, 1000)).toBeCloseTo(0.1, 6)
+    expect(calcMargemLucro(1000, 0)).toBeNull()
+  })
+
+  it('calcula lucro em R$ (proposta − financeiro)', () => {
+    expect(calcMargemLucroValor(3950, 3000)).toBe(950)
+    expect(calcMargemLucroValor(1000, 1000)).toBe(0)
+    expect(calcMargemLucroValor(900, 1000)).toBe(-100)
   })
 
   it('calcula custo ICMS a partir do percentual parametrizado', () => {

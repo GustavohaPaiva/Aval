@@ -166,6 +166,34 @@ export async function notifyConsultorOrderDecision(input) {
   return { ok: true }
 }
 
+export async function notifyConsultorGestorSimulationUpdated(input) {
+  const { error } = await supabase.rpc(
+    'notify_consultor_gestor_simulation_updated',
+    {
+      p_simulation_id: input.simulationId,
+      p_title: input.title,
+      p_body: input.body ?? null,
+    },
+  )
+
+  if (error) return { ok: false, error: error.message }
+  return { ok: true }
+}
+
+export async function notifyConsultorPedidoFieldsUpdated(input) {
+  const { error } = await supabase.rpc(
+    'notify_consultor_pedido_fields_updated',
+    {
+      p_simulation_id: input.simulationId,
+      p_title: input.title,
+      p_body: input.body ?? null,
+    },
+  )
+
+  if (error) return { ok: false, error: error.message }
+  return { ok: true }
+}
+
 export function notificationTypeLabel(type) {
   switch (type) {
     case 'approval_request':
@@ -184,6 +212,10 @@ export function notificationTypeLabel(type) {
       return 'Pedido aprovado'
     case 'order_rejected':
       return 'Pedido reprovado'
+    case 'simulation_gestor_updated':
+      return 'Simulação alterada pelo gestor'
+    case 'pedido_fields_updated':
+      return 'Dados do pedido atualizados'
     default:
       return 'Notificação'
   }
@@ -194,7 +226,8 @@ export function isOrderNotification(type) {
     type === 'order_approval_request' ||
     type === 'order_conversion_request' ||
     type === 'order_approved' ||
-    type === 'order_rejected'
+    type === 'order_rejected' ||
+    type === 'pedido_fields_updated'
   )
 }
 
@@ -202,6 +235,7 @@ export function notificationOpensPedido(type) {
   return (
     type === 'order_approval_request' ||
     type === 'order_approved' ||
-    type === 'order_rejected'
+    type === 'order_rejected' ||
+    type === 'pedido_fields_updated'
   )
 }

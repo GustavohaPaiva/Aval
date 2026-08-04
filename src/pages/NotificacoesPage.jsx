@@ -1,14 +1,19 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { IconBell } from "../components/icons";
 import { AlertMessage } from "../components/ui/AlertMessage";
 import { Button } from "../components/ui/Button";
+import { DatePicker } from "../components/ui/DatePicker";
 import { EmptyState } from "../components/ui/EmptyState";
 import { PageHeader } from "../components/ui/PageHeader";
 import { PageInfoBanner } from "../components/ui/InfoStatCard";
+import { SearchInput } from "../components/ui/SearchInput";
+import { Select } from "../components/ui/Select";
 import { useSyncPageLoading } from "../contexts/PageLoadingContext";
 import { useAbortableAsync } from "../hooks/useAbortableAsync";
 import { useAuth } from "../hooks/useAuth";
+import { useDebouncedValue } from "../hooks/useDebouncedValue";
+import { usePersistedFilters } from "../hooks/usePersistedFilters";
 import {
   fetchNotifications,
   markAllNotificationsRead,
@@ -16,6 +21,53 @@ import {
   notificationOpensPedido,
   notificationTypeLabel,
 } from "../services/notificationService";
+
+const NOTIFICATION_TYPES = [
+  "approval_request",
+  "simulation_saved",
+  "simulation_approved",
+  "simulation_rejected",
+  "simulation_gestor_updated",
+  "order_approval_request",
+  "order_conversion_request",
+  "order_approved",
+  "order_rejected",
+  "pedido_fields_updated",
+];
+
+const TYPE_OPTIONS = [
+  { value: "", label: "Todos os tipos" },
+  ...NOTIFICATION_TYPES.map((type) => ({
+    value: type,
+    label: notificationTypeLabel(type),
+  })),
+];
+
+const READ_STATUS_OPTIONS = [
+  { value: "", label: "Todos os status" },
+  { value: "unread", label: "Nova" },
+  { value: "read", label: "Lida" },
+];
+
+const EMPTY_FILTERS = {
+  searchQuery: "",
+  type: "",
+  readStatus: "",
+  senderId: "",
+  dateFrom: "",
+  dateTo: "",
+};
+
+/** YYYY-MM-DD local from an ISO timestamp (for inclusive date-range compare). */
+function toLocalDateKey(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
 
 function formatNotificationDate(iso) {
   return new Date(iso).toLocaleString("pt-BR", {
@@ -55,13 +107,25 @@ export function NotificacoesPage() {
   const [openingId, setOpeningId] = useState(null);
   const [reloadToken, setReloadToken] = useState(0);
 
+  const [filters, setFilters, patchFilters] = usePersistedFilters(
+    "filters:notificacoes",
+    EMPTY_FILTERS,
+  );
+  const { searchQuery, type, readStatus, senderId, dateFrom, dateTo } =
+    filters;
+  const debouncedSearch = useDebouncedValue(searchQuery, 300);
+
+  const hasFilters = Boolean(
+    searchQuery.trim() || type || readStatus || senderId || dateFrom || dateTo,
+  );
+
   useSyncPageLoading(loading);
 
   useAbortableAsync(
     async (_signal, isActive) => {
       setLoading(true);
       setError(null);
-      const result = await fetchNotifications({ limit: 50 });
+      const result = await fetchNotifications({ limit: 200 });
       if (!isActive()) return;
       setLoading(false);
       if (!result.ok) {
@@ -73,6 +137,68 @@ export function NotificacoesPage() {
     },
     [reloadToken],
   );
+
+  const senderOptions = useMemo(() => {
+    const byId = new Map();
+    for (const row of rows) {
+      const id = row.sender_id;
+      if (id == null || byId.has(String(id))) continue;
+      byId.set(String(id), {
+        value: String(id),
+        label: row.sender_nome || "Remetente sem nome",
+      });
+    }
+    return [
+      { value: "", label: "Todos os remetentes" },
+      ...[...byId.values()].sort((a, b) =>
+        a.label.localeCompare(b.label, "pt-BR"),
+      ),
+    ];
+  }, [rows]);
+
+  const filtered = useMemo(() => {
+    const q = debouncedSearch.trim().toLowerCase();
+    return rows.filter((row) => {
+      if (type && row.type !== type) return false;
+
+      if (readStatus === "unread" && row.read_at) return false;
+      if (readStatus === "read" && !row.read_at) return false;
+
+      if (senderId && String(row.sender_id) !== String(senderId)) {
+        return false;
+      }
+
+      if (dateFrom || dateTo) {
+        const key = toLocalDateKey(row.created_at);
+        if (!key) return false;
+        if (dateFrom && key < dateFrom) return false;
+        if (dateTo && key > dateTo) return false;
+      }
+
+      if (q) {
+        const title = String(row.title ?? "").toLowerCase();
+        const body = String(row.body ?? "").toLowerCase();
+        const sender = String(row.sender_nome ?? "").toLowerCase();
+        if (
+          !title.includes(q) &&
+          !body.includes(q) &&
+          !sender.includes(q)
+        ) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [
+    rows,
+    debouncedSearch,
+    type,
+    readStatus,
+    senderId,
+    dateFrom,
+    dateTo,
+  ]);
 
   const unreadCount = rows.filter((row) => !row.read_at).length;
 
@@ -93,6 +219,14 @@ export function NotificacoesPage() {
         if (notification.type === "order_approved") {
           navigate(
             `/pedido/${encodeURIComponent(notification.simulation_id)}`,
+          );
+        } else if (notification.type === "pedido_fields_updated") {
+          navigate(
+            `/pedido/${encodeURIComponent(notification.simulation_id)}`,
+          );
+        } else if (notification.type === "simulation_gestor_updated") {
+          navigate(
+            `/simulador?simulationId=${encodeURIComponent(notification.simulation_id)}`,
           );
         } else if (notificationOpensPedido(notification.type) && isGestor) {
           navigate(
@@ -178,76 +312,157 @@ export function NotificacoesPage() {
       ) : null}
 
       {rows.length > 0 ? (
-        <ul className="space-y-3">
-          {rows.map((row) => {
-            const unread = !row.read_at;
-            const openLabel =
-              row.type === "order_approved"
-                ? "Abrir pedido"
-                : notificationOpensPedido(row.type) && isGestor
-                  ? "Abrir pedido"
-                  : row.type === "order_conversion_request"
-                    ? "Abrir simulação"
-                    : row.type === "order_rejected"
-                      ? "Ver pedidos"
-                      : "Abrir simulação";
-            return (
-              <li key={row.id}>
-                <article
-                  className={[
-                    "overflow-hidden rounded-2xl border bg-white shadow-sm sm:rounded-3xl",
-                    unread
-                      ? "border-primary-200 ring-1 ring-primary-100"
-                      : "border-slate-200/90",
-                  ].join(" ")}
+        <>
+          <section className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm sm:rounded-3xl">
+            <div className="border-b border-slate-100 bg-gradient-to-r from-primary-50/70 via-white to-emerald-50/40 px-4 py-3.5 sm:px-6 sm:py-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary-700">
+                    Busca e filtros
+                  </p>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Filtre por tipo, status, remetente, período ou texto livre.
+                  </p>
+                </div>
+                {hasFilters ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => setFilters({ ...EMPTY_FILTERS })}
+                  >
+                    Limpar filtros
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="grid gap-4 p-4 sm:grid-cols-2 sm:p-6 lg:grid-cols-3">
+              <div className="sm:col-span-2 lg:col-span-1">
+                <label
+                  htmlFor="notificacoes-busca"
+                  className="mb-1.5 block text-sm font-medium text-slate-700"
                 >
-                  <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
-                    <div className="min-w-0 space-y-1.5">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span
-                          className={[
-                            "inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-semibold",
-                            typeBadgeClass(row.type),
-                          ].join(" ")}
-                        >
-                          {notificationTypeLabel(row.type)}
-                        </span>
-                        {unread ? (
-                          <span className="inline-flex rounded-full bg-primary-50 px-2 py-0.5 text-[11px] font-semibold text-primary-700">
-                            Nova
-                          </span>
+                  Busca
+                </label>
+                <SearchInput
+                  id="notificacoes-busca"
+                  ariaLabel="Buscar por título, corpo ou remetente"
+                  placeholder="Título, texto ou remetente…"
+                  value={searchQuery}
+                  onChange={(e) =>
+                    patchFilters({ searchQuery: e.target.value })
+                  }
+                />
+              </div>
+              <Select
+                label="Tipo"
+                value={type}
+                onChange={(e) => patchFilters({ type: e.target.value })}
+                options={TYPE_OPTIONS}
+              />
+              <Select
+                label="Status"
+                value={readStatus}
+                onChange={(e) => patchFilters({ readStatus: e.target.value })}
+                options={READ_STATUS_OPTIONS}
+              />
+              <Select
+                label="Remetente"
+                value={senderId}
+                onChange={(e) => patchFilters({ senderId: e.target.value })}
+                options={senderOptions}
+              />
+              <DatePicker
+                label="Data de"
+                value={dateFrom}
+                onChange={(e) => patchFilters({ dateFrom: e.target.value })}
+              />
+              <DatePicker
+                label="Data até"
+                value={dateTo}
+                onChange={(e) => patchFilters({ dateTo: e.target.value })}
+              />
+            </div>
+          </section>
+
+          {filtered.length === 0 ? (
+            <EmptyState
+              title="Nenhuma notificação encontrada"
+              description="Ajuste ou limpe os filtros para ver mais resultados."
+            />
+          ) : (
+            <ul className="space-y-3">
+              {filtered.map((row) => {
+                const unread = !row.read_at;
+                const openLabel =
+                  row.type === "order_approved"
+                    ? "Abrir pedido"
+                    : notificationOpensPedido(row.type) && isGestor
+                      ? "Abrir pedido"
+                      : row.type === "order_conversion_request"
+                        ? "Abrir simulação"
+                        : row.type === "order_rejected"
+                          ? "Ver pedidos"
+                          : "Abrir simulação";
+                return (
+                  <li key={row.id}>
+                    <article
+                      className={[
+                        "overflow-hidden rounded-2xl border bg-white shadow-sm sm:rounded-3xl",
+                        unread
+                          ? "border-primary-200 ring-1 ring-primary-100"
+                          : "border-slate-200/90",
+                      ].join(" ")}
+                    >
+                      <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+                        <div className="min-w-0 space-y-1.5">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span
+                              className={[
+                                "inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-semibold",
+                                typeBadgeClass(row.type),
+                              ].join(" ")}
+                            >
+                              {notificationTypeLabel(row.type)}
+                            </span>
+                            {unread ? (
+                              <span className="inline-flex rounded-full bg-primary-50 px-2 py-0.5 text-[11px] font-semibold text-primary-700">
+                                Nova
+                              </span>
+                            ) : null}
+                          </div>
+                          <h2 className="text-base font-semibold tracking-tight text-slate-900">
+                            {row.title}
+                          </h2>
+                          {row.body ? (
+                            <p className="text-sm text-slate-600">{row.body}</p>
+                          ) : null}
+                          <p className="text-xs text-slate-500">
+                            {row.sender_nome
+                              ? `${isGestor ? "Consultor" : "Gestor"}: ${row.sender_nome} · `
+                              : null}
+                            {formatNotificationDate(row.created_at)}
+                          </p>
+                        </div>
+                        {row.simulation_id ? (
+                          <Button
+                            type="button"
+                            variant="primary"
+                            className="w-full shrink-0 sm:w-auto"
+                            loading={openingId === row.id}
+                            onClick={() => void handleOpen(row)}
+                          >
+                            {openLabel}
+                          </Button>
                         ) : null}
                       </div>
-                      <h2 className="text-base font-semibold tracking-tight text-slate-900">
-                        {row.title}
-                      </h2>
-                      {row.body ? (
-                        <p className="text-sm text-slate-600">{row.body}</p>
-                      ) : null}
-                      <p className="text-xs text-slate-500">
-                        {row.sender_nome
-                          ? `${isGestor ? "Consultor" : "Gestor"}: ${row.sender_nome} · `
-                          : null}
-                        {formatNotificationDate(row.created_at)}
-                      </p>
-                    </div>
-                    {row.simulation_id ? (
-                      <Button
-                        type="button"
-                        variant="primary"
-                        className="w-full shrink-0 sm:w-auto"
-                        loading={openingId === row.id}
-                        onClick={() => void handleOpen(row)}
-                      >
-                        {openLabel}
-                      </Button>
-                    ) : null}
-                  </div>
-                </article>
-              </li>
-            );
-          })}
-        </ul>
+                    </article>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </>
       ) : null}
     </div>
   );

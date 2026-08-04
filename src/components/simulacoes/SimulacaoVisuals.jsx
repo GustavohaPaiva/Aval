@@ -75,7 +75,7 @@ export function SimulacaoFiltersPanel({
           <div
             role="tablist"
             aria-labelledby="simulacao-filter-status-label"
-            className="grid grid-cols-2 gap-1 rounded-2xl bg-slate-100/90 p-1 ring-1 ring-slate-200/70 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7"
+            className="flex flex-wrap gap-1 rounded-2xl bg-slate-100/90 p-1 ring-1 ring-slate-200/70"
           >
             {SIMULACAO_STATUS_FILTERS.map((pill) => {
               const active = quickFilter === pill.key;
@@ -86,7 +86,7 @@ export function SimulacaoFiltersPanel({
                   role="tab"
                   aria-selected={active}
                   className={[
-                    "inline-flex min-h-10 items-center justify-center rounded-xl px-2.5 py-2 text-center text-sm font-medium transition-all",
+                    "inline-flex min-h-10 min-w-28 flex-1 items-center justify-center rounded-xl px-2.5 py-2 text-center text-sm font-medium transition-all",
                     active
                       ? "bg-white text-primary-700 shadow-sm ring-1 ring-slate-200/80"
                       : "text-slate-600 hover:bg-white/60 hover:text-slate-900",

@@ -54,12 +54,12 @@ export function SimuladorSectionPanel({
 }
 
 export function SimuladorSummaryBar({
-  lineCount,
   totalValor,
   totalProposta,
   globalStatus,
   showMargem = false,
   margemLucroTotal = null,
+  margemLucroValorTotal = null,
 }) {
   const statusAccent =
     globalStatus === 'Aprovado'
@@ -69,13 +69,6 @@ export function SimuladorSummaryBar({
         : 'text-slate-700 bg-slate-100'
 
   const items = [
-    {
-      label: 'Produtos',
-      value: String(lineCount),
-      hint: lineCount === 1 ? 'Linha na simulação' : 'Linhas na simulação',
-      icon: IconPackage,
-      accent: 'text-primary-600 bg-primary-50',
-    },
     {
       label: 'Valor bruto',
       value: formatBRL(totalValor),
@@ -93,13 +86,25 @@ export function SimuladorSummaryBar({
   ]
 
   if (showMargem) {
-    items.push({
-      label: 'Margem',
-      value: formatPercent(margemLucroTotal),
-      hint: 'Lucro da proposta',
-      icon: IconDollarSign,
-      accent: 'text-emerald-700 bg-emerald-50',
-    })
+    items.push(
+      {
+        label: 'Margem',
+        value: formatPercent(margemLucroTotal),
+        hint: 'Lucro sobre o custo',
+        icon: IconDollarSign,
+        accent: 'text-emerald-700 bg-emerald-50',
+      },
+      {
+        label: 'Margem R$',
+        value:
+          margemLucroValorTotal == null
+            ? '—'
+            : formatBRL(margemLucroValorTotal),
+        hint: 'Lucro em reais',
+        icon: IconDollarSign,
+        accent: 'text-teal-700 bg-teal-50',
+      },
+    )
   }
 
   items.push({
@@ -113,18 +118,34 @@ export function SimuladorSummaryBar({
   const cols =
     items.length >= 5
       ? 'grid-cols-2 gap-3 lg:grid-cols-5'
-      : 'grid-cols-2 gap-3 lg:grid-cols-4'
+      : items.length === 4
+        ? 'grid-cols-2 gap-3 lg:grid-cols-4'
+        : 'grid-cols-2 gap-3 sm:grid-cols-3'
 
   return (
     <div className={`grid ${cols}`}>
-      {items.map((item) => (
-        <InfoStatCard
-          key={item.label}
-          {...item}
-          className="p-3 sm:p-4"
-          valueClassName="finance-text truncate text-base font-semibold leading-tight tracking-tight text-slate-900 sm:text-lg"
-        />
-      ))}
+      {items.map((item, index) => {
+        const isLast = index === items.length - 1
+        const orphanFullWidth =
+          isLast &&
+          items.length % 2 === 1 &&
+          (items.length === 3
+            ? 'col-span-2 sm:col-span-1'
+            : items.length >= 5
+              ? 'col-span-2 lg:col-span-1'
+              : '')
+
+        return (
+          <InfoStatCard
+            key={item.label}
+            {...item}
+            className={['p-3 sm:p-4', orphanFullWidth]
+              .filter(Boolean)
+              .join(' ')}
+            valueClassName="finance-text truncate text-base font-semibold leading-tight tracking-tight text-slate-900 sm:text-lg"
+          />
+        )
+      })}
     </div>
   )
 }

@@ -1,17 +1,32 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CATALOG_PRODUCTS } from '../constants/catalogProducts'
 import { CULTURES } from '../constants/simulator'
-import { isConsultorSimulationLocked } from '../constants/simulationStatus'
-import { FLOOR_RATIO } from '../types/simulation'
+import {
+  isConsultorSimulationLocked,
+} from '../constants/simulationStatus'
 import { parseCpfCnpjInput } from '../utils/dataFormatters'
 import { calcComissaoLinha } from '../utils/comissaoCalculations'
+import {
+  buildFrozenLineView,
+  buildFrozenTotals,
+  isSimulationFrozen,
+} from '../utils/frozenSimulationViews'
+import {
+  calcPrazoNegociacao,
+  getAutonomiaPercentual,
+  getFloorRatio,
+  normalizeAutonomiaParams,
+  todayDateOnly,
+} from '../utils/autonomiaDesconto'
 import {
   calcCustoBrlComDesconto,
   calcCustoIcmsFromBrl,
   calcDiasAntecipacao,
   calcMargemLucro,
+  calcMargemLucroValor,
   calcPrecoSimulacao,
   DEFAULT_ICMS_PERCENTUAL,
+  DEFAULT_MARGEM_PERCENTUAL,
   DEFAULT_TAXA_ANTECIPACAO,
   DEFAULT_TAXA_JUROS,
 } from '../utils/pricingCalculations'
@@ -65,8 +80,12 @@ function resolvePricing(product, context, overrides) {
   if (!product) {
     return { precoUnitario: 0, breakdown: null }
   }
-  const { dataPagamento, freteUnitario = 0, icmsPercentual = DEFAULT_ICMS_PERCENTUAL } =
-    context
+  const {
+    dataPagamento,
+    freteUnitario = 0,
+    icmsPercentual = DEFAULT_ICMS_PERCENTUAL,
+    margemPercentual = DEFAULT_MARGEM_PERCENTUAL,
+  } = context
   const dias = calcDiasAntecipacao(dataPagamento, product.vencimentoLista)
   const ov = normalizeOverrides(overrides)
   const hasCostOverride = COST_OVERRIDE_FIELDS.some((f) => ov?.[f] != null)
@@ -97,6 +116,7 @@ function resolvePricing(product, context, overrides) {
     custoIcms,
     freteUnitario: frete,
     diasAntecipacao: dias,
+    margemPercentual,
     taxaAntecipacao,
     taxaJuros,
   })
@@ -125,7 +145,41 @@ function resolvePrecoUnitario(product, context, overrides) {
   return resolvePricing(product, context, overrides).precoUnitario
 }
 
-function buildLineView(line, catalog, context, canOverrideFloor, comissaoFaixas) {
+function buildLineView(
+  line,
+  catalog,
+  context,
+  canOverrideFloor,
+  comissaoFaixas,
+  prazoDias,
+  autonomiaParams,
+) {
+  if (line.snapshot) {
+    const product = catalog.find((p) => p.id === line.productId)
+    const displayNome =
+      product?.displayNome ??
+      product?.nome ??
+      line.snapshot.displayNome ??
+      '—'
+    return buildFrozenLineView(
+      {
+        id: line.id,
+        product_id: line.productId,
+        cultura: line.cultura,
+        volume: line.volume,
+        preco_unitario: line.snapshot.precoUnitario,
+        proposta: line.proposta,
+        financeiro_unitario: line.snapshot.financeiro,
+        margem_percentual: line.snapshot.margemPercentual,
+        comissao_percentual: line.snapshot.comissaoPercentual,
+        comissao_valor: line.snapshot.comissaoValor,
+        produto_classe: line.snapshot.produtoClasse,
+        overrides: line.overrides,
+      },
+      displayNome,
+    )
+  }
+
   const product = catalog.find((p) => p.id === line.productId)
   const overrides = normalizeOverrides(line.overrides)
   const { precoUnitario, breakdown } = resolvePricing(product, context, overrides)
@@ -139,8 +193,7 @@ function buildLineView(line, catalog, context, canOverrideFloor, comissaoFaixas)
   const financeiro = breakdown?.financeiro ?? 0
   const financeiroTotal = roundMoney(line.volume * financeiro)
   const margemLucro = calcMargemLucro(proposta, financeiro)
-  const floorUnit = FLOOR_RATIO * precoUnitario
-  const isLineBelowFloor = proposta < floorUnit
+  const margemLucroValor = calcMargemLucroValor(propostaTotal, financeiroTotal)
   const comissao = calcComissaoLinha({
     margem: margemLucro,
     classe: product?.classe,
@@ -148,6 +201,14 @@ function buildLineView(line, catalog, context, canOverrideFloor, comissaoFaixas)
     proposta,
     faixas: comissaoFaixas,
   })
+  const autonomiaPct = getAutonomiaPercentual({
+    prazoDias,
+    classe: comissao.classe,
+    params: autonomiaParams,
+  })
+  const floorRatio = getFloorRatio(autonomiaPct)
+  const floorUnit = floorRatio * precoUnitario
+  const isLineBelowFloor = Boolean(product) && proposta < floorUnit
 
   return {
     id: line.id,
@@ -161,11 +222,14 @@ function buildLineView(line, catalog, context, canOverrideFloor, comissaoFaixas)
     financeiro,
     financeiroTotal,
     margemLucro,
+    margemLucroValor,
     produtoClasse: comissao.classe,
     margemPercentual: comissao.margemPercentual,
     comissaoPercentual: comissao.comissaoPercentual,
     comissaoValor: comissao.comissaoValor,
     comissaoBaseCalculo: comissao.baseCalculo,
+    autonomiaPercentual: autonomiaPct,
+    floorUnit,
     isLineBelowFloor,
     overrides: overrides ?? null,
     custoBreakdown: breakdown,
@@ -187,6 +251,12 @@ export function useSimulation(options = {}) {
   const catalog = options.catalog ?? CATALOG_PRODUCTS
   const freteUnitario = options.freteUnitario ?? 0
   const icmsPercentual = options.icmsPercentual ?? DEFAULT_ICMS_PERCENTUAL
+  const margemPercentual =
+    options.margemPercentual ?? DEFAULT_MARGEM_PERCENTUAL
+  const autonomiaParams = useMemo(
+    () => normalizeAutonomiaParams(options.autonomiaParams),
+    [options.autonomiaParams],
+  )
   const comissaoFaixas = useMemo(
     () => options.comissaoFaixas ?? [],
     [options.comissaoFaixas],
@@ -207,6 +277,7 @@ export function useSimulation(options = {}) {
   const [dataPagamento, setDataPagamentoState] = useState(
     () => initialDraft?.dataPagamento ?? '',
   )
+  const [dataNegociacao, setDataNegociacao] = useState(() => todayDateOnly())
   const [tipoFrete, setTipoFreteState] = useState(
     () => initialDraft?.tipoFrete ?? null,
   )
@@ -226,6 +297,8 @@ export function useSimulation(options = {}) {
   )
   const [actionBanner, setActionBanner] = useState(null)
   const [remotePendingLock, setRemotePendingLock] = useState(false)
+  const [frozenTotals, setFrozenTotals] = useState(null)
+  const [gestorAlteracao, setGestorAlteracao] = useState(null)
 
   const draftSaverRef = useRef(null)
   if (draftSaverRef.current == null) {
@@ -233,11 +306,17 @@ export function useSimulation(options = {}) {
   }
 
   const pricingContext = useMemo(
-    () => ({ dataPagamento, freteUnitario, icmsPercentual }),
-    [dataPagamento, freteUnitario, icmsPercentual],
+    () => ({ dataPagamento, freteUnitario, icmsPercentual, margemPercentual }),
+    [dataPagamento, freteUnitario, icmsPercentual, margemPercentual],
   )
 
-  const canOverrideFloor = isGestor
+  const prazoDias = useMemo(
+    () => calcPrazoNegociacao(dataPagamento, dataNegociacao),
+    [dataPagamento, dataNegociacao],
+  )
+
+  const canOverrideFloor = isGestor && !frozenTotals
+  const productsLocked = !Boolean(String(dataPagamento ?? '').trim())
 
   const lineViews = useMemo(
     () =>
@@ -248,13 +327,32 @@ export function useSimulation(options = {}) {
           pricingContext,
           canOverrideFloor,
           comissaoFaixas,
+          prazoDias,
+          autonomiaParams,
         ),
       ),
-    [lines, catalog, pricingContext, canOverrideFloor, comissaoFaixas],
+    [
+      lines,
+      catalog,
+      pricingContext,
+      canOverrideFloor,
+      comissaoFaixas,
+      prazoDias,
+      autonomiaParams,
+    ],
   )
 
-  const { totalValor, totalProposta, totalFinanceiro, margemLucroTotal, comissaoValorTotal, globalStatus } =
+  const {
+    totalValor,
+    totalProposta,
+    totalFinanceiro,
+    margemLucroTotal,
+    margemLucroValorTotal,
+    comissaoValorTotal,
+    globalStatus,
+  } =
     useMemo(() => {
+      if (frozenTotals) return frozenTotals
       const totalValorRaw = lineViews.reduce((acc, row) => acc + row.valorTotal, 0)
       const totalPropostaRaw = lineViews.reduce(
         (acc, row) => acc + row.propostaTotal,
@@ -271,21 +369,27 @@ export function useSimulation(options = {}) {
       const tValor = roundMoney(totalValorRaw)
       const tProposta = roundMoney(totalPropostaRaw)
       const tFinanceiro = roundMoney(totalFinanceiroRaw)
+      const hasProductLines = lineViews.some((row) => row.productId)
+      const anyBelowFloor = lineViews.some(
+        (row) => row.productId && row.isLineBelowFloor,
+      )
       let status
-      if (tValor <= 0) status = 'Rascunho'
-      else if (tProposta >= FLOOR_RATIO * tValor) status = 'Aprovado'
-      else status = 'Pendente'
+      if (tValor <= 0 || !hasProductLines) status = 'Rascunho'
+      else if (anyBelowFloor) status = 'Pendente'
+      else status = 'Aprovado'
       return {
         totalValor: tValor,
         totalProposta: tProposta,
         totalFinanceiro: tFinanceiro,
         margemLucroTotal: calcMargemLucro(tProposta, tFinanceiro),
+        margemLucroValorTotal: calcMargemLucroValor(tProposta, tFinanceiro),
         comissaoValorTotal: roundMoney(comissaoValorRaw),
         globalStatus: status,
       }
-    }, [lineViews])
+    }, [lineViews, frozenTotals])
 
-  const isReadOnly = !isGestor && remotePendingLock
+  const isReadOnly = Boolean(remotePendingLock || frozenTotals)
+  const canEditProducts = !isReadOnly && !productsLocked
   const canConvert =
     lines.length > 0 &&
     totalValor > 0 &&
@@ -391,21 +495,21 @@ export function useSimulation(options = {}) {
   )
 
   const addLine = useCallback(() => {
-    if (isReadOnly) return
+    if (!canEditProducts) return
     setLines((prev) => [...prev, createLine()])
-  }, [isReadOnly])
+  }, [canEditProducts])
 
   const removeLine = useCallback(
     (lineId) => {
-      if (isReadOnly) return
+      if (!canEditProducts) return
       setLines((prev) => prev.filter((l) => l.id !== lineId))
     },
-    [isReadOnly],
+    [canEditProducts],
   )
 
   const setLineProduct = useCallback(
     (lineId, productId) => {
-      if (isReadOnly) return
+      if (!canEditProducts) return
       if (!productId) {
         setLines((prev) =>
           prev.map((line) =>
@@ -431,24 +535,24 @@ export function useSimulation(options = {}) {
         }),
       )
     },
-    [catalog, isReadOnly, pricingContext],
+    [catalog, canEditProducts, pricingContext],
   )
 
   const setLineCultura = useCallback(
     (lineId, cultura) => {
-      if (isReadOnly) return
+      if (!canEditProducts) return
       setLines((prev) =>
         prev.map((line) =>
           line.id === lineId ? { ...line, cultura } : line,
         ),
       )
     },
-    [isReadOnly],
+    [canEditProducts],
   )
 
   const setLineVolume = useCallback(
     (lineId, volume) => {
-      if (isReadOnly) return
+      if (!canEditProducts) return
       const v = Number.isFinite(volume) && volume >= 0 ? volume : 0
       setLines((prev) =>
         prev.map((line) =>
@@ -456,12 +560,12 @@ export function useSimulation(options = {}) {
         ),
       )
     },
-    [isReadOnly],
+    [canEditProducts],
   )
 
   const setLineProposta = useCallback(
     (lineId, proposta) => {
-      if (isReadOnly) return
+      if (!canEditProducts) return
       setLines((prev) =>
         prev.map((line) => {
           if (line.id !== lineId) return line
@@ -474,12 +578,12 @@ export function useSimulation(options = {}) {
         }),
       )
     },
-    [catalog, isReadOnly, canOverrideFloor, pricingContext],
+    [catalog, canEditProducts, canOverrideFloor, pricingContext],
   )
 
   const setLineOverride = useCallback(
     (lineId, field, value) => {
-      if (!isGestor) return
+      if (!isGestor || !canEditProducts) return
       if (!OVERRIDE_FIELDS.includes(field)) return
       setLines((prev) =>
         prev.map((line) => {
@@ -494,19 +598,19 @@ export function useSimulation(options = {}) {
         }),
       )
     },
-    [isGestor],
+    [isGestor, canEditProducts],
   )
 
   const clearLineOverride = useCallback(
     (lineId) => {
-      if (!isGestor) return
+      if (!isGestor || !canEditProducts) return
       setLines((prev) =>
         prev.map((line) =>
           line.id === lineId ? { ...line, overrides: undefined } : line,
         ),
       )
     },
-    [isGestor],
+    [isGestor, canEditProducts],
   )
 
   const dismissActionBanner = useCallback(() => setActionBanner(null), [])
@@ -540,7 +644,7 @@ export function useSimulation(options = {}) {
     if (totalValor <= 0) return 'Informe volumes válidos nos produtos.'
     if (canOverrideFloor) return null
     if (globalStatus === 'Pendente') {
-      return 'A proposta está abaixo da margem. Solicite revisão do gestor ou ajuste as propostas.'
+      return 'A proposta está abaixo da autonomia. Solicite revisão do gestor ou ajuste as propostas.'
     }
     if (globalStatus !== 'Aprovado') return 'Complete a simulação antes de converter.'
     return null
@@ -569,24 +673,47 @@ export function useSimulation(options = {}) {
 
   const hydrateFromBundle = useCallback(
     (bundle) => {
-      setRemotePendingLock(
-        !isGestor && isConsultorSimulationLocked(bundle.simulation.status),
-      )
+      const simulation = bundle.simulation
+      const frozen = isSimulationFrozen(simulation)
+      const consultorLocked =
+        !isGestor && isConsultorSimulationLocked(simulation.status)
+      setRemotePendingLock(frozen || consultorLocked)
       setClientId(bundle.client.id ?? null)
       setClientNameState(bundle.client.nome)
       setClientCnpjCpfState(parseCpfCnpjInput(bundle.client.cnpj_cpf ?? ''))
       setEstadoState(bundle.client.uf || null)
       setDataPagamentoState(bundle.simulation.data_pagamento ?? '')
+      setDataNegociacao(
+        simulation.created_at
+          ? String(simulation.created_at).slice(0, 10)
+          : todayDateOnly(),
+      )
       setTipoFreteState(bundle.simulation.tipo_frete ?? null)
       setOrigemFreteState(bundle.simulation.origem_frete ?? '')
       setDestinoFreteState(bundle.simulation.destino_frete ?? '')
       setQuarterState(bundle.simulation.quarter ?? null)
       setObservacoesState(bundle.simulation.observacoes ?? '')
       setActionBanner(null)
-      setLines(
-        bundle.items
-          .filter((it) => it.product_id.length > 0)
-          .map((it) => ({
+      setGestorAlteracao(
+        simulation.gestor_alteracao_em
+          ? {
+              em: simulation.gestor_alteracao_em,
+              por: simulation.gestor_alteracao_por,
+              resumo: simulation.gestor_alteracao_resumo,
+            }
+          : null,
+      )
+
+      const mappedLines = bundle.items
+        .filter((it) => it.product_id.length > 0)
+        .map((it) => {
+          const displayNome =
+            it.product?.nome ||
+            [it.product?.sku_fornecedor, it.product?.referencia_complementar]
+              .filter(Boolean)
+              .join(' ') ||
+            '—'
+          const base = {
             id: it.id,
             productId: it.product_id,
             cultura: it.cultura ?? CULTURES[0] ?? '',
@@ -600,19 +727,65 @@ export function useSimulation(options = {}) {
               taxaAntecipacao: it.override_taxa_antecipacao ?? undefined,
               taxaJuros: it.override_taxa_juros ?? undefined,
             }),
-          })),
-      )
+          }
+          if (!frozen) return base
+          return {
+            ...base,
+            snapshot: {
+              precoUnitario: Number(it.preco_unitario) || 0,
+              financeiro:
+                it.financeiro_unitario != null
+                  ? Number(it.financeiro_unitario)
+                  : null,
+              margemPercentual: it.margem_percentual,
+              comissaoPercentual: it.comissao_percentual,
+              comissaoValor: it.comissao_valor,
+              produtoClasse: it.produto_classe,
+              displayNome,
+            },
+          }
+        })
+
+      setLines(mappedLines)
+
+      if (frozen) {
+        const views = mappedLines.map((line) =>
+          buildFrozenLineView(
+            {
+              id: line.id,
+              product_id: line.productId,
+              cultura: line.cultura,
+              volume: line.volume,
+              preco_unitario: line.snapshot.precoUnitario,
+              proposta: line.proposta,
+              financeiro_unitario: line.snapshot.financeiro,
+              margem_percentual: line.snapshot.margemPercentual,
+              comissao_percentual: line.snapshot.comissaoPercentual,
+              comissao_valor: line.snapshot.comissaoValor,
+              produto_classe: line.snapshot.produtoClasse,
+              overrides: line.overrides,
+            },
+            line.snapshot.displayNome,
+          ),
+        )
+        setFrozenTotals(buildFrozenTotals(views, simulation))
+      } else {
+        setFrozenTotals(null)
+      }
     },
     [isGestor],
   )
 
   const resetLocal = useCallback(() => {
     setRemotePendingLock(false)
+    setFrozenTotals(null)
+    setGestorAlteracao(null)
     setClientId(null)
     setClientNameState('')
     setClientCnpjCpfState('')
     setEstadoState(null)
     setDataPagamentoState('')
+    setDataNegociacao(todayDateOnly())
     setTipoFreteState(null)
     setOrigemFreteState('')
     setDestinoFreteState('')
@@ -669,6 +842,8 @@ export function useSimulation(options = {}) {
     setClientCnpjCpf,
     dataPagamento,
     setDataPagamento,
+    dataNegociacao,
+    prazoDias,
     tipoFrete,
     setTipoFrete,
     origemFrete,
@@ -685,13 +860,18 @@ export function useSimulation(options = {}) {
     totalProposta,
     totalFinanceiro,
     margemLucroTotal,
+    margemLucroValorTotal,
     comissaoValorTotal,
     globalStatus,
     isReadOnly,
     isGestor,
     canOverrideFloor,
+    canEditProducts,
+    productsLocked,
     canConvert,
     remotePendingLock,
+    gestorAlteracao,
+    isFrozen: Boolean(frozenTotals),
     showFreteRotas,
     addLine,
     removeLine,

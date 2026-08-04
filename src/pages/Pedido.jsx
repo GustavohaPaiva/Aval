@@ -1,8 +1,9 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { createElement, useCallback, useMemo, useState } from 'react'
 import { Navigate } from 'react-router-dom'
-import { PedidoFornecedorPdfDocument } from '../components/pedido/PedidoFornecedorPdfDocument'
+import { AtribuirConsultorPanel } from '../components/AtribuirConsultorPanel'
+import { PedidoCotacaoMensagem } from '../components/pedido/PedidoCotacaoMensagem'
 import { PedidoPdfDocument } from '../components/pedido/PedidoPdfDocument'
-import { PdfPreviewModal } from '../components/pdf/PdfPreviewModal'
+import { PedidoSimulationSummary } from '../components/pedido/PedidoSimulationSummary'
 import { AlertMessage } from '../components/ui/AlertMessage'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
@@ -11,6 +12,7 @@ import { PageBackLink } from '../components/ui/PageBackLink'
 import { PageHeader } from '../components/ui/PageHeader'
 import { Select } from '../components/ui/Select'
 import {
+  ESTADO_UF_VALUES,
   PRAZO_DIAS_DEFAULT,
   PRAZO_OPTIONS,
   STATES,
@@ -25,17 +27,15 @@ import { useAuth } from '../hooks/useAuth'
 import { useSyncPageLoading } from '../contexts/PageLoadingContext'
 import { useAbortableAsync } from '../hooks/useAbortableAsync'
 import { fetchMunicipiosBrasil } from '../services/ibgeLocalidades'
+import { buildPdfBlobFromReactNode } from '../services/renderReactPdf'
 import {
-  approveOrder,
   cancelOrder,
   fetchSimulationOrderBundle,
-  rejectOrder,
   updatePedidoFields,
 } from '../services/simulationOrderService'
+import { baixarPdfBlob } from '../utils/downloadPdfBlob'
 
 export function Pedido({ simulationId }) {
-  const printRef = useRef(null)
-  const fornecedorPrintRef = useRef(null)
   const { role } = useAuth()
   const isGestor = role === 'gestor'
 
@@ -55,19 +55,18 @@ export function Pedido({ simulationId }) {
   const [municipiosLoading, setMunicipiosLoading] = useState(false)
   const [municipiosError, setMunicipiosError] = useState(null)
 
-  const [pdfPreview, setPdfPreview] = useState(null)
   const [actionError, setActionError] = useState(null)
   const [actionBanner, setActionBanner] = useState(null)
   const [savingPedido, setSavingPedido] = useState(false)
+  const [generatingPdf, setGeneratingPdf] = useState(false)
   const [deciding, setDeciding] = useState(null)
 
   const status = bundle?.simulation.status
   const isOrderPending = status === 'order_pending'
   const isConverted = status === 'converted'
   const isOrderRejected = status === 'order_rejected'
-  const isApproved = status === 'approved'
   const canEditPedido = isGestor
-    ? isOrderPending || isConverted || isApproved
+    ? isOrderPending || isConverted
     : isConverted
   const canCancelPedido =
     isGestor && (isOrderPending || isConverted || isOrderRejected)
@@ -163,6 +162,21 @@ export function Pedido({ simulationId }) {
     })
   }
 
+  const handleConsultorAssigned = useCallback((result) => {
+    if (!result?.userId) return
+    setBundle((prev) => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        vendedorNome: result.vendedorNome ?? prev.vendedorNome,
+        simulation: {
+          ...prev.simulation,
+          user_id: result.userId,
+        },
+      }
+    })
+  }, [])
+
   function validatePedidoFields() {
     /** @type {Record<string, string>} */
     const errors = {}
@@ -172,8 +186,8 @@ export function Pedido({ simulationId }) {
     if (!pedidoMunicipio.trim()) {
       errors.pedidoMunicipio = 'Selecione o município.'
     }
-    if (!['MG', 'SP'].includes(pedidoUf)) {
-      errors.pedidoUf = 'Selecione o estado (MG ou SP).'
+    if (!ESTADO_UF_VALUES.includes(pedidoUf)) {
+      errors.pedidoUf = 'Selecione o estado.'
     }
     const prazo = normalizePrazoDias(prazoDias)
     if (![7, 14, 21].includes(prazo)) {
@@ -192,46 +206,6 @@ export function Pedido({ simulationId }) {
           }
         : prev,
     )
-  }
-
-  async function handleApproveOrder() {
-    if (!bundle || !isGestor) return
-    setActionError(null)
-    setActionBanner(null)
-    setDeciding('approve')
-    try {
-      const result = await approveOrder(bundle.simulation.id, {
-        clientName: bundle.client?.nome,
-      })
-      if (!result.ok) {
-        setActionError(result.error)
-        return
-      }
-      patchSimulationStatus('converted')
-      setActionBanner('Pedido aprovado. A comissão foi confirmada.')
-    } finally {
-      setDeciding(null)
-    }
-  }
-
-  async function handleRejectOrder() {
-    if (!bundle || !isGestor) return
-    setActionError(null)
-    setActionBanner(null)
-    setDeciding('reject')
-    try {
-      const result = await rejectOrder(bundle.simulation.id, {
-        clientName: bundle.client?.nome,
-      })
-      if (!result.ok) {
-        setActionError(result.error)
-        return
-      }
-      patchSimulationStatus('order_rejected')
-      setActionBanner('Pedido reprovado. O consultor foi notificado.')
-    } finally {
-      setDeciding(null)
-    }
   }
 
   async function handleCancelOrder() {
@@ -257,51 +231,32 @@ export function Pedido({ simulationId }) {
     }
   }
 
-  const pdfBundle =
-    bundle
-      ? {
-          ...bundle,
-          simulation: {
-            ...bundle.simulation,
-            fazenda: fazenda.trim() || null,
-            pedido_municipio: pedidoMunicipio.trim() || null,
-            pedido_uf: pedidoUf || null,
-            prazo_dias: normalizePrazoDias(prazoDias),
-          },
-        }
-      : null
+  const pdfBundle = useMemo(
+    () =>
+      bundle
+        ? {
+            ...bundle,
+            simulation: {
+              ...bundle.simulation,
+              fazenda: fazenda.trim() || null,
+              pedido_municipio: pedidoMunicipio.trim() || null,
+              pedido_uf: pedidoUf || null,
+              prazo_dias: normalizePrazoDias(prazoDias),
+            },
+          }
+        : null,
+    [bundle, fazenda, pedidoMunicipio, pedidoUf, prazoDias],
+  )
 
-  const pdfNomeFallback = pdfBundle
-    ? `proposta-syagri-${formatDocSuffix(pdfBundle.simulation.id)}-${(pdfBundle.client.nome || 'cliente')
-        .replace(/[^\w-]+/g, '_')
-        .slice(0, 40)}.pdf`
-    : 'proposta-syagri.pdf'
-
-  const pdfFornecedorNomeFallback = pdfBundle
-    ? `cotacao-fornecedor-${formatDocSuffix(pdfBundle.simulation.id)}.pdf`
-    : 'cotacao-fornecedor.pdf'
-
-  const gerarPdfPedido = useCallback(async () => {
-    if (!printRef.current) {
-      throw new Error('Documento não disponível para geração.')
-    }
-    const { buildPedidoPdfBlobFromElement } = await import(
-      '../services/pedidoPdf'
-    )
-    const blob = await buildPedidoPdfBlobFromElement(printRef.current)
-    return { blob, nomePadrao: pdfNomeFallback }
-  }, [pdfNomeFallback])
-
-  const gerarPdfFornecedor = useCallback(async () => {
-    if (!fornecedorPrintRef.current) {
-      throw new Error('Documento do fornecedor não disponível para geração.')
-    }
-    const { buildPedidoPdfBlobFromElement } = await import(
-      '../services/pedidoPdf'
-    )
-    const blob = await buildPedidoPdfBlobFromElement(fornecedorPrintRef.current)
-    return { blob, nomePadrao: pdfFornecedorNomeFallback }
-  }, [pdfFornecedorNomeFallback])
+  const pdfNomeFallback = useMemo(
+    () =>
+      pdfBundle
+        ? `proposta-syagri-${formatDocSuffix(pdfBundle.simulation.id)}-${(pdfBundle.client.nome || 'cliente')
+            .replace(/[^\w-]+/g, '_')
+            .slice(0, 40)}.pdf`
+        : 'proposta-syagri.pdf',
+    [pdfBundle],
+  )
 
   const persistPedidoBeforePdf = useCallback(async () => {
     if (!bundle) return { ok: false, error: 'Pedido inválido.' }
@@ -358,44 +313,87 @@ export function Pedido({ simulationId }) {
   ])
 
   const handleGerarPdf = useCallback(async () => {
-    if (!bundle || !printRef.current) return
+    if (!bundle || !pdfBundle) return
 
     setActionError(null)
+
+    const snapshot = {
+      ...pdfBundle,
+      simulation: { ...pdfBundle.simulation },
+      client: { ...pdfBundle.client },
+      items: pdfBundle.items.map((item) => ({ ...item })),
+    }
+    const vendedorNome = bundle.vendedorNome
+    const nomeArquivo = pdfNomeFallback
+
     const saved = await persistPedidoBeforePdf()
     if (!saved.ok) {
       setActionError(saved.error)
       return
     }
 
-    setPdfPreview({
-      titulo: 'Proposta comercial',
-      gerador: gerarPdfPedido,
-      nomeFallback: pdfNomeFallback,
-    })
-  }, [bundle, gerarPdfPedido, pdfNomeFallback, persistPedidoBeforePdf])
-
-  const handleGerarPdfFornecedor = useCallback(async () => {
-    if (!isGestor || !bundle || !fornecedorPrintRef.current) return
-
-    setActionError(null)
-    const saved = await persistPedidoBeforePdf()
-    if (!saved.ok) {
-      setActionError(saved.error)
-      return
+    setGeneratingPdf(true)
+    try {
+      const blob = await buildPdfBlobFromReactNode(
+        createElement(PedidoPdfDocument, {
+          bundle: snapshot,
+          vendedorNome,
+        }),
+      )
+      await baixarPdfBlob(blob, nomeArquivo)
+    } catch (e) {
+      console.error('[Pedido] PDF:', e)
+      setActionError(
+        e instanceof Error ? e.message : 'Não foi possível gerar o PDF.',
+      )
+    } finally {
+      setGeneratingPdf(false)
     }
+  }, [bundle, pdfBundle, pdfNomeFallback, persistPedidoBeforePdf])
 
-    setPdfPreview({
-      titulo: 'Cotação para o fornecedor',
-      gerador: gerarPdfFornecedor,
-      nomeFallback: pdfFornecedorNomeFallback,
-    })
-  }, [
-    bundle,
-    gerarPdfFornecedor,
-    isGestor,
-    pdfFornecedorNomeFallback,
-    persistPedidoBeforePdf,
-  ])
+  async function handleSavePedidoFields() {
+    if (!bundle || !isGestor) return
+    setActionError(null)
+    setActionBanner(null)
+    setSavingPedido(true)
+    try {
+      if (!validatePedidoFields()) {
+        setActionError('Preencha os dados obrigatórios do pedido.')
+        return
+      }
+      const prazo = normalizePrazoDias(prazoDias)
+      const pedidoRes = await updatePedidoFields({
+        simulationId: bundle.simulation.id,
+        fazenda: fazenda.trim(),
+        pedidoMunicipio: pedidoMunicipio.trim(),
+        pedidoUf,
+        prazoDias: prazo,
+      })
+      if (!pedidoRes.ok) {
+        setActionError(pedidoRes.error)
+        return
+      }
+      setBundle((prev) =>
+        prev
+          ? {
+              ...prev,
+              simulation: {
+                ...prev.simulation,
+                fazenda: fazenda.trim(),
+                pedido_municipio: pedidoMunicipio.trim(),
+                pedido_uf: pedidoUf,
+                prazo_dias: prazo,
+                gestor_alteracao_em: new Date().toISOString(),
+                gestor_alteracao_resumo: 'Dados do pedido atualizados',
+              },
+            }
+          : prev,
+      )
+      setActionBanner('Dados do pedido salvos.')
+    } finally {
+      setSavingPedido(false)
+    }
+  }
 
   if (loadState === 'loading' || loadState === 'idle') {
     return (
@@ -421,16 +419,13 @@ export function Pedido({ simulationId }) {
     return <Navigate to="/pedidos" replace />
   }
 
-  if (
-    !isPedidoStatus(bundle.simulation.status) &&
-    bundle.simulation.status !== 'approved'
-  ) {
+  if (!isPedidoStatus(bundle.simulation.status)) {
     return (
       <div className="w-full py-8">
         <PageBackLink to="/simulacoes">Voltar para simulações</PageBackLink>
         <AlertMessage className="mt-4">
-          Apenas simulações aprovadas ou convertidas em pedido podem ser
-          visualizadas aqui. Status atual: {statusLabelPt(bundle.simulation.status)}
+          Esta simulação ainda não foi convertida em pedido. Status atual:{' '}
+          {statusLabelPt(bundle.simulation.status)}
         </AlertMessage>
       </div>
     )
@@ -442,10 +437,10 @@ export function Pedido({ simulationId }) {
 
       <PageHeader
         eyebrow="Pedido"
-        title="Proposta comercial"
+        title={isGestor ? 'Pedido' : 'Proposta comercial'}
         description={
-          isOrderPending
-            ? 'Pedido aguardando aprovação do gestor. Preencha os dados e aguarde a decisão.'
+          isGestor
+            ? 'Revise a simulação fechada e preencha os dados do pedido.'
             : 'Informe fazenda, município, estado e prazo antes de gerar o documento.'
         }
         actions={
@@ -469,6 +464,20 @@ export function Pedido({ simulationId }) {
           {actionBanner}
         </div>
       ) : null}
+
+      {isGestor ? (
+        <AtribuirConsultorPanel
+          className="mb-6"
+          simulationId={simulationId}
+          currentUserId={bundle.simulation.user_id}
+          currentVendedorNome={bundle.vendedorNome}
+          onAssigned={handleConsultorAssigned}
+        />
+      ) : null}
+
+      {isGestor ? <PedidoSimulationSummary bundle={bundle} /> : null}
+
+      {pdfBundle ? <PedidoCotacaoMensagem bundle={pdfBundle} /> : null}
 
       <Card className="mb-6 rounded-3xl">
         <h2 className="mb-4 text-sm font-semibold text-primary-800">
@@ -512,7 +521,7 @@ export function Pedido({ simulationId }) {
               const raw = e.target.value
               const [nome, ufFromCity] = String(raw).split('|')
               setPedidoMunicipio((nome || raw).trim())
-              if (['MG', 'SP'].includes(ufFromCity)) {
+              if (ESTADO_UF_VALUES.includes(ufFromCity)) {
                 setPedidoUf(ufFromCity)
                 clearFieldError('pedidoUf')
               }
@@ -547,76 +556,21 @@ export function Pedido({ simulationId }) {
         </div>
       </Card>
 
-      <div className="overflow-x-auto rounded-3xl border border-slate-200/80 bg-slate-100/60 p-3 shadow-sm sm:p-5">
-        <div className="mx-auto w-fit shadow-xl shadow-slate-900/10">
-          {pdfBundle ? (
-            <PedidoPdfDocument
-              bundle={pdfBundle}
-              vendedorNome={bundle.vendedorNome}
-            />
-          ) : null}
-        </div>
-      </div>
-
-      {/* Nó fora da tela, em escala 1:1, só para captura do PDF */}
-      <div
-        aria-hidden
-        className="pointer-events-none fixed left-[-10000px] top-0 z-[-1] overflow-hidden"
-      >
-        <div ref={printRef}>
-          {pdfBundle ? (
-            <PedidoPdfDocument
-              bundle={pdfBundle}
-              vendedorNome={bundle.vendedorNome}
-            />
-          ) : null}
-        </div>
-        {isGestor ? (
-          <div ref={fornecedorPrintRef}>
-            {pdfBundle ? (
-              <PedidoFornecedorPdfDocument
-                bundle={pdfBundle}
-                vendedorNome={bundle.vendedorNome}
-              />
-            ) : null}
-          </div>
-        ) : null}
-      </div>
-
       <div className="mt-6 flex w-full flex-col gap-2">
-        {isGestor && isOrderPending ? (
-          <div className="flex w-full flex-col gap-2 sm:flex-row">
-            <Button
-              type="button"
-              variant="danger"
-              className="w-full sm:flex-1"
-              loading={deciding === 'reject'}
-              disabled={Boolean(deciding) || savingPedido}
-              onClick={() => void handleRejectOrder()}
-            >
-              Reprovar pedido
-            </Button>
-            <Button
-              type="button"
-              variant="primary"
-              className="w-full sm:flex-1"
-              loading={deciding === 'approve'}
-              disabled={Boolean(deciding) || savingPedido}
-              onClick={() => void handleApproveOrder()}
-            >
-              Aprovar pedido
-            </Button>
-          </div>
-        ) : null}
-        {canEditPedido ? (
+        {!isGestor && canEditPedido ? (
           <Button
             type="button"
             variant="primary"
             className="w-full"
-            disabled={savingPedido || Boolean(deciding)}
+            loading={savingPedido || generatingPdf}
+            disabled={savingPedido || generatingPdf || Boolean(deciding)}
             onClick={() => void handleGerarPdf()}
           >
-            {savingPedido ? 'Salvando…' : 'Gerar Proposta p/ Cliente'}
+            {savingPedido
+              ? 'Salvando…'
+              : generatingPdf
+                ? 'Gerando PDF…'
+                : 'Baixar Proposta p/ Cliente'}
           </Button>
         ) : null}
         {isGestor && canEditPedido ? (
@@ -624,10 +578,11 @@ export function Pedido({ simulationId }) {
             type="button"
             variant="secondary"
             className="w-full"
+            loading={savingPedido}
             disabled={savingPedido || Boolean(deciding)}
-            onClick={() => void handleGerarPdfFornecedor()}
+            onClick={() => void handleSavePedidoFields()}
           >
-            {savingPedido ? 'Salvando…' : 'Gerar cotação p/ fornecedor'}
+            {savingPedido ? 'Salvando…' : 'Salvar dados do pedido'}
           </Button>
         ) : null}
         {canCancelPedido ? (
@@ -636,21 +591,13 @@ export function Pedido({ simulationId }) {
             variant="secondary"
             className="w-full"
             loading={deciding === 'cancel'}
-            disabled={Boolean(deciding) || savingPedido}
+            disabled={Boolean(deciding) || savingPedido || generatingPdf}
             onClick={() => void handleCancelOrder()}
           >
             Cancelar pedido
           </Button>
         ) : null}
       </div>
-
-      <PdfPreviewModal
-        open={Boolean(pdfPreview)}
-        onClose={() => setPdfPreview(null)}
-        titulo={pdfPreview?.titulo}
-        gerador={pdfPreview?.gerador}
-        nomeFallback={pdfPreview?.nomeFallback}
-      />
     </div>
   )
 }

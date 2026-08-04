@@ -222,7 +222,7 @@ export function ClienteInfoPanel({
 
 function MobileCellLabel({ children }) {
   return (
-    <span className="text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-slate-500 md:hidden">
+    <span className="text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-slate-500 lg:hidden">
       {children}
     </span>
   );
@@ -283,7 +283,7 @@ export function ClienteSimulationsTable({
       </div>
 
       <table className="w-full border-collapse text-sm">
-        <thead className="hidden border-b border-slate-100 bg-gradient-to-r from-slate-50/90 via-white to-primary-50/40 md:table-header-group">
+        <thead className="hidden border-b border-slate-100 bg-gradient-to-r from-slate-50/90 via-white to-primary-50/40 lg:table-header-group">
           <tr>
             <th className="px-4 py-3.5 text-center text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
               Data
@@ -300,7 +300,7 @@ export function ClienteSimulationsTable({
           </tr>
         </thead>
 
-        <tbody className="block md:table-row-group">
+        <tbody className="block lg:table-row-group">
           {rows.map((row, index) => {
             const canViewPedido =
               (isGestor && isPedidoStatus(row.status)) ||
@@ -311,19 +311,19 @@ export function ClienteSimulationsTable({
                 key={row.id}
                 className={[
                   "group block border-b border-slate-100 p-4 last:border-b-0",
-                  "md:table-row md:border-0 md:p-0",
+                  "lg:table-row lg:border-0 lg:p-0",
                   index % 2 === 0 ? "bg-white" : "bg-slate-50/50",
-                  "md:hover:bg-primary-50/35",
+                  "lg:hover:bg-primary-50/35",
                 ].join(" ")}
               >
-                <td className="flex items-center justify-between gap-3 border-b border-slate-100/80 py-2.5 md:table-cell md:border-0 md:px-4 md:py-4 md:text-center">
+                <td className="flex items-center justify-between gap-3 border-b border-slate-100/80 py-2.5 lg:table-cell lg:border-0 lg:px-4 lg:py-4 lg:text-center">
                   <MobileCellLabel>Data</MobileCellLabel>
                   <span className="text-sm text-slate-700">
                     {formatShortDate(row.created_at)}
                   </span>
                 </td>
 
-                <td className="flex items-center justify-between gap-3 border-b border-slate-100/80 py-2.5 md:table-cell md:border-0 md:px-4 md:py-4 md:text-center">
+                <td className="flex items-center justify-between gap-3 border-b border-slate-100/80 py-2.5 lg:table-cell lg:border-0 lg:px-4 lg:py-4 lg:text-center">
                   <MobileCellLabel>Status</MobileCellLabel>
                   <span
                     className={[
@@ -335,14 +335,14 @@ export function ClienteSimulationsTable({
                   </span>
                 </td>
 
-                <td className="flex items-center justify-between gap-3 border-b border-slate-100/80 py-2.5 md:table-cell md:border-0 md:px-4 md:py-4 md:text-center">
+                <td className="flex items-center justify-between gap-3 border-b border-slate-100/80 py-2.5 lg:table-cell lg:border-0 lg:px-4 lg:py-4 lg:text-center">
                   <MobileCellLabel>Proposta</MobileCellLabel>
-                  <span className="finance-text inline-flex shrink-0 items-center justify-center rounded-xl bg-white px-2.5 py-1.5 text-sm font-semibold text-slate-900 shadow-sm ring-1 ring-slate-200/80 md:min-w-[6.5rem] md:rounded-2xl md:px-3 md:py-2 group-hover:md:ring-primary-200">
+                  <span className="finance-text inline-flex shrink-0 items-center justify-center rounded-xl bg-white px-2.5 py-1.5 text-sm font-semibold text-slate-900 shadow-sm ring-1 ring-slate-200/80 lg:min-w-[6.5rem] lg:rounded-2xl lg:px-3 lg:py-2 group-hover:lg:ring-primary-200">
                     {formatBRL(row.total_proposta)}
                   </span>
                 </td>
 
-                <td className="mt-3 flex justify-end border-t border-slate-100/80 pt-3 md:mt-0 md:table-cell md:border-0 md:px-4 md:py-4 md:text-center">
+                <td className="mt-3 flex justify-end border-t border-slate-100/80 pt-3 lg:mt-0 lg:table-cell lg:border-0 lg:px-4 lg:py-4 lg:text-center">
                   {canViewPedido ? (
                     <Button
                       type="button"

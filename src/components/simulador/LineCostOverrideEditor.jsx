@@ -37,7 +37,7 @@ export function LineCostOverrideEditor({
         ) : null}
       </div>
 
-      <div className="grid grid-cols-3 gap-x-2 gap-y-1.5 sm:grid-cols-6">
+      <div className="grid grid-cols-1 gap-x-2 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
         {FIELDS.map((field) => {
           const isOverridden = row.overrides?.[field.key] != null;
           return (
@@ -56,7 +56,7 @@ export function LineCostOverrideEditor({
                 decimals={field.decimals}
                 ariaLabel={field.label}
                 className="text-xs"
-                inputClassName="h-7 min-w-0 rounded-lg px-1.5 text-xs"
+                inputClassName="h-10 min-w-0 rounded-lg px-2 text-sm sm:h-9 sm:text-xs"
               />
             </div>
           );

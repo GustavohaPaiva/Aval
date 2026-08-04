@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAlertDialog } from '../contexts/AlertDialogProvider'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { AtribuirConsultorPanel } from "../components/AtribuirConsultorPanel";
 import { ModalClienteForm } from "../components/clientes/ModalClienteForm";
 import {
   SIMULADOR_SECTION_ICONS,
@@ -39,6 +40,7 @@ import {
   searchClients,
   updateSimulationStatus,
 } from "../services/simulationOrderService";
+import { buildPdfBlobFromReactNode } from "../services/renderReactPdf";
 import { notifyGestoresSimulationPending } from "../services/notificationService";
 import { fetchComissaoFaixas } from "../services/comissaoService";
 import {
@@ -52,7 +54,8 @@ import {
 } from "../services/freteService";
 import { formatBRL } from "../utils/money";
 import { displayCpfCnpj, validateCpfCnpj } from "../utils/dataFormatters";
-import { DEFAULT_ICMS_PERCENTUAL } from "../utils/pricingCalculations";
+import { DEFAULT_AUTONOMIA_PARAMS } from "../utils/autonomiaDesconto";
+import { DEFAULT_ICMS_PERCENTUAL, DEFAULT_MARGEM_PERCENTUAL } from "../utils/pricingCalculations";
 
 export function Simulador() {
   const [searchParams] = useSearchParams();
@@ -66,21 +69,30 @@ export function Simulador() {
   const [freteDestinos, setFreteDestinos] = useState([]);
   const [freteLookupError, setFreteLookupError] = useState(null);
   const [icmsPercentual, setIcmsPercentual] = useState(DEFAULT_ICMS_PERCENTUAL);
+  const [margemPercentual, setMargemPercentual] = useState(
+    DEFAULT_MARGEM_PERCENTUAL,
+  );
+  const [autonomiaParams, setAutonomiaParams] = useState(
+    DEFAULT_AUTONOMIA_PARAMS,
+  );
   const [comissaoFaixas, setComissaoFaixas] = useState([]);
   const sim = useSimulation({
     role,
     catalog,
     freteUnitario,
     icmsPercentual,
+    margemPercentual,
+    autonomiaParams,
     comissaoFaixas,
     persistDraft: !simulationId,
   });
   const navigate = useNavigate();
   const { showAlert } = useAlertDialog();
   const wasRemoteSimRef = useRef(Boolean(simulationId));
-  const pdfPrintRef = useRef(null);
   const [pdfPreview, setPdfPreview] = useState(null);
   const [pdfError, setPdfError] = useState(null);
+  const [assignedUserId, setAssignedUserId] = useState(null);
+  const [assignedVendedorNome, setAssignedVendedorNome] = useState(null);
 
   function ensureValidClientDocument() {
     const validation = validateCpfCnpj(sim.clientCnpjCpf, { required: false });
@@ -151,6 +163,21 @@ export function Simulador() {
         setIcmsPercentual(
           Number(paramRes.row.icms_percentual ?? DEFAULT_ICMS_PERCENTUAL),
         );
+        const margemRaw = paramRes.row.margem_percentual;
+        setMargemPercentual(
+          margemRaw == null || margemRaw === ""
+            ? DEFAULT_MARGEM_PERCENTUAL
+            : Number(margemRaw),
+        );
+        setAutonomiaParams({
+          autonomia_dias_limiar: paramRes.row.autonomia_dias_limiar,
+          autonomia_especial_longo: paramRes.row.autonomia_especial_longo,
+          autonomia_convencional_longo:
+            paramRes.row.autonomia_convencional_longo,
+          autonomia_especial_curto: paramRes.row.autonomia_especial_curto,
+          autonomia_convencional_curto:
+            paramRes.row.autonomia_convencional_curto,
+        });
       }
       if (faixasRes.ok) {
         setComissaoFaixas(faixasRes.rows);
@@ -228,6 +255,8 @@ export function Simulador() {
         }
         wasRemoteSimRef.current = false;
         setRemoteStatus(null);
+        setAssignedUserId(null);
+        setAssignedVendedorNome(null);
         return;
       }
       wasRemoteSimRef.current = true;
@@ -237,22 +266,20 @@ export function Simulador() {
         navigate("/simulacoes", { replace: true });
         return;
       }
-      if (isPedidoStatus(result.data.simulation.status)) {
-        const status = result.data.simulation.status
-        if (role === "gestor" || status === "converted") {
-          navigate(`/pedido/${encodeURIComponent(simulationId)}`, {
-            replace: true,
-          });
-        } else {
-          navigate("/pedidos", { replace: true });
-        }
-        return;
-      }
       sim.hydrateFromBundle(result.data);
       setRemoteStatus(result.data.simulation.status ?? null);
+      setAssignedUserId(result.data.simulation.user_id ?? null);
+      setAssignedVendedorNome(result.data.vendedorNome ?? null);
     },
-    [simulationId, navigate, role, sim.hydrateFromBundle, sim.resetLocal, sim.clearDraft],
+    [simulationId, navigate, sim.hydrateFromBundle, sim.resetLocal, sim.clearDraft],
   );
+
+  const handleConsultorAssigned = useCallback((result) => {
+    if (result?.userId) setAssignedUserId(result.userId);
+    if (result?.vendedorNome != null) {
+      setAssignedVendedorNome(result.vendedorNome);
+    }
+  }, []);
 
   const handleClientSearch = useCallback(async (query, signal) => {
     const r = await searchClients(query, signal);
@@ -291,7 +318,7 @@ export function Simulador() {
         return;
       }
       sim.clearDraft();
-      setRemoteStatus(result.status ?? "order_pending");
+      setRemoteStatus(result.status ?? "converted");
       navigate(`/pedido/${result.simulationId}`);
     } finally {
       setPersisting(false);
@@ -439,21 +466,21 @@ export function Simulador() {
     return `proposta-syagri-simulacao-${suffix}-${safeName}.pdf`;
   }, [sim.clientName, simulationId]);
 
-  const gerarPdfSimulacao = useCallback(async () => {
-    if (!pdfPrintRef.current) {
-      throw new Error("Documento não disponível para geração.");
-    }
-    const { buildPedidoPdfBlobFromElement } = await import(
-      "../services/pedidoPdf"
-    );
-    const blob = await buildPedidoPdfBlobFromElement(pdfPrintRef.current);
-    return { blob, nomePadrao: pdfNomeFallback };
-  }, [pdfNomeFallback]);
-
   async function handleGerarPdf() {
-    if (!canGeneratePdf || !pdfPrintRef.current) return;
+    if (!canGeneratePdf) return;
 
     setPdfError(null);
+
+    const frozenSnapshot = {
+      ...pdfSnapshot,
+      lines: pdfSnapshot.lines.map((row) => ({ ...row })),
+    };
+    const frozenVendedor =
+      assignedVendedorNome?.trim() || profile?.nome || "";
+    let snapshotForPdf = frozenSnapshot;
+    let nomeForPdf = pdfNomeFallback;
+    /** @type {string | null} */
+    let navigateToId = null;
 
     const needsDraftSave = isDraftEditable;
 
@@ -475,32 +502,50 @@ export function Simulador() {
         sim.clearDraft();
         setRemoteStatus("draft");
         if (!simulationId) {
-          navigate(
-            `/simulador?simulationId=${encodeURIComponent(result.simulationId)}`,
-            { replace: true },
-          );
+          navigateToId = result.simulationId;
+          snapshotForPdf = { ...frozenSnapshot, id: result.simulationId };
+          const safeName = (frozenSnapshot.clientName || "cliente")
+            .replace(/[^\w-]+/g, "_")
+            .slice(0, 40);
+          const suffix =
+            String(result.simulationId).replace(/\D/g, "").slice(-5) || "sim";
+          nomeForPdf = `proposta-syagri-simulacao-${suffix}-${safeName}.pdf`;
         }
-        setPdfPreview({
-          titulo: "Proposta comercial",
-          gerador: gerarPdfSimulacao,
-          nomeFallback: pdfNomeFallback,
-        });
       } finally {
         setSavingDraft(false);
       }
-      return;
-    }
-
-    if (!simulationId) {
+    } else if (!simulationId) {
       setPdfError("Salve a simulação antes de gerar o PDF.");
       return;
     }
 
-    setPdfPreview({
-      titulo: "Proposta comercial",
-      gerador: gerarPdfSimulacao,
-      nomeFallback: pdfNomeFallback,
-    });
+    setSavingDraft(true);
+    try {
+      const blob = await buildPdfBlobFromReactNode(
+        createElement(SimulacaoPdfDocument, {
+          snapshot: snapshotForPdf,
+          vendedorNome: frozenVendedor,
+        }),
+      );
+      setPdfPreview({
+        titulo: "Proposta comercial",
+        gerador: async () => ({ blob, nomePadrao: nomeForPdf }),
+        nomeFallback: nomeForPdf,
+      });
+      if (navigateToId) {
+        navigate(
+          `/simulador?simulationId=${encodeURIComponent(navigateToId)}`,
+          { replace: true },
+        );
+      }
+    } catch (e) {
+      console.error("[Simulador] PDF:", e);
+      setPdfError(
+        e instanceof Error ? e.message : "Não foi possível gerar o PDF.",
+      );
+    } finally {
+      setSavingDraft(false);
+    }
   }
 
   async function handleConvertToPedido() {
@@ -663,7 +708,7 @@ export function Simulador() {
       const notifyResult = await notifyGestoresSimulationPending({
         simulationId: saveResult.simulationId,
         title: `Revisão solicitada — ${sim.clientName.trim()}`,
-        body: `Proposta de ${formatBRL(sim.totalProposta)} abaixo da margem.`,
+        body: `Proposta de ${formatBRL(sim.totalProposta)} abaixo da autonomia.`,
       });
 
       if (!notifyResult.ok) {
@@ -688,9 +733,10 @@ export function Simulador() {
     }
   }
 
-  function buildReviewPayload() {
+  function buildReviewPayload(extra = {}) {
     return {
       simulationId,
+      clientName: sim.clientName,
       lines: sim.lines.map((l) => ({
         id: l.id,
         precoUnitario: l.precoUnitario,
@@ -698,6 +744,8 @@ export function Simulador() {
         overrides: l.overrides,
         productId: l.productId,
         volume: l.volume,
+        cultura: l.cultura,
+        financeiro: l.financeiro,
         produtoClasse: l.produtoClasse,
         margemPercentual: l.margemPercentual,
         comissaoPercentual: l.comissaoPercentual,
@@ -707,7 +755,18 @@ export function Simulador() {
       totalValor: sim.totalValor,
       totalProposta: sim.totalProposta,
       comissaoValorTotal: sim.comissaoValorTotal,
+      resumoAlteracao:
+        "Produtos, quantidades ou parâmetros ajustados pelo gestor",
+      ...extra,
     };
+  }
+
+  async function reloadSimulationBundle() {
+    if (!simulationId) return;
+    const result = await fetchSimulationOrderBundle(simulationId);
+    if (!result.ok) return;
+    sim.hydrateFromBundle(result.data);
+    setRemoteStatus(result.data.simulation.status ?? null);
   }
 
   async function handleSaveReview() {
@@ -720,7 +779,10 @@ export function Simulador() {
         setReviewError(result.error);
         return;
       }
-      sim.showActionBanner("Revisão salva nesta simulação.");
+      await reloadSimulationBundle();
+      sim.showActionBanner(
+        "Revisão salva. O consultor foi notificado das alterações.",
+      );
     } finally {
       setReviewSaving(false);
     }
@@ -731,7 +793,9 @@ export function Simulador() {
     setReviewError(null);
     setReviewDeciding(status);
     try {
-      const saveResult = await saveGestorReview(buildReviewPayload());
+      const saveResult = await saveGestorReview(
+        buildReviewPayload({ skipNotify: true }),
+      );
       if (!saveResult.ok) {
         setReviewError(saveResult.error);
         return;
@@ -745,6 +809,7 @@ export function Simulador() {
         return;
       }
       setRemoteStatus(status);
+      await reloadSimulationBundle();
       sim.showActionBanner(
         status === "approved"
           ? "Margem aprovada. O consultor pode solicitar a conversão em pedido."
@@ -764,21 +829,30 @@ export function Simulador() {
     setReviewError(null);
     setPersisting(true);
     try {
-      const saveResult = await saveGestorReview(buildReviewPayload());
+      const saveResult = await saveGestorReview(
+        buildReviewPayload({
+          skipNotify: true,
+          resumoAlteracao: "Simulação convertida em pedido pelo gestor",
+        }),
+      );
       if (!saveResult.ok) {
         setReviewError(saveResult.error);
         return;
       }
-      const statusResult = await updateSimulationStatus(simulationId, "order_pending", {
-        notifyGestores: true,
-        clientName: sim.clientName,
-        body: `Proposta de ${formatBRL(sim.totalProposta)} enviada para aprovação.`,
-      });
+      const statusResult = await updateSimulationStatus(
+        simulationId,
+        "converted",
+        {
+          notifyConsultor: true,
+          clientName: sim.clientName,
+          body: `Proposta de ${formatBRL(sim.totalProposta)} convertida em pedido.`,
+        },
+      );
       if (!statusResult.ok) {
         setReviewError(statusResult.error);
         return;
       }
-      setRemoteStatus("order_pending");
+      setRemoteStatus("converted");
       navigate(`/pedido/${simulationId}`);
     } finally {
       setPersisting(false);
@@ -791,6 +865,10 @@ export function Simulador() {
   });
 
   const showGestorReview = sim.isGestor && remoteStatus === "pending";
+  const canGestorSaveReview =
+    sim.isGestor &&
+    Boolean(simulationId) &&
+    !isPedidoStatus(remoteStatus);
 
   const destinoOptions = freteDestinos.map((d) => ({ id: d, label: d }));
 
@@ -799,12 +877,34 @@ export function Simulador() {
     nome: p.displayNome ?? p.nome,
   }));
 
-  const pageTitle = simulationId ? "Editar simulação" : "Nova simulação";
-  const pageDescription = simulationId
-    ? "Revise os dados, ajuste produtos e finalize a proposta comercial."
-    : "Monte a proposta comercial informando cliente, frete e produtos.";
+  const pageTitle = !simulationId
+    ? "Nova simulação"
+    : sim.isFrozen || isPedidoStatus(remoteStatus)
+      ? "Visualizar simulação"
+      : "Editar simulação";
+  const pageDescription = !simulationId
+    ? "Monte a proposta comercial informando cliente, frete e produtos."
+    : sim.isFrozen || isPedidoStatus(remoteStatus)
+      ? "Proposta comercial congelada — apenas visualização."
+      : "Revise os dados, ajuste produtos e finalize a proposta comercial.";
 
   const showReadOnlyNotice = sim.isReadOnly;
+
+  const gestorAlteracaoLabel = sim.gestorAlteracao?.em
+    ? (() => {
+        const when = new Date(sim.gestorAlteracao.em).toLocaleString("pt-BR", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+        const resumo = sim.gestorAlteracao.resumo?.trim();
+        return resumo
+          ? `Alterado pelo gestor em ${when}: ${resumo}`
+          : `Alterado pelo gestor em ${when}`;
+      })()
+    : null;
 
   const heroContext = sim.clientName.trim()
     ? `Proposta para ${sim.clientName.trim()} — ${sim.lines.length} produto(s) · ${formatBRL(sim.totalProposta)}`
@@ -852,6 +952,21 @@ export function Simulador() {
         </PageInfoBanner>
       </div>
 
+      {gestorAlteracaoLabel ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-950">
+          {gestorAlteracaoLabel}
+        </div>
+      ) : null}
+
+      {sim.isGestor && simulationId ? (
+        <AtribuirConsultorPanel
+          simulationId={simulationId}
+          currentUserId={assignedUserId}
+          currentVendedorNome={assignedVendedorNome}
+          onAssigned={handleConsultorAssigned}
+        />
+      ) : null}
+
       {sim.actionBanner ? (
         <AlertMessage tone="info" role="status">
           <span className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -869,12 +984,12 @@ export function Simulador() {
       ) : null}
 
       <SimuladorSummaryBar
-        lineCount={sim.lines.length}
         totalValor={sim.totalValor}
         totalProposta={sim.totalProposta}
         globalStatus={sim.globalStatus}
-        showMargem={sim.isGestor}
+        showMargem={sim.isGestor || sim.isFrozen}
         margemLucroTotal={sim.margemLucroTotal}
+        margemLucroValorTotal={sim.margemLucroValorTotal}
       />
 
       <div className="flex flex-col gap-4 sm:gap-6">
@@ -991,12 +1106,18 @@ export function Simulador() {
               variant="secondary"
               className="h-9 w-full px-3 sm:w-auto"
               onClick={sim.addLine}
-              disabled={sim.isReadOnly}
+              disabled={!sim.canEditProducts}
             >
               Adicionar produto
             </Button>
           }
         >
+          {sim.productsLocked ? (
+            <AlertMessage tone="info">
+              Preencha a data de pagamento antes de adicionar ou editar
+              produtos.
+            </AlertMessage>
+          ) : null}
           {sim.lines.length === 0 ? (
             <EmptyState title="Nenhum produto na simulação" />
           ) : (
@@ -1008,7 +1129,7 @@ export function Simulador() {
                     row={row}
                     cultureOptions={sim.cultureOptions}
                     productOptions={productsForSelect}
-                    isReadOnly={sim.isReadOnly}
+                    isReadOnly={!sim.canEditProducts}
                     canOverrideFloor={sim.canOverrideFloor}
                     onVolumeChange={(v) => sim.setLineVolume(row.id, v)}
                     onCulturaChange={(c) => sim.setLineCultura(row.id, c)}
@@ -1026,8 +1147,9 @@ export function Simulador() {
                 lines={sim.lines}
                 cultureOptions={sim.cultureOptions}
                 productOptions={productsForSelect}
-                isReadOnly={sim.isReadOnly}
+                isReadOnly={!sim.canEditProducts}
                 canOverrideFloor={sim.canOverrideFloor}
+                showMargem={sim.isGestor || sim.isFrozen}
                 onVolumeChange={sim.setLineVolume}
                 onCulturaChange={sim.setLineCultura}
                 onProductChange={sim.setLineProduct}
@@ -1110,11 +1232,13 @@ export function Simulador() {
           <div className="mt-5 space-y-3 rounded-2xl border border-slate-100 bg-slate-50/50 p-4 sm:p-5">
             {showReadOnlyNotice ? (
               <p className="text-sm text-slate-600">
-                {remoteStatus === "conversion_requested"
-                  ? "Conversão solicitada — proposta bloqueada. Aguarde o gestor converter em pedido."
-                  : remoteStatus === "approved"
-                    ? "Simulação aprovada — edição bloqueada. Você pode solicitar a conversão em pedido."
-                    : "Proposta enviada — aguardando revisão do gestor."}
+                {sim.isFrozen || isPedidoStatus(remoteStatus)
+                  ? "Simulação convertida em pedido — valores congelados. Apenas visualização."
+                  : remoteStatus === "conversion_requested"
+                    ? "Conversão solicitada — proposta bloqueada. Aguarde o gestor converter em pedido."
+                    : remoteStatus === "approved"
+                      ? "Simulação aprovada — edição bloqueada. Você pode solicitar a conversão em pedido."
+                      : "Proposta enviada — aguardando revisão do gestor."}
               </p>
             ) : null}
             {showGestorReview ? (
@@ -1139,7 +1263,7 @@ export function Simulador() {
                     : "Gerar Proposta p/ Cliente"}
                 </Button>
               ) : null}
-              {!sim.isReadOnly && !showGestorReview ? (
+              {!sim.isReadOnly && !canGestorSaveReview ? (
                 <Button
                   type="button"
                   variant="secondary"
@@ -1164,18 +1288,20 @@ export function Simulador() {
                   Solicitar revisão do gestor
                 </Button>
               ) : null}
+              {canGestorSaveReview ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="w-full sm:flex-1"
+                  loading={reviewSaving}
+                  disabled={Boolean(reviewDeciding) || persisting}
+                  onClick={() => void handleSaveReview()}
+                >
+                  Salvar revisão
+                </Button>
+              ) : null}
               {showGestorReview ? (
                 <>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    className="w-full sm:flex-1"
-                    loading={reviewSaving}
-                    disabled={Boolean(reviewDeciding) || persisting}
-                    onClick={() => void handleSaveReview()}
-                  >
-                    Salvar revisão
-                  </Button>
                   <Button
                     type="button"
                     variant="danger"
@@ -1288,25 +1414,6 @@ export function Simulador() {
           }
         }}
       />
-
-      {canGeneratePdf ? (
-        <div
-          aria-hidden
-          style={{
-            position: "fixed",
-            left: "-10000px",
-            top: 0,
-            pointerEvents: "none",
-          }}
-        >
-          <div ref={pdfPrintRef}>
-            <SimulacaoPdfDocument
-              snapshot={pdfSnapshot}
-              vendedorNome={profile?.nome ?? ""}
-            />
-          </div>
-        </div>
-      ) : null}
 
       <PdfPreviewModal
         open={Boolean(pdfPreview)}

@@ -125,7 +125,9 @@ export const DatePicker = forwardRef(function DatePicker(
 
   useImperativeHandle(ref, () => triggerRef.current);
 
-  const dropdownStyle = useDropdownPosition(isOpen, triggerRef, 320);
+  const dropdownStyle = useDropdownPosition(isOpen, triggerRef, 320, {
+    preferredWidth: 288,
+  });
 
   const close = useCallback(() => {
     setIsOpen(false);
@@ -267,7 +269,7 @@ export const DatePicker = forwardRef(function DatePicker(
             role="dialog"
             aria-label="Selecionar data"
             style={dropdownStyle}
-            className="w-72 rounded-2xl border border-slate-200 bg-white p-3 shadow-lg"
+            className="w-[min(18rem,calc(100vw-1.5rem))] rounded-2xl border border-slate-200 bg-white p-3 shadow-lg"
           >
             <div className="mb-3 flex items-center justify-between gap-2">
               <button

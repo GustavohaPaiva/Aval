@@ -548,7 +548,7 @@ export function MainLayout() {
             </span>
           </header>
 
-          <main className="relative z-10 min-h-0 flex-1 overflow-y-auto px-[5%] py-4 lg:py-6">
+          <main className="relative z-10 min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-4 lg:px-[5%] lg:py-6">
             <PageTransition />
           </main>
         </div>

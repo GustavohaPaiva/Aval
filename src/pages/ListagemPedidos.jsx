@@ -220,7 +220,7 @@ export function ListagemPedidos() {
             <div
               role="tablist"
               aria-labelledby="pedido-filter-status-label"
-              className="grid grid-cols-2 gap-1 rounded-2xl bg-slate-100/90 p-1 ring-1 ring-slate-200/70 sm:grid-cols-3 lg:grid-cols-5"
+              className="flex flex-wrap gap-1 rounded-2xl bg-slate-100/90 p-1 ring-1 ring-slate-200/70"
             >
               {PEDIDO_STATUS_FILTERS.map((pill) => {
                 const active = effectiveFilter === pill.key;
@@ -231,7 +231,7 @@ export function ListagemPedidos() {
                     role="tab"
                     aria-selected={active}
                     className={[
-                      "rounded-xl px-3 py-2 text-sm font-semibold transition-colors",
+                      "min-h-10 min-w-28 flex-1 rounded-xl px-3 py-2 text-sm font-semibold transition-colors",
                       active
                         ? "bg-white text-primary-800 shadow-sm ring-1 ring-slate-200/80"
                         : "text-slate-600 hover:text-slate-900",
@@ -273,6 +273,7 @@ export function ListagemPedidos() {
               row={row}
               isGestor={isGestor}
               consultorNome={consultorNomeById[row.user_id]}
+              listKind="pedidos"
               onContinueEdit={openPedido}
               onViewDetails={openPedido}
             />

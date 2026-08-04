@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { ESTADOS_PRODUTO, CLASSES_PRODUTO } from '../../constants/mapeamentoCampos'
+import { ESTADO_UF_VALUES } from '../../constants/simulator'
 import { Input } from '../ui/Input'
 import { Modal } from '../ui/Modal'
 import { ModalFormFooter } from '../ui/ModalFormFooter'
@@ -61,8 +62,8 @@ export function ModalStagingRowForm({
     }
 
     const estado = form.estado.trim() || String(loteEstado ?? '').trim()
-    if (!['MG', 'SP'].includes(estado)) {
-      setError('Selecione o estado (MG ou SP).')
+    if (!ESTADO_UF_VALUES.includes(estado)) {
+      setError('Selecione o estado.')
       return
     }
 
