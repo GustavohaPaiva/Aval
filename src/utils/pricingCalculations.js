@@ -141,23 +141,49 @@ export function calcPrecoSimulacao({
   }
 }
 
-/**
- * Lucro real sobre o custo financeiro (após frete/juros/antecipação):
- * (proposta − financeiro) / financeiro
- */
-export function calcMargemLucro(proposta, financeiro) {
-  const p = Number(proposta)
-  const f = Number(financeiro)
-  if (!Number.isFinite(p) || !Number.isFinite(f) || f <= 0) return null
-  return (p - f) / f
+/** Converte percentual cadastrado (ex.: 4) em ratio (0.04). Null/inválido → 0. */
+function toTaxRatio(percentual) {
+  const p = Number(percentual)
+  if (!Number.isFinite(p) || p < 0) return 0
+  return p / 100
 }
 
-/** Lucro em R$ = proposta − financeiro (mesma base do %). */
-export function calcMargemLucroValor(proposta, financeiro) {
+/**
+ * Margem sobre a proposta, após ICMS e PIS/COFINS da venda:
+ * (proposta − proposta×ICMS% − proposta×PIS% − financeiro) / proposta
+ *
+ * ICMS/PIS vêm como percentual (ex.: 4 e 1). PIS vazio/null → 0.
+ */
+export function calcMargemLucro(
+  proposta,
+  financeiro,
+  icmsPercentual = DEFAULT_ICMS_PERCENTUAL,
+  pisCofinsPercentual = 0,
+) {
+  const p = Number(proposta)
+  const f = Number(financeiro)
+  if (!Number.isFinite(p) || !Number.isFinite(f) || p <= 0) return null
+  const liquidoImpostos =
+    p * (1 - toTaxRatio(icmsPercentual) - toTaxRatio(pisCofinsPercentual))
+  return (liquidoImpostos - f) / p
+}
+
+/**
+ * Margem em R$ (mesma base do %):
+ * proposta − proposta×ICMS% − proposta×PIS% − financeiro
+ */
+export function calcMargemLucroValor(
+  proposta,
+  financeiro,
+  icmsPercentual = DEFAULT_ICMS_PERCENTUAL,
+  pisCofinsPercentual = 0,
+) {
   const p = Number(proposta)
   const f = Number(financeiro)
   if (!Number.isFinite(p) || !Number.isFinite(f)) return null
-  return roundMoney(p - f)
+  const liquidoImpostos =
+    p * (1 - toTaxRatio(icmsPercentual) - toTaxRatio(pisCofinsPercentual))
+  return roundMoney(liquidoImpostos - f)
 }
 
 export function calcCustoBrlComDesconto(custoUsd, descontoUsd, taxa) {

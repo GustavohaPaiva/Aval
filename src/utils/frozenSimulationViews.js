@@ -1,11 +1,28 @@
 import { roundMoney } from './roundMoney'
-import { calcMargemLucro, calcMargemLucroValor } from './pricingCalculations'
+import {
+  calcMargemLucro,
+  calcMargemLucroValor,
+  DEFAULT_ICMS_PERCENTUAL,
+} from './pricingCalculations'
+
+function resolveTaxParams(taxParams = {}) {
+  const icmsPercentual =
+    taxParams.icmsPercentual == null || taxParams.icmsPercentual === ''
+      ? DEFAULT_ICMS_PERCENTUAL
+      : Number(taxParams.icmsPercentual)
+  const pisCofinsPercentual =
+    taxParams.pisCofinsPercentual == null || taxParams.pisCofinsPercentual === ''
+      ? 0
+      : Number(taxParams.pisCofinsPercentual)
+  return { icmsPercentual, pisCofinsPercentual }
+}
 
 /**
  * Monta a visão de linha a partir dos valores persistidos (pós-congelamento).
- * Não depende de catálogo/parâmetros atuais.
+ * Não depende de catálogo; ICMS/PIS vêm dos parâmetros atuais (taxParams).
  */
-export function buildFrozenLineView(item, displayNome) {
+export function buildFrozenLineView(item, displayNome, taxParams = {}) {
+  const { icmsPercentual, pisCofinsPercentual } = resolveTaxParams(taxParams)
   const volume = Number(item.volume) || 0
   const precoUnitario = roundMoney(Number(item.preco_unitario) || 0)
   const proposta = roundMoney(Number(item.proposta) || 0)
@@ -19,13 +36,23 @@ export function buildFrozenLineView(item, displayNome) {
     financeiro != null ? roundMoney(volume * financeiro) : null
   const margemLucro =
     financeiro != null
-      ? calcMargemLucro(proposta, financeiro)
+      ? calcMargemLucro(
+          proposta,
+          financeiro,
+          icmsPercentual,
+          pisCofinsPercentual,
+        )
       : item.margem_percentual != null
         ? Number(item.margem_percentual) / 100
         : 0
   const margemLucroValor =
     financeiroTotal != null
-      ? calcMargemLucroValor(propostaTotal, financeiroTotal)
+      ? calcMargemLucroValor(
+          propostaTotal,
+          financeiroTotal,
+          icmsPercentual,
+          pisCofinsPercentual,
+        )
       : roundMoney(propostaTotal * margemLucro)
   const margemPercentual =
     item.margem_percentual != null
@@ -73,7 +100,8 @@ export function buildFrozenLineView(item, displayNome) {
   }
 }
 
-export function buildFrozenTotals(lineViews, simulation) {
+export function buildFrozenTotals(lineViews, simulation, taxParams = {}) {
+  const { icmsPercentual, pisCofinsPercentual } = resolveTaxParams(taxParams)
   const fromLinesValor = roundMoney(
     lineViews.reduce((acc, row) => acc + (row.valorTotal ?? 0), 0),
   )
@@ -99,8 +127,18 @@ export function buildFrozenTotals(lineViews, simulation) {
     totalValor,
     totalProposta,
     totalFinanceiro,
-    margemLucroTotal: calcMargemLucro(totalProposta, totalFinanceiro),
-    margemLucroValorTotal: calcMargemLucroValor(totalProposta, totalFinanceiro),
+    margemLucroTotal: calcMargemLucro(
+      totalProposta,
+      totalFinanceiro,
+      icmsPercentual,
+      pisCofinsPercentual,
+    ),
+    margemLucroValorTotal: calcMargemLucroValor(
+      totalProposta,
+      totalFinanceiro,
+      icmsPercentual,
+      pisCofinsPercentual,
+    ),
     comissaoValorTotal,
     globalStatus: 'Aprovado',
   }

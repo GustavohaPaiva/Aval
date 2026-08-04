@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Card } from '../ui/Card'
 import { SimuladorSummaryBar } from '../simulador/SimuladorVisuals'
 import { formatBRL, formatPercent } from '../../utils/money'
@@ -5,6 +6,9 @@ import {
   buildFrozenLineView,
   buildFrozenTotals,
 } from '../../utils/frozenSimulationViews'
+import { useAbortableAsync } from '../../hooks/useAbortableAsync'
+import { fetchParametrosSistema } from '../../services/parametrosService'
+import { DEFAULT_ICMS_PERCENTUAL } from '../../utils/pricingCalculations'
 
 function productDisplayName(item) {
   if (!item?.product) return '—'
@@ -20,6 +24,25 @@ function productDisplayName(item) {
  * Resumo read-only da simulação congelada para a tela de pedido do gestor.
  */
 export function PedidoSimulationSummary({ bundle }) {
+  const [taxParams, setTaxParams] = useState({
+    icmsPercentual: DEFAULT_ICMS_PERCENTUAL,
+    pisCofinsPercentual: 0,
+  })
+
+  useAbortableAsync(async (_signal, isActive) => {
+    const res = await fetchParametrosSistema()
+    if (isActive && !isActive()) return
+    if (!res.ok) return
+    const pisRaw = res.row.pis_cofins_percentual
+    setTaxParams({
+      icmsPercentual: Number(
+        res.row.icms_percentual ?? DEFAULT_ICMS_PERCENTUAL,
+      ),
+      pisCofinsPercentual:
+        pisRaw == null || pisRaw === '' ? 0 : Number(pisRaw),
+    })
+  }, [])
+
   if (!bundle) return null
 
   const lineViews = (bundle.items ?? [])
@@ -38,10 +61,11 @@ export function PedidoSimulationSummary({ bundle }) {
           },
         },
         productDisplayName(it),
+        taxParams,
       ),
     )
 
-  const totals = buildFrozenTotals(lineViews, bundle.simulation)
+  const totals = buildFrozenTotals(lineViews, bundle.simulation, taxParams)
   const client = bundle.client
   const sim = bundle.simulation
 

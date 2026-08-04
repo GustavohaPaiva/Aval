@@ -138,19 +138,23 @@ describe('pricingCalculations', () => {
     expect(resultJuros.valorAjustado).toBeCloseTo(1000 / fatorJuros, 2)
   })
 
-  it('calcula lucro real sobre o custo financeiro', () => {
-    // (proposta − financeiro) / financeiro
-    expect(calcMargemLucro(3950, 3000)).toBeCloseTo((3950 - 3000) / 3000, 6)
-    expect(calcMargemLucro(0, 100)).toBeCloseTo(-1, 6)
-    expect(calcMargemLucro(1000, 1000)).toBeCloseTo(0, 6)
-    expect(calcMargemLucro(1100, 1000)).toBeCloseTo(0.1, 6)
-    expect(calcMargemLucro(1000, 0)).toBeNull()
+  it('calcula margem sobre a proposta após ICMS e PIS/COFINS', () => {
+    // (1000 − 40 − 10 − 800) / 1000 = 0.15
+    expect(calcMargemLucro(1000, 800, 4, 1)).toBeCloseTo(0.15, 6)
+    // sem impostos: (1100 − 1000) / 1100
+    expect(calcMargemLucro(1100, 1000, 0, 0)).toBeCloseTo(100 / 1100, 6)
+    expect(calcMargemLucro(1000, 1000, 0, 0)).toBeCloseTo(0, 6)
+    expect(calcMargemLucro(0, 100, 4, 1)).toBeNull()
+    // null nos % → 0 (não aplica imposto)
+    expect(calcMargemLucro(1000, 800, null, null)).toBeCloseTo(0.2, 6)
+    // defaults: ICMS 4%, PIS 0
+    expect(calcMargemLucro(1000, 800)).toBeCloseTo(0.16, 6)
   })
 
-  it('calcula lucro em R$ (proposta − financeiro)', () => {
-    expect(calcMargemLucroValor(3950, 3000)).toBe(950)
-    expect(calcMargemLucroValor(1000, 1000)).toBe(0)
-    expect(calcMargemLucroValor(900, 1000)).toBe(-100)
+  it('calcula margem em R$ após ICMS e PIS/COFINS', () => {
+    expect(calcMargemLucroValor(1000, 800, 4, 1)).toBe(150)
+    expect(calcMargemLucroValor(1000, 1000, 0, 0)).toBe(0)
+    expect(calcMargemLucroValor(900, 1000, 0, 0)).toBe(-100)
   })
 
   it('calcula custo ICMS a partir do percentual parametrizado', () => {

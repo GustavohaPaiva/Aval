@@ -69,6 +69,7 @@ export function Simulador() {
   const [freteDestinos, setFreteDestinos] = useState([]);
   const [freteLookupError, setFreteLookupError] = useState(null);
   const [icmsPercentual, setIcmsPercentual] = useState(DEFAULT_ICMS_PERCENTUAL);
+  const [pisCofinsPercentual, setPisCofinsPercentual] = useState(0);
   const [margemPercentual, setMargemPercentual] = useState(
     DEFAULT_MARGEM_PERCENTUAL,
   );
@@ -81,6 +82,7 @@ export function Simulador() {
     catalog,
     freteUnitario,
     icmsPercentual,
+    pisCofinsPercentual,
     margemPercentual,
     autonomiaParams,
     comissaoFaixas,
@@ -162,6 +164,10 @@ export function Simulador() {
       if (paramRes.ok) {
         setIcmsPercentual(
           Number(paramRes.row.icms_percentual ?? DEFAULT_ICMS_PERCENTUAL),
+        );
+        const pisRaw = paramRes.row.pis_cofins_percentual;
+        setPisCofinsPercentual(
+          pisRaw == null || pisRaw === "" ? 0 : Number(pisRaw),
         );
         const margemRaw = paramRes.row.margem_percentual;
         setMargemPercentual(

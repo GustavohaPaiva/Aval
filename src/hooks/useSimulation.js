@@ -154,6 +154,10 @@ function buildLineView(
   prazoDias,
   autonomiaParams,
 ) {
+  const icmsPercentual = context.icmsPercentual ?? DEFAULT_ICMS_PERCENTUAL
+  const pisCofinsPercentual = context.pisCofinsPercentual ?? 0
+  const taxParams = { icmsPercentual, pisCofinsPercentual }
+
   if (line.snapshot) {
     const product = catalog.find((p) => p.id === line.productId)
     const displayNome =
@@ -177,6 +181,7 @@ function buildLineView(
         overrides: line.overrides,
       },
       displayNome,
+      taxParams,
     )
   }
 
@@ -192,8 +197,18 @@ function buildLineView(
   const propostaTotal = roundMoney(line.volume * proposta)
   const financeiro = breakdown?.financeiro ?? 0
   const financeiroTotal = roundMoney(line.volume * financeiro)
-  const margemLucro = calcMargemLucro(proposta, financeiro)
-  const margemLucroValor = calcMargemLucroValor(propostaTotal, financeiroTotal)
+  const margemLucro = calcMargemLucro(
+    proposta,
+    financeiro,
+    icmsPercentual,
+    pisCofinsPercentual,
+  )
+  const margemLucroValor = calcMargemLucroValor(
+    propostaTotal,
+    financeiroTotal,
+    icmsPercentual,
+    pisCofinsPercentual,
+  )
   const comissao = calcComissaoLinha({
     margem: margemLucro,
     classe: product?.classe,
@@ -251,6 +266,10 @@ export function useSimulation(options = {}) {
   const catalog = options.catalog ?? CATALOG_PRODUCTS
   const freteUnitario = options.freteUnitario ?? 0
   const icmsPercentual = options.icmsPercentual ?? DEFAULT_ICMS_PERCENTUAL
+  const pisCofinsPercentual =
+    options.pisCofinsPercentual == null || options.pisCofinsPercentual === ''
+      ? 0
+      : Number(options.pisCofinsPercentual)
   const margemPercentual =
     options.margemPercentual ?? DEFAULT_MARGEM_PERCENTUAL
   const autonomiaParams = useMemo(
@@ -306,8 +325,20 @@ export function useSimulation(options = {}) {
   }
 
   const pricingContext = useMemo(
-    () => ({ dataPagamento, freteUnitario, icmsPercentual, margemPercentual }),
-    [dataPagamento, freteUnitario, icmsPercentual, margemPercentual],
+    () => ({
+      dataPagamento,
+      freteUnitario,
+      icmsPercentual,
+      pisCofinsPercentual,
+      margemPercentual,
+    }),
+    [
+      dataPagamento,
+      freteUnitario,
+      icmsPercentual,
+      pisCofinsPercentual,
+      margemPercentual,
+    ],
   )
 
   const prazoDias = useMemo(
@@ -381,12 +412,22 @@ export function useSimulation(options = {}) {
         totalValor: tValor,
         totalProposta: tProposta,
         totalFinanceiro: tFinanceiro,
-        margemLucroTotal: calcMargemLucro(tProposta, tFinanceiro),
-        margemLucroValorTotal: calcMargemLucroValor(tProposta, tFinanceiro),
+        margemLucroTotal: calcMargemLucro(
+          tProposta,
+          tFinanceiro,
+          icmsPercentual,
+          pisCofinsPercentual,
+        ),
+        margemLucroValorTotal: calcMargemLucroValor(
+          tProposta,
+          tFinanceiro,
+          icmsPercentual,
+          pisCofinsPercentual,
+        ),
         comissaoValorTotal: roundMoney(comissaoValorRaw),
         globalStatus: status,
       }
-    }, [lineViews, frozenTotals])
+    }, [lineViews, frozenTotals, icmsPercentual, pisCofinsPercentual])
 
   const isReadOnly = Boolean(remotePendingLock || frozenTotals)
   const canEditProducts = !isReadOnly && !productsLocked
@@ -749,6 +790,7 @@ export function useSimulation(options = {}) {
       setLines(mappedLines)
 
       if (frozen) {
+        const taxParams = { icmsPercentual, pisCofinsPercentual }
         const views = mappedLines.map((line) =>
           buildFrozenLineView(
             {
@@ -766,14 +808,15 @@ export function useSimulation(options = {}) {
               overrides: line.overrides,
             },
             line.snapshot.displayNome,
+            taxParams,
           ),
         )
-        setFrozenTotals(buildFrozenTotals(views, simulation))
+        setFrozenTotals(buildFrozenTotals(views, simulation, taxParams))
       } else {
         setFrozenTotals(null)
       }
     },
-    [isGestor],
+    [isGestor, icmsPercentual, pisCofinsPercentual],
   )
 
   const resetLocal = useCallback(() => {

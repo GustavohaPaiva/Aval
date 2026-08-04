@@ -362,8 +362,8 @@ export function ParametrosPage() {
         </h2>
         <p className="mt-1 text-sm text-slate-600">
           O ICMS é aplicado no custo dos produtos no lançamento (individual ou
-          Excel). A Margem entra no preço de tabela da simulação. PIS/COFINS é
-          apenas armazenado por enquanto.
+          Excel) e, junto com o PIS/COFINS, na margem da simulação. A Margem
+          entra no preço de tabela da simulação.
         </p>
 
         <form
