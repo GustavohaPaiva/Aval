@@ -1,3 +1,4 @@
+import { supabase } from "../services/supabase";
 import {
   MAX_LINHAS_TEXTO,
   limitarLinhasTexto,
@@ -8,6 +9,8 @@ import {
 
 const GEMINI_MODEL =
   import.meta.env.VITE_GEMINI_MODEL?.trim() || "gemini-2.5-flash";
+
+const EDGE_FUNCTION = "melhorar-texto-proposta";
 
 function limparTextoGemini(raw) {
   return String(raw ?? "")
@@ -108,6 +111,40 @@ async function chamarGeminiDireto(texto, maxLinhas) {
   return finalizarSugestaoIA(bruto, maxLinhas, gerar);
 }
 
+/**
+ * Proxy autenticado (Edge Function) — chave Gemini fica no secret do Supabase.
+ */
+async function chamarViaEdgeFunction(texto, maxLinhas) {
+  if (!supabase) return null;
+
+  const { data, error } = await supabase.functions.invoke(EDGE_FUNCTION, {
+    body: { texto, maxLinhas },
+  });
+
+  if (error) {
+    let detail = error.message || "Falha ao chamar a Edge Function.";
+    try {
+      const body = await error.context?.json?.();
+      if (body?.erro) detail = body.erro;
+    } catch {
+      /* ignore parse errors */
+    }
+    throw new Error(detail);
+  }
+
+  if (data?.erro) throw new Error(String(data.erro));
+  if (!data?.sugerido?.trim()) return null;
+
+  return {
+    sugerido: limparTextoGemini(data.sugerido),
+    origem: data.origem || "gemini",
+    modelo: data.modelo || GEMINI_MODEL,
+    aviso:
+      data.aviso ||
+      "Sugestão gerada por IA (Google Gemini). Revise antes de aplicar.",
+  };
+}
+
 function limpezaBasicaLocal(texto) {
   let t = String(texto ?? "").trim();
   if (!t) return t;
@@ -119,11 +156,15 @@ function limpezaBasicaLocal(texto) {
 }
 
 export function geminiConfigurado() {
-  return Boolean(import.meta.env.VITE_GEMINI_API_KEY?.trim());
+  return (
+    Boolean(supabase) || Boolean(import.meta.env.VITE_GEMINI_API_KEY?.trim())
+  );
 }
 
 /**
- * Melhora texto com IA generativa (Gemini via VITE_GEMINI_API_KEY).
+ * Melhora texto com IA generativa.
+ * Produção: Edge Function `melhorar-texto-proposta` (secret GEMINI_API_KEY).
+ * Local: fallback opcional via VITE_GEMINI_API_KEY.
  */
 export async function melhorarTextoPortugues(
   texto,
@@ -139,8 +180,15 @@ export async function melhorarTextoPortugues(
       sugerido: "",
       origem: "nenhuma",
       aviso:
-        "Configure VITE_GEMINI_API_KEY e VITE_GEMINI_MODEL no .env e reinicie o servidor de desenvolvimento.",
+        "Configure o Supabase (produção) ou VITE_GEMINI_API_KEY no .env local.",
     };
+  }
+
+  try {
+    const viaFn = await chamarViaEdgeFunction(original, maxLinhas);
+    if (viaFn?.sugerido) return viaFn;
+  } catch (fnErr) {
+    console.warn("[melhorarTexto] Edge Function:", fnErr);
   }
 
   try {
@@ -155,7 +203,7 @@ export async function melhorarTextoPortugues(
       };
     }
   } catch (geminiErr) {
-    console.warn("[melhorarTexto] Gemini:", geminiErr);
+    console.warn("[melhorarTexto] Gemini direto:", geminiErr);
   }
 
   const local = limpezaBasicaLocal(original);

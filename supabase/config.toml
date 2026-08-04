@@ -1,0 +1,5 @@
+# Config mínima para Edge Functions (deploy remoto via MCP/CLI).
+# Secrets (não versionar): GEMINI_API_KEY, opcionalmente GEMINI_MODEL.
+
+[functions.melhorar-texto-proposta]
+verify_jwt = true

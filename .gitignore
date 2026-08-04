@@ -87,7 +87,11 @@ $RECYCLE.BIN/
 ~$*
 
 # --- Não publicar no GitHub ---
-supabase/
+# Mantém migrations/local state fora do repo; versiona só a Edge Function do corretor.
+supabase/*
+!supabase/functions/
+!supabase/functions/**
+!supabase/config.toml
 Planilhas de Fornecedores/
 
 # --- Local tool venvs ---
