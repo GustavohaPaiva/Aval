@@ -557,7 +557,7 @@ export function Pedido({ simulationId }) {
       </Card>
 
       <div className="mt-6 flex w-full flex-col gap-2">
-        {!isGestor && canEditPedido ? (
+        {canEditPedido ? (
           <Button
             type="button"
             variant="primary"
