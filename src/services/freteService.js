@@ -167,16 +167,22 @@ export async function deleteFrete(id) {
 }
 
 export async function fetchFreteOrigensAtivas() {
-  const { data, error } = await supabase
-    .from('fretes')
-    .select('origem')
-    .eq('ativo', true)
-    .neq('origem', 'FOB')
-    .order('origem', { ascending: true })
+  // Uma query por origem conhecida (limit 1) evita o teto de 1000 rows do
+  // PostgREST — puxar todas as linhas só para montar o distinct cortava UBERABA.
+  const values = []
 
-  if (error) return { ok: false, error: error.message }
+  for (const origem of FRETE_ORIGEM_VALUES) {
+    const { data, error } = await supabase
+      .from('fretes')
+      .select('origem')
+      .eq('ativo', true)
+      .eq('origem', origem)
+      .limit(1)
 
-  const values = [...new Set((data ?? []).map((row) => String(row.origem)))]
+    if (error) return { ok: false, error: error.message }
+    if ((data ?? []).length > 0) values.push(origem)
+  }
+
   return { ok: true, values }
 }
 
@@ -184,17 +190,32 @@ export async function fetchFreteDestinosAtivos(origem) {
   const origemNorm = normalizeFreteLocation(origem)
   if (!origemNorm) return { ok: true, values: [] }
 
-  const { data, error } = await supabase
-    .from('fretes')
-    .select('destino')
-    .eq('ativo', true)
-    .eq('origem', origemNorm)
-    .order('destino', { ascending: true })
+  const pageSize = 1000
+  let from = 0
+  const seen = new Set()
 
-  if (error) return { ok: false, error: error.message }
+  while (true) {
+    const to = from + pageSize - 1
+    const { data, error } = await supabase
+      .from('fretes')
+      .select('destino')
+      .eq('ativo', true)
+      .eq('origem', origemNorm)
+      .order('destino', { ascending: true })
+      .range(from, to)
 
-  const values = [...new Set((data ?? []).map((row) => String(row.destino)))]
-  return { ok: true, values }
+    if (error) return { ok: false, error: error.message }
+
+    const rows = data ?? []
+    for (const row of rows) {
+      seen.add(String(row.destino))
+    }
+
+    if (rows.length < pageSize) break
+    from += pageSize
+  }
+
+  return { ok: true, values: [...seen] }
 }
 
 export async function lookupFreteValor(origem, destino) {
