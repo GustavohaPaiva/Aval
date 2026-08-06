@@ -993,7 +993,7 @@ export function Simulador() {
         totalValor={sim.totalValor}
         totalProposta={sim.totalProposta}
         globalStatus={sim.globalStatus}
-        showMargem={sim.isGestor || sim.isFrozen}
+        showMargem={sim.isGestor}
         margemLucroTotal={sim.margemLucroTotal}
         margemLucroValorTotal={sim.margemLucroValorTotal}
       />
@@ -1155,7 +1155,7 @@ export function Simulador() {
                 productOptions={productsForSelect}
                 isReadOnly={!sim.canEditProducts}
                 canOverrideFloor={sim.canOverrideFloor}
-                showMargem={sim.isGestor || sim.isFrozen}
+                showMargem={sim.isGestor}
                 onVolumeChange={sim.setLineVolume}
                 onCulturaChange={sim.setLineCultura}
                 onProductChange={sim.setLineProduct}
