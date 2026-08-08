@@ -1,0 +1,1 @@
+function e(e){return new Intl.NumberFormat(`pt-BR`,{style:`currency`,currency:`BRL`,minimumFractionDigits:2,maximumFractionDigits:2}).format(e)}function t(e,t=1){return e==null||!Number.isFinite(e)?`—`:`${(e*100).toLocaleString(`pt-BR`,{minimumFractionDigits:t,maximumFractionDigits:t})}%`}export{t as n,e as t};
