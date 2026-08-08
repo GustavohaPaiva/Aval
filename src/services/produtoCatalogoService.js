@@ -21,9 +21,10 @@ export async function fetchCatalogoSimulador({ quarter, estado } = {}) {
   let query = supabase
     .from('produtos_oficiais')
     .select(
-      'id, nome, referencia_complementar, fornecedor_id, estado, classe, quarter, moeda_origem, preco_original, desconto_usd, preco_interno_calculado, custo_icms, vencimento_lista, taxa_antecipacao, taxa_juros, ativo, fornecedores(nome)',
+      'id, nome, referencia_complementar, fornecedor_id, estado, classe, quarter, moeda_origem, preco_original, desconto_usd, preco_interno_calculado, custo_icms, vencimento_lista, taxa_antecipacao, taxa_juros, ativo, fornecedores(nome), lotes_importacao!inner(id, ativo)',
     )
     .eq('ativo', true)
+    .eq('lotes_importacao.ativo', true)
     .ilike('quarter', `${quarter}%`)
     .order('nome', { ascending: true })
 

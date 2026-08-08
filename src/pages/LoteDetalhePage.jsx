@@ -374,10 +374,16 @@ export function LoteDetalhePage() {
       return;
     }
 
-    const { novos = 0, atualizacoes = 0 } = res.result ?? {};
+    const { novos = 0, atualizacoes = 0, listas_inativadas = 0 } =
+      res.result ?? {};
+    const baseMsg = `Lista lançada com sucesso: ${novos} novo(s), ${atualizacoes} atualização(ões).`;
+    const inativaMsg =
+      Number(listas_inativadas) > 0
+        ? ` ${listas_inativadas} lista(s) anterior(es) inativada(s).`
+        : "";
     navigate("/admin/listas", {
       state: {
-        successMessage: `Lista lançada com sucesso: ${novos} novo(s), ${atualizacoes} atualização(ões).`,
+        successMessage: `${baseMsg}${inativaMsg}`,
       },
     });
   }
