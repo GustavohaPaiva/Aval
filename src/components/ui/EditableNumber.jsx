@@ -1,4 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import {
+  EDITABLE_HINT_BORDER,
+  EDITABLE_HINT_CURSOR,
+  EditableHintIcon,
+} from "./editableFieldHint";
 
 export function EditableNumber({
   value,
@@ -60,56 +65,70 @@ export function EditableNumber({
     );
   }
 
+  const frameClass = [
+    "relative w-full min-w-[4.5rem]",
+    centered ? "mx-auto max-w-[6.5rem]" : "",
+    className,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const controlClass = [
+    "finance-text h-9 w-full rounded-xl bg-white pl-2 pr-7 text-base font-semibold text-slate-900 outline-none transition-[border-color,box-shadow,background-color]",
+    EDITABLE_HINT_BORDER,
+    centered ? "text-center" : "text-left",
+    emphasized
+      ? "border-primary-300/70 bg-primary-50/60 text-primary-900"
+      : "",
+    inputClassName,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   if (editing) {
     return (
-      <input
-        ref={inputRef}
-        type="number"
-        min={min}
-        step={step}
-        aria-label={ariaLabel}
-        data-no-row-click
-        className={[
-          "finance-text h-9 w-full min-w-[4.5rem] rounded-xl border px-2 text-base font-semibold text-slate-900 outline-none",
-          emphasized
-            ? "border-primary-400 bg-primary-50 ring-2 ring-primary-500/35"
-            : "border-primary-300 bg-white ring-2 ring-primary-500/20",
-          centered ? "mx-auto max-w-[6rem] text-center" : "",
-          inputClassName,
-        ]
-          .filter(Boolean)
-          .join(" ")}
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") commit();
-          if (e.key === "Escape") cancel();
-        }}
-      />
+      <div className={frameClass}>
+        <input
+          ref={inputRef}
+          type="number"
+          min={min}
+          step={step}
+          aria-label={ariaLabel}
+          data-no-row-click
+          className={[
+            controlClass,
+            "cursor-text focus:border-primary-400 focus:ring-2 focus:ring-primary-500/20",
+            emphasized ? "ring-2 ring-primary-500/30" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commit();
+            if (e.key === "Escape") cancel();
+          }}
+        />
+        <EditableHintIcon size="compact" />
+      </div>
     );
   }
 
   return (
-    <button
-      type="button"
-      data-no-row-click
-      aria-label={
-        ariaLabel ? `${ariaLabel}: ${display}. Clique para editar.` : undefined
-      }
-      className={[
-        "finance-text cursor-text rounded-lg px-1 text-base font-semibold underline decoration-dotted underline-offset-4 transition-colors",
-        emphasized
-          ? "border border-primary-200 bg-primary-50 px-2 py-1 text-primary-900 decoration-primary-300 hover:border-primary-300 hover:bg-primary-100/80 hover:decoration-primary-500"
-          : "text-slate-900 decoration-slate-300 hover:text-primary-800 hover:decoration-primary-400",
-        centered ? "mx-auto block w-full text-center" : "text-left",
-        className,
-      ]
-        .filter(Boolean)
-        .join(" ")}
-      onClick={startEditing}
-    >
-      {display}
-    </button>
+    <div className={frameClass}>
+      <button
+        type="button"
+        data-no-row-click
+        aria-label={
+          ariaLabel ? `${ariaLabel}: ${display}. Clique para editar.` : undefined
+        }
+        className={[controlClass, EDITABLE_HINT_CURSOR].join(" ")}
+        onClick={startEditing}
+      >
+        {display}
+      </button>
+      <EditableHintIcon size="compact" />
+    </div>
   );
 }

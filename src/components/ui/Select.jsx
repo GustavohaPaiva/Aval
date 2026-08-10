@@ -12,6 +12,10 @@ import { IconChevronDown, IconSearch } from "../icons";
 import { useDropdownPosition } from "../../hooks/useDropdownPosition";
 import { filterSelectOptions } from "../../utils/selectUtils";
 import { DropdownPortal } from "./DropdownPortal";
+import {
+  editableHintControlClass,
+  EditableHintIcon,
+} from "./editableFieldHint";
 
 const SEARCH_AUTO_THRESHOLD = 8;
 
@@ -67,6 +71,7 @@ export const Select = forwardRef(function Select(
     searchPlaceholder = "Buscar…",
     emptyMessage = "Nenhum resultado encontrado",
     size = "default",
+    editableHint = false,
     "aria-label": ariaLabel,
     required,
     autoOpen = false,
@@ -267,6 +272,8 @@ export const Select = forwardRef(function Select(
   const triggerBase =
     size === "compact" ? TRIGGER_COMPACT : TRIGGER_DEFAULT;
 
+  const showEditableHint = editableHint && !disabled;
+
   const triggerClasses = joinClasses(
     triggerBase,
     className,
@@ -276,6 +283,11 @@ export const Select = forwardRef(function Select(
     isOpen && "border-primary-500 ring-2 ring-primary-500/20",
     hasError && "border-feedback-error",
     disabled && "cursor-not-allowed opacity-50",
+    showEditableHint &&
+      editableHintControlClass({
+        padEnd: "icons",
+        size: size === "compact" ? "compact" : "default",
+      }),
   );
 
   const handleTriggerClick = () => {
@@ -323,6 +335,12 @@ export const Select = forwardRef(function Select(
           className={triggerClasses}
         >
           <span className="block min-w-0 truncate pr-1">{displayLabel}</span>
+          {showEditableHint ? (
+            <EditableHintIcon
+              size={size === "compact" ? "compact" : "default"}
+              offset="beforeChevron"
+            />
+          ) : null}
           <IconChevronDown
             className={joinClasses(
               "pointer-events-none absolute top-1/2 -translate-y-1/2 text-slate-400 transition-transform duration-200",

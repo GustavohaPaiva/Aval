@@ -2,7 +2,6 @@ import {
   IconClipboardList,
   IconDollarSign,
   IconPackage,
-  IconPencil,
   IconTruck,
   IconUser,
 } from '../icons'
@@ -154,6 +153,6 @@ export const SIMULADOR_SECTION_ICONS = {
   cliente: IconUser,
   frete: IconTruck,
   produtos: IconPackage,
-  observacoes: IconPencil,
+  cotacao: IconClipboardList,
   consolidacao: IconDollarSign,
 }

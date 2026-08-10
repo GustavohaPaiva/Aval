@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CATALOG_PRODUCTS } from '../constants/catalogProducts'
+import { resolveOrigemFreteByEstado } from '../constants/fretes'
 import { CULTURES } from '../constants/simulator'
 import {
   isConsultorSimulationLocked,
@@ -47,16 +48,42 @@ function readSimulationDraft() {
   return draft
 }
 
+function normalizeDescontoPct(value) {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return 0
+  return Math.min(100, Math.max(0, n))
+}
+
+/** Desconto % em relação ao valor unitário (tabela). */
+function calcDescontoPct(precoUnitario, proposta) {
+  const pu = Number(precoUnitario)
+  if (!(pu > 0)) return 0
+  const prop = clampProposta(proposta)
+  return normalizeDescontoPct(((pu - prop) / pu) * 100)
+}
+
+function calcPropostaFromDesconto(precoUnitario, descontoPct) {
+  const pu = Number(precoUnitario) || 0
+  const pct = normalizeDescontoPct(descontoPct)
+  return clampProposta(roundMoney(pu * (1 - pct / 100)))
+}
+
 function normalizeDraftLines(lines) {
   if (!Array.isArray(lines)) return []
-  return lines.map((line) => ({
-    id: String(line.id ?? crypto.randomUUID()),
-    productId: line.productId ?? '',
-    cultura: line.cultura ?? CULTURES[0] ?? '',
-    volume: Number(line.volume) || 0,
-    proposta: Number(line.proposta) || 0,
-    overrides: normalizeOverrides(line.overrides),
-  }))
+  return lines.map((line) => {
+    const hasDesconto =
+      line.descontoPct != null && Number.isFinite(Number(line.descontoPct))
+    return {
+      id: String(line.id ?? crypto.randomUUID()),
+      productId: line.productId ?? '',
+      fornecedorId: line.fornecedorId ?? '',
+      cultura: line.cultura ?? CULTURES[0] ?? '',
+      volume: Number(line.volume) || 0,
+      proposta: Number(line.proposta) || 0,
+      descontoPct: hasDesconto ? normalizeDescontoPct(line.descontoPct) : null,
+      overrides: normalizeOverrides(line.overrides),
+    }
+  })
 }
 
 function normalizeOverrides(overrides) {
@@ -69,11 +96,9 @@ function normalizeOverrides(overrides) {
   return Object.keys(next).length > 0 ? next : undefined
 }
 
-function clampProposta(proposta, precoUnitario, allowAnyPrice) {
+function clampProposta(proposta) {
   const p = Number.isFinite(proposta) ? proposta : 0
-  if (allowAnyPrice) return Math.max(0, p)
-  const safePu = Math.max(0, precoUnitario)
-  return Math.min(Math.max(0, p), safePu)
+  return Math.max(0, p)
 }
 
 function resolvePricing(product, context, overrides) {
@@ -149,7 +174,6 @@ function buildLineView(
   line,
   catalog,
   context,
-  canOverrideFloor,
   comissaoFaixas,
   prazoDias,
   autonomiaParams,
@@ -165,34 +189,41 @@ function buildLineView(
       product?.nome ??
       line.snapshot.displayNome ??
       '—'
-    return buildFrozenLineView(
-      {
-        id: line.id,
-        product_id: line.productId,
-        cultura: line.cultura,
-        volume: line.volume,
-        preco_unitario: line.snapshot.precoUnitario,
-        proposta: line.proposta,
-        financeiro_unitario: line.snapshot.financeiro,
-        margem_percentual: line.snapshot.margemPercentual,
-        comissao_percentual: line.snapshot.comissaoPercentual,
-        comissao_valor: line.snapshot.comissaoValor,
-        produto_classe: line.snapshot.produtoClasse,
-        overrides: line.overrides,
-      },
-      displayNome,
-      taxParams,
-    )
+    return {
+      ...buildFrozenLineView(
+        {
+          id: line.id,
+          product_id: line.productId,
+          cultura: line.cultura,
+          volume: line.volume,
+          preco_unitario: line.snapshot.precoUnitario,
+          proposta: line.proposta,
+          financeiro_unitario: line.snapshot.financeiro,
+          margem_percentual: line.snapshot.margemPercentual,
+          comissao_percentual: line.snapshot.comissaoPercentual,
+          comissao_valor: line.snapshot.comissaoValor,
+          produto_classe: line.snapshot.produtoClasse,
+          overrides: line.overrides,
+        },
+        displayNome,
+        taxParams,
+      ),
+      fornecedorId: line.fornecedorId ?? product?.fornecedorId ?? '',
+      descontoPct:
+        line.descontoPct != null && Number.isFinite(Number(line.descontoPct))
+          ? normalizeDescontoPct(line.descontoPct)
+          : calcDescontoPct(line.snapshot.precoUnitario, line.proposta),
+    }
   }
 
   const product = catalog.find((p) => p.id === line.productId)
   const overrides = normalizeOverrides(line.overrides)
   const { precoUnitario, breakdown } = resolvePricing(product, context, overrides)
-  const proposta = clampProposta(
-    line.proposta ?? precoUnitario,
-    precoUnitario,
-    canOverrideFloor,
-  )
+  const proposta = clampProposta(line.proposta ?? precoUnitario)
+  const descontoPct =
+    line.descontoPct != null && Number.isFinite(Number(line.descontoPct))
+      ? normalizeDescontoPct(line.descontoPct)
+      : calcDescontoPct(precoUnitario, proposta)
   const valorTotal = roundMoney(line.volume * precoUnitario)
   const propostaTotal = roundMoney(line.volume * proposta)
   const financeiro = breakdown?.financeiro ?? 0
@@ -228,10 +259,12 @@ function buildLineView(
   return {
     id: line.id,
     productId: line.productId,
+    fornecedorId: line.fornecedorId ?? '',
     cultura: line.cultura,
     volume: line.volume,
     precoUnitario,
     proposta,
+    descontoPct,
     valorTotal,
     propostaTotal,
     financeiro,
@@ -256,9 +289,11 @@ function createLine() {
   return {
     id: crypto.randomUUID(),
     productId: '',
+    fornecedorId: '',
     cultura: '',
     volume: 1,
     proposta: 0,
+    descontoPct: 0,
   }
 }
 
@@ -300,16 +335,20 @@ export function useSimulation(options = {}) {
   const [tipoFrete, setTipoFreteState] = useState(
     () => initialDraft?.tipoFrete ?? null,
   )
-  const [origemFrete, setOrigemFreteState] = useState(
-    () => initialDraft?.origemFrete ?? '',
-  )
+  const [origemFrete, setOrigemFreteState] = useState(() => {
+    const tipo = initialDraft?.tipoFrete ?? null
+    const est = initialDraft?.estado ?? null
+    if (tipo === 'CIF') {
+      return (
+        resolveOrigemFreteByEstado(est) || initialDraft?.origemFrete || ''
+      )
+    }
+    return ''
+  })
   const [destinoFrete, setDestinoFreteState] = useState(
     () => initialDraft?.destinoFrete ?? '',
   )
   const [quarter, setQuarterState] = useState(() => initialDraft?.quarter ?? null)
-  const [observacoes, setObservacoesState] = useState(
-    () => initialDraft?.observacoes ?? '',
-  )
 
   const [lines, setLines] = useState(() =>
     normalizeDraftLines(initialDraft?.lines),
@@ -347,7 +386,10 @@ export function useSimulation(options = {}) {
   )
 
   const canOverrideFloor = isGestor && !frozenTotals
-  const productsLocked = !Boolean(String(dataPagamento ?? '').trim())
+  const productsLocked =
+    !estado ||
+    !Boolean(String(dataPagamento ?? '').trim()) ||
+    !quarter
 
   const lineViews = useMemo(
     () =>
@@ -356,7 +398,6 @@ export function useSimulation(options = {}) {
           line,
           catalog,
           pricingContext,
-          canOverrideFloor,
           comissaoFaixas,
           prazoDias,
           autonomiaParams,
@@ -366,7 +407,6 @@ export function useSimulation(options = {}) {
       lines,
       catalog,
       pricingContext,
-      canOverrideFloor,
       comissaoFaixas,
       prazoDias,
       autonomiaParams,
@@ -469,7 +509,6 @@ export function useSimulation(options = {}) {
       setClientId(client.id ?? null)
       setClientNameState(client.nome ?? '')
       setClientCnpjCpfState(parseCpfCnpjInput(client.cnpj_cpf ?? ''))
-      if (client.uf) setEstadoState(client.uf)
     },
     [isReadOnly],
   )
@@ -477,17 +516,27 @@ export function useSimulation(options = {}) {
   const setEstado = useCallback(
     (value) => {
       if (isReadOnly) return
-      setEstadoState(value || null)
+      const next = value || null
+      if (next === estado) return
+      setEstadoState(next)
+      setLines([])
+      if (tipoFrete === 'CIF') {
+        const origem = resolveOrigemFreteByEstado(next)
+        setOrigemFreteState(origem)
+        setDestinoFreteState('')
+      }
     },
-    [isReadOnly],
+    [isReadOnly, estado, tipoFrete],
   )
 
   const setDataPagamento = useCallback(
     (value) => {
       if (isReadOnly) return
+      if (value === dataPagamento) return
       setDataPagamentoState(value)
+      setLines([])
     },
-    [isReadOnly],
+    [isReadOnly, dataPagamento],
   )
 
   const setTipoFrete = useCallback(
@@ -495,12 +544,16 @@ export function useSimulation(options = {}) {
       if (isReadOnly) return
       const next = value || null
       setTipoFreteState(next)
-      if (next !== 'CIF') {
+      if (next === 'CIF') {
+        const origem = resolveOrigemFreteByEstado(estado)
+        setOrigemFreteState(origem)
+        setDestinoFreteState('')
+      } else {
         setOrigemFreteState('')
         setDestinoFreteState('')
       }
     },
-    [isReadOnly],
+    [isReadOnly, estado],
   )
 
   const setOrigemFrete = useCallback(
@@ -522,17 +575,12 @@ export function useSimulation(options = {}) {
   const setQuarter = useCallback(
     (value) => {
       if (isReadOnly) return
-      setQuarterState(value || null)
+      const next = value || null
+      if (next === quarter) return
+      setQuarterState(next)
+      setLines([])
     },
-    [isReadOnly],
-  )
-
-  const setObservacoes = useCallback(
-    (value) => {
-      if (isReadOnly) return
-      setObservacoesState(value)
-    },
-    [isReadOnly],
+    [isReadOnly, quarter],
   )
 
   const addLine = useCallback(() => {
@@ -555,7 +603,13 @@ export function useSimulation(options = {}) {
         setLines((prev) =>
           prev.map((line) =>
             line.id === lineId
-              ? { ...line, productId: '', proposta: 0, overrides: undefined }
+              ? {
+                  ...line,
+                  productId: '',
+                  proposta: 0,
+                  descontoPct: 0,
+                  overrides: undefined,
+                }
               : line,
           ),
         )
@@ -570,13 +624,48 @@ export function useSimulation(options = {}) {
           return {
             ...line,
             productId,
+            fornecedorId: product.fornecedorId ?? line.fornecedorId ?? '',
             proposta: pu,
+            descontoPct: 0,
             overrides: undefined,
           }
         }),
       )
     },
     [catalog, canEditProducts, pricingContext],
+  )
+
+  const setLineFornecedor = useCallback(
+    (lineId, fornecedorId) => {
+      if (!canEditProducts) return
+      const nextFornecedorId = fornecedorId ? String(fornecedorId) : ''
+      setLines((prev) =>
+        prev.map((line) => {
+          if (line.id !== lineId) return line
+          if (!nextFornecedorId) {
+            return { ...line, fornecedorId: '' }
+          }
+          const product = line.productId
+            ? catalog.find((p) => p.id === line.productId)
+            : null
+          const productMatches =
+            product &&
+            String(product.fornecedorId ?? '') === nextFornecedorId
+          if (line.productId && !productMatches) {
+            return {
+              ...line,
+              fornecedorId: nextFornecedorId,
+              productId: '',
+              proposta: 0,
+              descontoPct: 0,
+              overrides: undefined,
+            }
+          }
+          return { ...line, fornecedorId: nextFornecedorId }
+        }),
+      )
+    },
+    [catalog, canEditProducts],
   )
 
   const setLineCultura = useCallback(
@@ -610,16 +699,50 @@ export function useSimulation(options = {}) {
       setLines((prev) =>
         prev.map((line) => {
           if (line.id !== lineId) return line
-          const product = catalog.find((p) => p.id === line.productId)
-          const pu = resolvePrecoUnitario(product, pricingContext, line.overrides)
+          const product = line.productId
+            ? catalog.find((p) => p.id === line.productId)
+            : null
+          const pu = resolvePrecoUnitario(
+            product,
+            pricingContext,
+            line.overrides,
+          )
+          const nextProposta = clampProposta(proposta)
           return {
             ...line,
-            proposta: clampProposta(proposta, pu, canOverrideFloor),
+            proposta: nextProposta,
+            descontoPct: calcDescontoPct(pu, nextProposta),
           }
         }),
       )
     },
-    [catalog, canEditProducts, canOverrideFloor, pricingContext],
+    [canEditProducts, catalog, pricingContext],
+  )
+
+  const setLineDescontoPct = useCallback(
+    (lineId, descontoPct) => {
+      if (!canEditProducts) return
+      const pct = normalizeDescontoPct(descontoPct)
+      setLines((prev) =>
+        prev.map((line) => {
+          if (line.id !== lineId) return line
+          const product = line.productId
+            ? catalog.find((p) => p.id === line.productId)
+            : null
+          const pu = resolvePrecoUnitario(
+            product,
+            pricingContext,
+            line.overrides,
+          )
+          return {
+            ...line,
+            descontoPct: pct,
+            proposta: calcPropostaFromDesconto(pu, pct),
+          }
+        }),
+      )
+    },
+    [canEditProducts, catalog, pricingContext],
   )
 
   const setLineOverride = useCallback(
@@ -635,23 +758,61 @@ export function useSimulation(options = {}) {
           } else {
             nextOverrides[field] = Number(value)
           }
-          return { ...line, overrides: normalizeOverrides(nextOverrides) }
+          const overrides = normalizeOverrides(nextOverrides)
+          const product = line.productId
+            ? catalog.find((p) => p.id === line.productId)
+            : null
+          const pu = resolvePrecoUnitario(product, pricingContext, overrides)
+          const hasDesconto =
+            line.descontoPct != null && Number.isFinite(Number(line.descontoPct))
+          const descontoPct = hasDesconto
+            ? normalizeDescontoPct(line.descontoPct)
+            : calcDescontoPct(
+                resolvePrecoUnitario(product, pricingContext, line.overrides),
+                line.proposta,
+              )
+          return {
+            ...line,
+            overrides,
+            descontoPct,
+            proposta: calcPropostaFromDesconto(pu, descontoPct),
+          }
         }),
       )
     },
-    [isGestor, canEditProducts],
+    [isGestor, canEditProducts, catalog, pricingContext],
   )
 
   const clearLineOverride = useCallback(
     (lineId) => {
       if (!isGestor || !canEditProducts) return
       setLines((prev) =>
-        prev.map((line) =>
-          line.id === lineId ? { ...line, overrides: undefined } : line,
-        ),
+        prev.map((line) => {
+          if (line.id !== lineId) return line
+          const product = line.productId
+            ? catalog.find((p) => p.id === line.productId)
+            : null
+          const prevPu = resolvePrecoUnitario(
+            product,
+            pricingContext,
+            line.overrides,
+          )
+          const pu = resolvePrecoUnitario(product, pricingContext, undefined)
+          const hasDesconto =
+            line.descontoPct != null && Number.isFinite(Number(line.descontoPct))
+          const descontoPct = hasDesconto
+            ? normalizeDescontoPct(line.descontoPct)
+            : calcDescontoPct(prevPu, line.proposta)
+          return {
+            ...line,
+            overrides: undefined,
+            descontoPct,
+            proposta: calcPropostaFromDesconto(pu, descontoPct),
+          }
+        }),
       )
     },
-    [isGestor, canEditProducts],
+    [isGestor, canEditProducts, catalog, pricingContext],
   )
 
   const dismissActionBanner = useCallback(() => setActionBanner(null), [])
@@ -665,11 +826,12 @@ export function useSimulation(options = {}) {
   }, [])
 
   const getLaunchBlockReason = useCallback(() => {
+    if (!estado) return 'Selecione o estado antes de lançar.'
     if (!quarter) return 'Selecione o quarter antes de lançar.'
     if (!tipoFrete) return 'Selecione o tipo de frete.'
     if (!dataPagamento) return 'Informe a data de pagamento.'
     if (tipoFrete === 'CIF') {
-      if (!origemFrete?.trim()) return 'Selecione a origem do frete.'
+      if (!origemFrete?.trim()) return 'Origem do frete indisponível para o estado.'
       if (!destinoFrete?.trim()) return 'Selecione o destino do frete.'
     }
     if (lines.length === 0) return 'Inclua ao menos um produto.'
@@ -693,6 +855,7 @@ export function useSimulation(options = {}) {
     canOverrideFloor,
     dataPagamento,
     destinoFrete,
+    estado,
     globalStatus,
     lines,
     origemFrete,
@@ -706,7 +869,13 @@ export function useSimulation(options = {}) {
     setLines((prev) =>
       prev.map((line) =>
         line.productId && !ids.has(line.productId)
-          ? { ...line, productId: '', proposta: 0, overrides: undefined }
+          ? {
+              ...line,
+              productId: '',
+              proposta: 0,
+              descontoPct: 0,
+              overrides: undefined,
+            }
           : line,
       ),
     )
@@ -722,18 +891,29 @@ export function useSimulation(options = {}) {
       setClientId(bundle.client.id ?? null)
       setClientNameState(bundle.client.nome)
       setClientCnpjCpfState(parseCpfCnpjInput(bundle.client.cnpj_cpf ?? ''))
-      setEstadoState(bundle.client.uf || null)
+      // Estado da operação (lista/origem) — nunca o UF cadastral do cliente.
+      const estadoFromItems = bundle.items.find(
+        (it) => it.product?.estado,
+      )?.product?.estado
+      const nextEstado =
+        estadoFromItems || simulation.pedido_uf || null
+      setEstadoState(nextEstado)
       setDataPagamentoState(bundle.simulation.data_pagamento ?? '')
       setDataNegociacao(
         simulation.created_at
           ? String(simulation.created_at).slice(0, 10)
           : todayDateOnly(),
       )
-      setTipoFreteState(bundle.simulation.tipo_frete ?? null)
-      setOrigemFreteState(bundle.simulation.origem_frete ?? '')
+      const nextTipoFrete = bundle.simulation.tipo_frete ?? null
+      setTipoFreteState(nextTipoFrete)
+      const origemSalva = bundle.simulation.origem_frete ?? ''
+      setOrigemFreteState(
+        nextTipoFrete === 'CIF'
+          ? origemSalva || resolveOrigemFreteByEstado(nextEstado)
+          : '',
+      )
       setDestinoFreteState(bundle.simulation.destino_frete ?? '')
       setQuarterState(bundle.simulation.quarter ?? null)
-      setObservacoesState(bundle.simulation.observacoes ?? '')
       setActionBanner(null)
       setGestorAlteracao(
         simulation.gestor_alteracao_em
@@ -757,9 +937,15 @@ export function useSimulation(options = {}) {
           const base = {
             id: it.id,
             productId: it.product_id,
+            fornecedorId:
+              catalog.find((p) => p.id === it.product_id)?.fornecedorId ?? '',
             cultura: it.cultura ?? CULTURES[0] ?? '',
             volume: it.volume,
             proposta: roundMoney(it.proposta),
+            descontoPct: calcDescontoPct(
+              Number(it.preco_unitario) || 0,
+              it.proposta,
+            ),
             overrides: normalizeOverrides({
               custoUsd: it.override_custo_usd ?? undefined,
               descontoUsd: it.override_desconto_usd ?? undefined,
@@ -816,7 +1002,7 @@ export function useSimulation(options = {}) {
         setFrozenTotals(null)
       }
     },
-    [isGestor, icmsPercentual, pisCofinsPercentual],
+    [catalog, isGestor, icmsPercentual, pisCofinsPercentual],
   )
 
   const resetLocal = useCallback(() => {
@@ -833,7 +1019,6 @@ export function useSimulation(options = {}) {
     setOrigemFreteState('')
     setDestinoFreteState('')
     setQuarterState(null)
-    setObservacoesState('')
     setLines([])
     setActionBanner(null)
   }, [])
@@ -854,7 +1039,6 @@ export function useSimulation(options = {}) {
       origemFrete,
       destinoFrete,
       quarter,
-      observacoes,
       lines,
     })
   }, [
@@ -868,9 +1052,36 @@ export function useSimulation(options = {}) {
     origemFrete,
     destinoFrete,
     quarter,
-    observacoes,
     lines,
   ])
+
+  // Mantém proposta = valor unitário − desconto% quando a tabela muda.
+  useEffect(() => {
+    if (isReadOnly) return
+    setLines((prev) => {
+      let changed = false
+      const next = prev.map((line) => {
+        if (!line.productId || line.snapshot) return line
+        const product = catalog.find((p) => p.id === line.productId)
+        if (!product) return line
+        const pu = resolvePrecoUnitario(product, pricingContext, line.overrides)
+        const hasDesconto =
+          line.descontoPct != null && Number.isFinite(Number(line.descontoPct))
+        // Draft antigo sem %: só deriva o desconto, sem alterar a proposta.
+        if (!hasDesconto) {
+          const derived = calcDescontoPct(pu, line.proposta)
+          changed = true
+          return { ...line, descontoPct: derived }
+        }
+        const descontoPct = normalizeDescontoPct(line.descontoPct)
+        const expected = calcPropostaFromDesconto(pu, descontoPct)
+        if (roundMoney(line.proposta) === expected) return line
+        changed = true
+        return { ...line, descontoPct, proposta: expected }
+      })
+      return changed ? next : prev
+    })
+  }, [catalog, pricingContext, isReadOnly])
 
   return {
     catalog,
@@ -895,8 +1106,6 @@ export function useSimulation(options = {}) {
     setDestinoFrete,
     quarter,
     setQuarter,
-    observacoes,
-    setObservacoes,
     lines: lineViews,
     simulationLines: lines,
     totalValor,
@@ -919,9 +1128,11 @@ export function useSimulation(options = {}) {
     addLine,
     removeLine,
     setLineProduct,
+    setLineFornecedor,
     setLineCultura,
     setLineVolume,
     setLineProposta,
+    setLineDescontoPct,
     setLineOverride,
     clearLineOverride,
     lockAsPending,

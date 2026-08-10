@@ -1,4 +1,4 @@
-import { memo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { EditableNumber } from "../ui/EditableNumber";
 import { Select } from "../ui/Select";
 import { IconSliders } from "../icons";
@@ -9,17 +9,38 @@ import {
   getLineAutonomiaTintClass,
 } from "./LineAutonomiaBadge";
 import { formatBRL, formatPercent } from "../../utils/money";
+import { formatProdutoDisplayNome } from "../../constants/mapeamentoCampos";
+
+function filterProductsByFornecedor(productOptions, fornecedorId) {
+  if (!fornecedorId) return productOptions;
+  return productOptions.filter(
+    (p) => String(p.fornecedorId ?? "") === String(fornecedorId),
+  );
+}
+
+function productOptionLabel(product, omitFornecedor) {
+  const label = formatProdutoDisplayNome({
+    nome: product.nome,
+    referencia_complementar: product.referenciaComplementar,
+    fornecedor_nome: product.fornecedorNome,
+    omitFornecedor,
+  });
+  return label || product.displayNome || product.nome || "—";
+}
 
 export const SimulationLineCard = memo(function SimulationLineCard({
   row,
   cultureOptions,
   productOptions,
+  fornecedorOptions = [],
   isReadOnly,
   canOverrideFloor,
   onVolumeChange,
   onCulturaChange,
+  onFornecedorChange,
   onProductChange,
   onPropostaChange,
+  onDescontoPctChange,
   onOverrideChange,
   onClearOverride,
   onRemove,
@@ -27,6 +48,10 @@ export const SimulationLineCard = memo(function SimulationLineCard({
   const selectClass = "text-xs";
   const [overridesOpen, setOverridesOpen] = useState(false);
   const hasOverride = Boolean(row.overrides);
+  const filteredProducts = useMemo(
+    () => filterProductsByFornecedor(productOptions, row.fornecedorId),
+    [productOptions, row.fornecedorId],
+  );
 
   return (
     <article
@@ -93,6 +118,21 @@ export const SimulationLineCard = memo(function SimulationLineCard({
           options={cultureOptions.map((c) => ({ value: c, label: c }))}
           disabled={isReadOnly}
           className={selectClass}
+          editableHint
+        />
+        <Select
+          label="Fornecedor"
+          size="compact"
+          placeholder="Selecione…"
+          value={row.fornecedorId ?? ""}
+          onChange={(e) => onFornecedorChange(e.target.value)}
+          options={fornecedorOptions.map((f) => ({
+            value: f.id,
+            label: f.nome,
+          }))}
+          disabled={isReadOnly}
+          className={selectClass}
+          editableHint
         />
         <Select
           label="Produto"
@@ -100,27 +140,47 @@ export const SimulationLineCard = memo(function SimulationLineCard({
           placeholder="Selecione…"
           value={row.productId ?? ""}
           onChange={(e) => onProductChange(e.target.value)}
-          options={productOptions.map((p) => ({ value: p.id, label: p.nome }))}
+          options={filteredProducts.map((p) => ({
+            value: p.id,
+            label: productOptionLabel(p, Boolean(row.fornecedorId)),
+          }))}
           disabled={isReadOnly}
           className={selectClass}
+          editableHint
         />
-        <div className="rounded-xl border border-primary-200/80 bg-primary-50/60 p-2 sm:col-span-2">
+        <div className="rounded-xl border border-slate-100 bg-white p-2 sm:col-span-2">
           <div className="flex items-end justify-between gap-2">
-            <div className="min-w-0 flex-1">
-              <label className="mb-1 block text-[11px] font-semibold text-primary-800">
-                Proposta un.
-              </label>
-              <EditableNumber
-                value={row.proposta}
-                onChange={onPropostaChange}
-                disabled={isReadOnly}
-                min={0}
-                step={0.01}
-                decimals={2}
-                ariaLabel="Proposta unitária"
-                className="text-sm"
-                emphasized
-              />
+            <div className="grid min-w-0 flex-1 grid-cols-2 gap-2">
+              <div className="min-w-0">
+                <label className="mb-1 block text-[11px] font-semibold text-slate-600">
+                  Desconto %
+                </label>
+                <EditableNumber
+                  value={row.descontoPct ?? 0}
+                  onChange={onDescontoPctChange}
+                  disabled={isReadOnly}
+                  min={0}
+                  step={0.01}
+                  decimals={2}
+                  ariaLabel="Desconto percentual"
+                  className="text-sm"
+                />
+              </div>
+              <div className="min-w-0">
+                <label className="mb-1 block text-[11px] font-semibold text-slate-600">
+                  Proposta un.
+                </label>
+                <EditableNumber
+                  value={row.proposta}
+                  onChange={onPropostaChange}
+                  disabled={isReadOnly}
+                  min={0}
+                  step={0.01}
+                  decimals={2}
+                  ariaLabel="Proposta unitária"
+                  className="text-sm"
+                />
+              </div>
             </div>
             <LineAutonomiaBadge
               isLineBelowFloor={row.isLineBelowFloor}

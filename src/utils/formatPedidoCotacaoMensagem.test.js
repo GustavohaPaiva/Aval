@@ -59,22 +59,48 @@ describe('buildEnderecoEntregaCif', () => {
 })
 
 describe('formatPedidoCotacaoMensagem', () => {
-  it('formata cotação CIF com BRL e data de pagamento', () => {
+  it('formata cotação CIF vertical com negrito WhatsApp', () => {
     const text = formatPedidoCotacaoMensagem(sampleBundle())
     expect(text).toContain('Cotação:')
-    expect(text).toContain('Cliente: Cliente Exemplo')
+    expect(text).toContain('Cliente: *Cliente Exemplo*')
     expect(text).toContain('Data de vencimento: 15/09/2026')
-    expect(text).toContain('CIF — Fazenda Boa Vista')
-    expect(text).toContain('Soja - 100 ton - YaraBasa Ideal Plus · Yara')
-    expect(text).toContain('VU: R$')
-    expect(text).toContain('VT: R$')
+    expect(text).toContain('Tipo de entrega: CIF (destino: UBERABA)')
+    expect(text).toContain('Cultura: Soja')
+    expect(text).toContain('Volume: 100 ton')
+    expect(text).toContain('Produto: YaraBasa Ideal Plus · Yara')
+    expect(text).toContain('Val. Unt.: *')
+    expect(text).toContain('Val. Tot.: *')
+    expect(text).toContain(
+      'Os preços estão sujeitos a alterações devido a variação cambial ou por retiradas de listas.',
+    )
+    expect(text.indexOf('Volume: 100 ton')).toBeLessThan(
+      text.indexOf('Volume: 50 ton'),
+    )
+    expect(text).not.toContain('VU:')
+    expect(text).not.toContain('Soja - 100 ton')
   })
 
-  it('formata FOB sem endereço', () => {
+  it('formata FOB sem destino', () => {
     const text = formatPedidoCotacaoMensagem(
       sampleBundle({ simulation: { tipo_frete: 'FOB' } }),
     )
-    expect(text).toContain('\nFOB\n')
-    expect(text).not.toContain('CIF —')
+    expect(text).toContain('Tipo de entrega: FOB')
+    expect(text).not.toContain('destino:')
+    expect(text).not.toContain('CIF')
+  })
+
+  it('repete bloco por produto com linha em branco entre eles', () => {
+    const text = formatPedidoCotacaoMensagem(sampleBundle())
+    expect(text).toMatch(
+      /Cultura: Soja\nVolume: 100 ton\nProduto: YaraBasa Ideal Plus · Yara\nVal\. Unt\.: \*[^\n]+\*\nVal\. Tot\.: \*[^\n]+\*\n\nCultura: Soja\nVolume: 50 ton/,
+    )
+  })
+
+  it('coloca o aviso uma vez no rodapé', () => {
+    const text = formatPedidoCotacaoMensagem(sampleBundle())
+    const aviso =
+      'Os preços estão sujeitos a alterações devido a variação cambial ou por retiradas de listas.'
+    expect(text.endsWith(aviso)).toBe(true)
+    expect(text.split(aviso).length - 1).toBe(1)
   })
 })

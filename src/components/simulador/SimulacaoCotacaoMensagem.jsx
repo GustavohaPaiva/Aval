@@ -1,12 +1,15 @@
 import { useMemo, useState } from 'react'
 import { formatPedidoCotacaoMensagem } from '../../utils/formatPedidoCotacaoMensagem'
 import { Button } from '../ui/Button'
-import { Card } from '../ui/Card'
+import {
+  SIMULADOR_SECTION_ICONS,
+  SimuladorSectionPanel,
+} from './SimuladorVisuals'
 
 /**
- * Bloco com a mensagem de cotação em texto + botão copiar.
+ * Bloco com a mensagem de cotação em texto + botão copiar (tela de Simulação).
  */
-export function PedidoCotacaoMensagem({ bundle }) {
+export function SimulacaoCotacaoMensagem({ bundle }) {
   const [copied, setCopied] = useState(false)
   const mensagem = useMemo(
     () => formatPedidoCotacaoMensagem(bundle),
@@ -27,11 +30,12 @@ export function PedidoCotacaoMensagem({ bundle }) {
   if (!mensagem) return null
 
   return (
-    <Card className="mb-6 rounded-3xl">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold text-primary-800">
-          Mensagem da cotação
-        </h2>
+    <SimuladorSectionPanel
+      icon={SIMULADOR_SECTION_ICONS.cotacao}
+      title="Mensagem da cotação"
+      description="Texto pronto para enviar ao cliente (WhatsApp / e-mail)."
+      gradient="from-primary-50/70 via-white to-sky-50/40"
+      actions={
         <Button
           type="button"
           variant="secondary"
@@ -40,7 +44,8 @@ export function PedidoCotacaoMensagem({ bundle }) {
         >
           {copied ? 'Copiado!' : 'Copiar mensagem'}
         </Button>
-      </div>
+      }
+    >
       <textarea
         readOnly
         value={mensagem}
@@ -49,6 +54,6 @@ export function PedidoCotacaoMensagem({ bundle }) {
         onFocus={(e) => e.target.select()}
         aria-label="Mensagem da cotação para copiar"
       />
-    </Card>
+    </SimuladorSectionPanel>
   )
 }

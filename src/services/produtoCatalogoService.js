@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { CATALOG_PRODUCTS } from '../constants/catalogProducts'
+import { formatProdutoDisplayNome } from '../constants/mapeamentoCampos'
 import { lookupFreteValor } from './freteService'
 import {
   calcCustoIcmsFromBrl,
@@ -43,9 +44,11 @@ export async function fetchCatalogoSimulador({ quarter, estado } = {}) {
 
   const rows = (data ?? []).map((p) => {
     const fornecedorNome = p.fornecedores?.nome ?? ''
-    const displayNome = [p.nome, p.referencia_complementar, fornecedorNome]
-      .filter((x) => String(x ?? '').trim())
-      .join(' · ')
+    const displayNome = formatProdutoDisplayNome({
+      nome: p.nome,
+      referencia_complementar: p.referencia_complementar,
+      fornecedor_nome: fornecedorNome,
+    })
 
     const custoUsd = Number(p.preco_original ?? 0)
     const descontoUsd = Number(p.desconto_usd ?? 0)
@@ -58,6 +61,7 @@ export async function fetchCatalogoSimulador({ quarter, estado } = {}) {
       nome: p.nome,
       displayNome,
       referenciaComplementar: p.referencia_complementar ?? '',
+      fornecedorId: p.fornecedor_id ? String(p.fornecedor_id) : '',
       fornecedorNome,
       estado: p.estado,
       classe: p.classe,
@@ -87,7 +91,8 @@ export function getFallbackCatalog(icmsPercentual = DEFAULT_ICMS_PERCENTUAL) {
     ...p,
     displayNome: p.nome,
     referenciaComplementar: '',
-    fornecedorNome: '',
+    fornecedorId: p.fornecedorId ?? '',
+    fornecedorNome: p.fornecedorNome ?? '',
     estado: 'MG',
     classe: 'Convencional',
     moedaOrigem: 'BRL',

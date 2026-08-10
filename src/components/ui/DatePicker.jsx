@@ -7,9 +7,13 @@ import {
   useRef,
   useState,
 } from "react";
-import { IconCalendar, IconChevronDown } from "../icons";
+import { IconCalendar, IconChevronDown, IconPencil } from "../icons";
 import { useDropdownPosition } from "../../hooks/useDropdownPosition";
 import { DropdownPortal } from "./DropdownPortal";
+import {
+  EDITABLE_HINT_BORDER,
+  EDITABLE_HINT_CURSOR,
+} from "./editableFieldHint";
 
 const WEEKDAYS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 const MONTHS = [
@@ -100,7 +104,10 @@ export const DatePicker = forwardRef(function DatePicker(
     error,
     id: idProp,
     disabled = false,
+    /** YYYY-MM-DD — dias anteriores ficam desabilitados */
+    minDate = "",
     className = "",
+    editableHint = false,
   },
   ref,
 ) {
@@ -145,14 +152,25 @@ export const DatePicker = forwardRef(function DatePicker(
     setIsOpen(true);
   }, [disabled, selectedDate, today]);
 
+  const isDateDisabled = useCallback(
+    (date) => {
+      const min = parseISODate(minDate);
+      if (!min) return false;
+      return toISO(date) < toISO(min);
+    },
+    [minDate],
+  );
+
   const selectDate = useCallback(
     (day) => {
-      const next = toISO(new Date(viewYear, viewMonth, day));
+      const nextDate = new Date(viewYear, viewMonth, day);
+      if (isDateDisabled(nextDate)) return;
+      const next = toISO(nextDate);
       onChange?.(createSyntheticChangeEvent(next));
       close();
       triggerRef.current?.focus();
     },
-    [close, onChange, viewMonth, viewYear],
+    [close, isDateDisabled, onChange, viewMonth, viewYear],
   );
 
   const clearDate = useCallback(() => {
@@ -209,6 +227,7 @@ export const DatePicker = forwardRef(function DatePicker(
 
   const displayValue = formatDisplay(value);
   const calendarDays = buildCalendarDays(viewYear, viewMonth);
+  const showEditableHint = editableHint && !disabled;
 
   return (
     <div className={["flex w-full flex-col gap-1.5", className].filter(Boolean).join(" ")}>
@@ -233,7 +252,11 @@ export const DatePicker = forwardRef(function DatePicker(
           hasError
             ? "border-feedback-error focus:border-feedback-error focus:ring-feedback-error/25"
             : "border-gray-200",
-        ].join(" ")}
+          showEditableHint ? EDITABLE_HINT_BORDER : "",
+          showEditableHint ? EDITABLE_HINT_CURSOR : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
       >
         <IconCalendar className="size-4 shrink-0 text-slate-400" />
         <span
@@ -244,6 +267,12 @@ export const DatePicker = forwardRef(function DatePicker(
         >
           {displayValue || placeholder}
         </span>
+        {showEditableHint ? (
+          <IconPencil
+            aria-hidden
+            className="size-3.5 shrink-0 text-slate-400/75"
+          />
+        ) : null}
         <IconChevronDown
           className={[
             "size-4 shrink-0 text-slate-400 transition-transform",
@@ -315,19 +344,24 @@ export const DatePicker = forwardRef(function DatePicker(
                   ? isSameDay(cellDate, selectedDate)
                   : false;
                 const isToday = isSameDay(cellDate, today);
+                const dayDisabled = isDateDisabled(cellDate) && !isSelected;
 
                 return (
                   <button
                     key={`${viewYear}-${viewMonth}-${day}`}
                     type="button"
+                    disabled={dayDisabled}
+                    aria-disabled={dayDisabled || undefined}
                     onClick={() => selectDate(day)}
                     className={[
                       "flex size-9 items-center justify-center rounded-xl text-sm transition-colors",
-                      isSelected
-                        ? "bg-primary-600 font-semibold text-white"
-                        : isToday
-                          ? "bg-primary-50 font-medium text-primary-700"
-                          : "text-slate-700 hover:bg-slate-100",
+                      dayDisabled
+                        ? "cursor-not-allowed text-slate-300"
+                        : isSelected
+                          ? "bg-primary-600 font-semibold text-white"
+                          : isToday
+                            ? "bg-primary-50 font-medium text-primary-700"
+                            : "text-slate-700 hover:bg-slate-100",
                     ].join(" ")}
                   >
                     {day}

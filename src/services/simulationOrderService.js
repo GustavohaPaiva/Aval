@@ -1,5 +1,6 @@
 import { isPedidoStatus, PEDIDO_STATUSES } from '../constants/simulationStatus';
 import { ESTADO_UF_VALUES } from '../constants/simulator';
+import { isPrazoSemanaAllowed } from '../utils/calendarWeek';
 import { roundMoney } from '../utils/roundMoney';
 import { parseCpfCnpjInput } from '../utils/dataFormatters';
 import { formatBRL } from '../utils/money';
@@ -53,7 +54,6 @@ async function resolveClientId(input) {
         .insert({
             nome,
             cnpj_cpf: cnpj,
-            uf: input.estado ?? null,
             ativo: true,
         })
         .select('id')
@@ -83,7 +83,6 @@ function buildSimulationFields(input, status) {
         destino_frete: input.destinoFrete?.trim() || null,
         data_pagamento: input.dataPagamento || null,
         quarter: input.quarter ?? null,
-        observacoes: input.observacoes?.trim() || null,
     };
     if (input.comissaoValorTotal != null) {
         fields.comissao_valor_total = roundMoney(input.comissaoValorTotal);
@@ -479,6 +478,10 @@ function parseBundle(data) {
             pedido_uf: row.pedido_uf != null ? String(row.pedido_uf) : null,
             prazo_dias:
                 row.prazo_dias != null ? Number(row.prazo_dias) : 14,
+            prazo_semana_inicio:
+                row.prazo_semana_inicio != null
+                    ? String(row.prazo_semana_inicio).slice(0, 10)
+                    : null,
             valores_congelados_em:
                 row.valores_congelados_em != null
                     ? String(row.valores_congelados_em)
@@ -523,6 +526,7 @@ export async function fetchSimulationOrderBundle(simulationId) {
       pedido_municipio,
       pedido_uf,
       prazo_dias,
+      prazo_semana_inicio,
       valores_congelados_em,
       gestor_alteracao_em,
       gestor_alteracao_por,
@@ -1460,14 +1464,18 @@ export async function fetchConsultorDashboardStats(userId) {
  *   fazenda: string,
  *   pedidoMunicipio: string,
  *   pedidoUf: string,
- *   prazoDias: number,
+ *   prazoSemanaInicio: string,
+ *   observacoes?: string | null,
  * }} input
  */
 export async function updatePedidoFields(input) {
     const fazenda = String(input.fazenda ?? '').trim()
     const pedidoMunicipio = String(input.pedidoMunicipio ?? '').trim()
     const pedidoUf = String(input.pedidoUf ?? '').trim().toUpperCase()
-    const prazoDias = Number(input.prazoDias)
+    const prazoSemanaInicio = String(input.prazoSemanaInicio ?? '')
+        .trim()
+        .slice(0, 10)
+    const observacoes = String(input.observacoes ?? '').trim() || null
 
     if (!fazenda) {
         return { ok: false, error: 'Informe o nome da fazenda.' }
@@ -1478,8 +1486,8 @@ export async function updatePedidoFields(input) {
     if (!ESTADO_UF_VALUES.includes(pedidoUf)) {
         return { ok: false, error: 'Selecione o estado.' }
     }
-    if (![7, 14, 21].includes(prazoDias)) {
-        return { ok: false, error: 'Prazo inválido. Use 7, 14 ou 21 dias.' }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(prazoSemanaInicio)) {
+        return { ok: false, error: 'Selecione a semana de entrega.' }
     }
 
     const auth = await requireAuthUser()
@@ -1492,12 +1500,37 @@ export async function updatePedidoFields(input) {
         .maybeSingle()
 
     const isGestor = profile?.role === 'gestor'
+
+    const { data: simCreated, error: simError } = await supabase
+        .from('simulations')
+        .select('created_at, prazo_semana_inicio')
+        .eq('id', input.simulationId)
+        .maybeSingle()
+    if (simError) return { ok: false, error: simError.message }
+    if (!simCreated) return { ok: false, error: 'Pedido não encontrado.' }
+
+    if (
+        !isPrazoSemanaAllowed(prazoSemanaInicio, {
+            createdAt: simCreated.created_at,
+            isGestor,
+            previousWeekStart: simCreated.prazo_semana_inicio,
+        })
+    ) {
+        return {
+            ok: false,
+            error: isGestor
+                ? 'Semana de entrega inválida.'
+                : 'Prazo mínimo de 14 dias corridos a partir da criação do pedido.',
+        }
+    }
+
     const resumo = 'Dados do pedido atualizados'
     const updatePayload = {
         fazenda,
         pedido_municipio: pedidoMunicipio,
         pedido_uf: pedidoUf,
-        prazo_dias: prazoDias,
+        prazo_semana_inicio: prazoSemanaInicio,
+        observacoes,
         updated_at: new Date().toISOString(),
     }
     if (isGestor) {

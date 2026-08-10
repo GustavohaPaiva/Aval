@@ -1,4 +1,4 @@
-import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAlertDialog } from '../contexts/AlertDialogProvider'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { AtribuirConsultorPanel } from "../components/AtribuirConsultorPanel";
@@ -10,22 +10,20 @@ import {
 } from "../components/simulador/SimuladorVisuals";
 import { SimulationLineCard } from "../components/simulador/SimulationLineCard";
 import { SimulationLinesTable } from "../components/simulador/SimulationLinesTable";
-import { SimulacaoPdfDocument } from "../components/simulador/SimulacaoPdfDocument";
-import { PdfPreviewModal } from "../components/pdf/PdfPreviewModal";
+import { SimulacaoCotacaoMensagem } from "../components/simulador/SimulacaoCotacaoMensagem";
 import { IconClipboardList } from "../components/icons";
 import { AlertMessage } from "../components/ui/AlertMessage";
 import { Button } from "../components/ui/Button";
 import { Combobox } from "../components/ui/Combobox";
 import { EmptyState } from "../components/ui/EmptyState";
 import { FormattedInput } from "../components/ui/FormattedInput";
-import { BotaoAssistenteIA, CampoTextoComIA } from "../components/ui/CampoTextoComIA";
 import { DatePicker } from "../components/ui/DatePicker";
 import { PageBackLink } from "../components/ui/PageBackLink";
 import { PageHeader } from "../components/ui/PageHeader";
 import { PageInfoBanner } from "../components/ui/InfoStatCard";
 import { Select } from "../components/ui/Select";
 import { FREIGHT_TYPES, QUARTERS, STATES } from "../constants/simulator";
-import { FRETE_ORIGENS } from "../constants/fretes";
+import { FRETE_ORIGENS, resolveOrigemFreteByEstado } from "../constants/fretes";
 import { isPedidoStatus } from "../constants/simulationStatus";
 import { useAbortableAsync } from "../hooks/useAbortableAsync";
 import { useAuth } from "../hooks/useAuth";
@@ -40,7 +38,6 @@ import {
   searchClients,
   updateSimulationStatus,
 } from "../services/simulationOrderService";
-import { buildPdfBlobFromReactNode } from "../services/renderReactPdf";
 import { notifyGestoresSimulationPending } from "../services/notificationService";
 import { fetchComissaoFaixas } from "../services/comissaoService";
 import {
@@ -49,7 +46,6 @@ import {
 import { fetchParametrosSistema } from "../services/parametrosService";
 import {
   fetchFreteDestinosAtivos,
-  fetchFreteOrigensAtivas,
   lookupFreteValor,
 } from "../services/freteService";
 import { formatBRL } from "../utils/money";
@@ -60,12 +56,11 @@ import { DEFAULT_ICMS_PERCENTUAL, DEFAULT_MARGEM_PERCENTUAL } from "../utils/pri
 export function Simulador() {
   const [searchParams] = useSearchParams();
   const simulationId = searchParams.get("simulationId");
-  const { role, profile } = useAuth();
+  const { role } = useAuth();
   const [catalog, setCatalog] = useState([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogReady, setCatalogReady] = useState(false);
   const [freteUnitario, setFreteUnitario] = useState(0);
-  const [freteOrigens, setFreteOrigens] = useState([]);
   const [freteDestinos, setFreteDestinos] = useState([]);
   const [freteLookupError, setFreteLookupError] = useState(null);
   const [icmsPercentual, setIcmsPercentual] = useState(DEFAULT_ICMS_PERCENTUAL);
@@ -91,8 +86,14 @@ export function Simulador() {
   const navigate = useNavigate();
   const { showAlert } = useAlertDialog();
   const wasRemoteSimRef = useRef(Boolean(simulationId));
-  const [pdfPreview, setPdfPreview] = useState(null);
-  const [pdfError, setPdfError] = useState(null);
+  const hydrateFromBundleRef = useRef(sim.hydrateFromBundle);
+  const resetLocalRef = useRef(sim.resetLocal);
+  const clearDraftRef = useRef(sim.clearDraft);
+  const navigateRef = useRef(navigate);
+  hydrateFromBundleRef.current = sim.hydrateFromBundle;
+  resetLocalRef.current = sim.resetLocal;
+  clearDraftRef.current = sim.clearDraft;
+  navigateRef.current = navigate;
   const [assignedUserId, setAssignedUserId] = useState(null);
   const [assignedVendedorNome, setAssignedVendedorNome] = useState(null);
 
@@ -122,10 +123,8 @@ export function Simulador() {
   const [reviewDeciding, setReviewDeciding] = useState(null);
   const [reviewError, setReviewError] = useState(null);
   const [remoteStatus, setRemoteStatus] = useState(null);
-  const observacoesIARef = useRef(null);
-
   const loadCatalog = useCallback(async (quarter, estado, isActive) => {
-    if (!quarter) {
+    if (!quarter || !estado) {
       setCatalog([]);
       setCatalogLoading(false);
       setCatalogReady(false);
@@ -136,7 +135,7 @@ export function Simulador() {
     setCatalogReady(false);
     const res = await fetchCatalogoSimulador({
       quarter,
-      estado: estado || undefined,
+      estado,
     });
     if (isActive && !isActive()) return;
     setCatalogLoading(false);
@@ -209,16 +208,6 @@ export function Simulador() {
 
   useAbortableAsync(
     async (_signal, isActive) => {
-      if (sim.tipoFrete !== "CIF") return;
-      const res = await fetchFreteOrigensAtivas();
-      if (isActive && !isActive()) return;
-      setFreteOrigens(res.ok ? res.values : []);
-    },
-    [sim.tipoFrete],
-  );
-
-  useAbortableAsync(
-    async (_signal, isActive) => {
       if (sim.tipoFrete !== "CIF" || !sim.origemFrete) {
         if (isActive && !isActive()) return;
         setFreteDestinos([]);
@@ -256,8 +245,8 @@ export function Simulador() {
     async (_signal, isActive) => {
       if (!simulationId) {
         if (wasRemoteSimRef.current) {
-          sim.resetLocal();
-          sim.clearDraft();
+          resetLocalRef.current();
+          clearDraftRef.current();
         }
         wasRemoteSimRef.current = false;
         setRemoteStatus(null);
@@ -269,15 +258,17 @@ export function Simulador() {
       const result = await fetchSimulationOrderBundle(simulationId);
       if (!isActive()) return;
       if (!result.ok) {
-        navigate("/simulacoes", { replace: true });
+        navigateRef.current("/simulacoes", { replace: true });
         return;
       }
-      sim.hydrateFromBundle(result.data);
+      hydrateFromBundleRef.current(result.data);
       setRemoteStatus(result.data.simulation.status ?? null);
       setAssignedUserId(result.data.simulation.user_id ?? null);
       setAssignedVendedorNome(result.data.vendedorNome ?? null);
     },
-    [simulationId, navigate, sim.hydrateFromBundle, sim.resetLocal, sim.clearDraft],
+    // Só reage ao simulationId: hydrateFromBundle muda com o catálogo e
+    // re-hidratar resetava o estado da lista.
+    [simulationId],
   );
 
   const handleConsultorAssigned = useCallback((result) => {
@@ -364,11 +355,13 @@ export function Simulador() {
   }
 
   function getSaveBlockReason() {
+    if (!sim.estado) return "Selecione o estado antes de salvar.";
     if (!sim.quarter) return "Selecione o quarter antes de salvar.";
     if (!sim.tipoFrete) return "Selecione o tipo de frete.";
     if (!sim.dataPagamento) return "Informe a data de pagamento.";
     if (sim.tipoFrete === "CIF") {
-      if (!sim.origemFrete?.trim()) return "Selecione a origem do frete.";
+      if (!sim.origemFrete?.trim())
+        return "Origem do frete indisponível para o estado.";
       if (!sim.destinoFrete?.trim()) return "Selecione o destino do frete.";
       if (freteLookupError) return freteLookupError;
     }
@@ -419,140 +412,46 @@ export function Simulador() {
     }
   }
 
-  const pdfSnapshot = useMemo(
-    () => ({
-      id: simulationId,
-      clientName: sim.clientName,
-      clientCnpjCpf: sim.clientCnpjCpf,
-      dataPagamento: sim.dataPagamento,
-      tipoFrete: sim.tipoFrete,
-      origemFrete: sim.origemFrete,
-      destinoFrete: sim.destinoFrete,
-      quarter: sim.quarter,
-      observacoes: sim.observacoes,
-      totalProposta: sim.totalProposta,
-      lines: sim.lines.map((row) => ({
-        id: row.id,
-        volume: row.volume,
-        proposta: row.proposta,
-        cultura: row.cultura,
-        displayNome: row.displayNome,
-      })),
-    }),
-    [
-      simulationId,
-      sim.clientName,
-      sim.clientCnpjCpf,
-      sim.dataPagamento,
-      sim.tipoFrete,
-      sim.origemFrete,
-      sim.destinoFrete,
-      sim.quarter,
-      sim.observacoes,
-      sim.totalProposta,
-      sim.lines,
-    ],
-  );
+  const cotacaoBundle = useMemo(() => {
+    if (!sim.clientName.trim()) return null;
 
-  const canGeneratePdf =
-    Boolean(sim.clientName.trim()) &&
-    sim.lines.length > 0 &&
-    (!sim.isReadOnly || Boolean(simulationId));
-
-  const isDraftEditable =
-    !sim.isReadOnly && (!remoteStatus || remoteStatus === "draft");
-
-  const pdfNomeFallback = useMemo(() => {
-    const safeName = (sim.clientName || "cliente")
-      .replace(/[^\w-]+/g, "_")
-      .slice(0, 40);
-    const suffix = simulationId
-      ? String(simulationId).replace(/\D/g, "").slice(-5) || "sim"
-      : "rascunho";
-    return `proposta-syagri-simulacao-${suffix}-${safeName}.pdf`;
-  }, [sim.clientName, simulationId]);
-
-  async function handleGerarPdf() {
-    if (!canGeneratePdf) return;
-
-    setPdfError(null);
-
-    const frozenSnapshot = {
-      ...pdfSnapshot,
-      lines: pdfSnapshot.lines.map((row) => ({ ...row })),
-    };
-    const frozenVendedor =
-      assignedVendedorNome?.trim() || profile?.nome || "";
-    let snapshotForPdf = frozenSnapshot;
-    let nomeForPdf = pdfNomeFallback;
-    /** @type {string | null} */
-    let navigateToId = null;
-
-    const needsDraftSave = isDraftEditable;
-
-    if (needsDraftSave) {
-      const blockReason = getSaveBlockReason();
-      if (blockReason) {
-        setPdfError(blockReason);
-        return;
-      }
-      if (!ensureValidClientDocument()) return;
-
-      setSavingDraft(true);
-      try {
-        const result = await saveDraftSimulation(buildSimulationPayload());
-        if (!result.ok) {
-          setPdfError(result.error);
-          return;
-        }
-        sim.clearDraft();
-        setRemoteStatus("draft");
-        if (!simulationId) {
-          navigateToId = result.simulationId;
-          snapshotForPdf = { ...frozenSnapshot, id: result.simulationId };
-          const safeName = (frozenSnapshot.clientName || "cliente")
-            .replace(/[^\w-]+/g, "_")
-            .slice(0, 40);
-          const suffix =
-            String(result.simulationId).replace(/\D/g, "").slice(-5) || "sim";
-          nomeForPdf = `proposta-syagri-simulacao-${suffix}-${safeName}.pdf`;
-        }
-      } finally {
-        setSavingDraft(false);
-      }
-    } else if (!simulationId) {
-      setPdfError("Salve a simulação antes de gerar o PDF.");
-      return;
-    }
-
-    setSavingDraft(true);
-    try {
-      const blob = await buildPdfBlobFromReactNode(
-        createElement(SimulacaoPdfDocument, {
-          snapshot: snapshotForPdf,
-          vendedorNome: frozenVendedor,
-        }),
-      );
-      setPdfPreview({
-        titulo: "Proposta comercial",
-        gerador: async () => ({ blob, nomePadrao: nomeForPdf }),
-        nomeFallback: nomeForPdf,
+    const catalogById = new Map(sim.catalog.map((p) => [p.id, p]));
+    const items = sim.lines
+      .filter((row) => row.productId)
+      .map((row) => {
+        const product = catalogById.get(row.productId);
+        return {
+          product_id: row.productId,
+          cultura: row.cultura,
+          volume: row.volume,
+          proposta: row.proposta,
+          product: {
+            nome: product?.nome ?? row.displayNome ?? "",
+            referencia_complementar: product?.referenciaComplementar ?? null,
+            fornecedor_nome: product?.fornecedorNome ?? null,
+          },
+        };
       });
-      if (navigateToId) {
-        navigate(
-          `/simulador?simulationId=${encodeURIComponent(navigateToId)}`,
-          { replace: true },
-        );
-      }
-    } catch (e) {
-      console.error("[Simulador] PDF:", e);
-      setPdfError(
-        e instanceof Error ? e.message : "Não foi possível gerar o PDF.",
-      );
-    } finally {
-      setSavingDraft(false);
-    }
-  }
+
+    return {
+      simulation: {
+        tipo_frete: sim.tipoFrete,
+        data_pagamento: sim.dataPagamento,
+        destino_frete: sim.destinoFrete,
+      },
+      client: {
+        nome: sim.clientName,
+      },
+      items,
+    };
+  }, [
+    sim.catalog,
+    sim.clientName,
+    sim.dataPagamento,
+    sim.destinoFrete,
+    sim.lines,
+    sim.tipoFrete,
+  ]);
 
   async function handleConvertToPedido() {
     setPersistError(null);
@@ -661,7 +560,6 @@ export function Simulador() {
       destinoFrete: sim.destinoFrete,
       dataPagamento: sim.dataPagamento || null,
       quarter: sim.quarter,
-      observacoes: sim.observacoes,
       lines: sim.lines.map((l) => ({
         productId: l.productId,
         volume: l.volume,
@@ -865,10 +763,13 @@ export function Simulador() {
     }
   }
 
-  const origemOptions = freteOrigens.map((value) => {
+  const origemOptions = useMemo(() => {
+    const value =
+      sim.origemFrete || resolveOrigemFreteByEstado(sim.estado) || "";
+    if (!value) return [];
     const known = FRETE_ORIGENS.find((o) => o.value === value);
-    return { value, label: known?.label ?? value };
-  });
+    return [{ value, label: known?.label ?? value }];
+  }, [sim.origemFrete, sim.estado]);
 
   const showGestorReview = sim.isGestor && remoteStatus === "pending";
   const canGestorSaveReview =
@@ -878,10 +779,31 @@ export function Simulador() {
 
   const destinoOptions = freteDestinos.map((d) => ({ id: d, label: d }));
 
-  const productsForSelect = sim.catalog.map((p) => ({
-    id: p.id,
-    nome: p.displayNome ?? p.nome,
-  }));
+  const productsForSelect = useMemo(
+    () =>
+      sim.catalog.map((p) => ({
+        id: p.id,
+        nome: p.nome ?? "",
+        referenciaComplementar: p.referenciaComplementar ?? "",
+        fornecedorNome: p.fornecedorNome ?? "",
+        displayNome: p.displayNome ?? p.nome ?? "",
+        fornecedorId: p.fornecedorId ?? "",
+      })),
+    [sim.catalog],
+  );
+
+  const fornecedorOptions = useMemo(() => {
+    const map = new Map();
+    for (const p of sim.catalog) {
+      if (!p.fornecedorId) continue;
+      if (!map.has(p.fornecedorId)) {
+        map.set(p.fornecedorId, p.fornecedorNome || "Fornecedor");
+      }
+    }
+    return Array.from(map, ([id, nome]) => ({ id, nome })).sort((a, b) =>
+      a.nome.localeCompare(b.nome, "pt-BR"),
+    );
+  }, [sim.catalog]);
 
   const pageTitle = !simulationId
     ? "Nova simulação"
@@ -922,9 +844,8 @@ export function Simulador() {
     () => ({
       nome: sim.clientName,
       cnpj_cpf: sim.clientCnpjCpf,
-      uf: sim.estado ?? "",
     }),
-    [sim.clientName, sim.clientCnpjCpf, sim.estado],
+    [sim.clientName, sim.clientCnpjCpf],
   );
 
   return (
@@ -952,9 +873,9 @@ export function Simulador() {
           {heroContext}
           {catalogLoading
             ? ' · Atualizando catálogo de produtos…'
-            : !sim.quarter
-              ? ' · Selecione o quarter para carregar os produtos da lista.'
-              : ` · ${catalog.length} produto(s) do quarter ${sim.quarter}.`}
+            : !sim.estado || !sim.quarter || !sim.dataPagamento
+              ? ' · Selecione estado, data de pagamento e quarter para liberar os produtos.'
+              : ` · ${catalog.length} produto(s) do quarter ${sim.quarter} · ${sim.estado}.`}
         </PageInfoBanner>
       </div>
 
@@ -1002,17 +923,9 @@ export function Simulador() {
         <SimuladorSectionPanel
           icon={SIMULADOR_SECTION_ICONS.cliente}
           title="Cliente"
-          description="Identifique o cliente e o estado da operação."
+          description="Identifique o cliente da proposta."
         >
-          <div className="grid gap-4 lg:grid-cols-3">
-            <Select
-              label="Estado"
-              placeholder="Selecione…"
-              value={sim.estado ?? ""}
-              onChange={(e) => sim.setEstado(e.target.value)}
-              options={STATES}
-              disabled={sim.isReadOnly}
-            />
+          <div className="grid gap-4 lg:grid-cols-2">
             <Combobox
               label="Cliente"
               placeholder="Buscar cliente…"
@@ -1023,6 +936,7 @@ export function Simulador() {
               onCreateRequest={openClientRegistration}
               disabled={sim.isReadOnly}
               className=""
+              editableHint
             />
             <FormattedInput
               format="cpfCnpj"
@@ -1031,6 +945,7 @@ export function Simulador() {
               value={sim.clientCnpjCpf ?? ""}
               onChange={(e) => sim.setClientCnpjCpf(e.target.value)}
               disabled={sim.isReadOnly}
+              editableHint
             />
           </div>
         </SimuladorSectionPanel>
@@ -1038,15 +953,25 @@ export function Simulador() {
         <SimuladorSectionPanel
           icon={SIMULADOR_SECTION_ICONS.frete}
           title="Frete e logística"
-          description="Defina pagamento, tipo de frete e rotas quando aplicável."
+          description="Estado da lista, pagamento, tipo de frete e rotas quando aplicável."
           gradient="from-primary-50/70 via-white to-sky-50/50"
         >
-          <div className="grid gap-4 lg:grid-cols-3">
+          <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
+            <Select
+              label="Estado da lista"
+              placeholder="Selecione…"
+              value={sim.estado ?? ""}
+              onChange={(e) => sim.setEstado(e.target.value)}
+              options={STATES}
+              disabled={sim.isReadOnly}
+              editableHint
+            />
             <DatePicker
               label="Data de pagamento"
               value={sim.dataPagamento ?? ""}
               onChange={(e) => sim.setDataPagamento(e.target.value)}
               disabled={sim.isReadOnly}
+              editableHint
             />
             <Select
               label="Tipo de frete"
@@ -1055,6 +980,7 @@ export function Simulador() {
               onChange={(e) => sim.setTipoFrete(e.target.value)}
               options={FREIGHT_TYPES}
               disabled={sim.isReadOnly}
+              editableHint
             />
             <Select
               label="Quarter"
@@ -1063,27 +989,32 @@ export function Simulador() {
               onChange={(e) => sim.setQuarter(e.target.value)}
               options={QUARTERS}
               disabled={sim.isReadOnly}
+              editableHint
             />
           </div>
           {sim.showFreteRotas ? (
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <Select
                 label="Origem do frete"
-                placeholder="Selecione a origem…"
+                placeholder={
+                  sim.estado
+                    ? "Definida pelo estado"
+                    : "Selecione o estado primeiro"
+                }
                 value={sim.origemFrete ?? ""}
-                onChange={(e) => {
-                  sim.setOrigemFrete(e.target.value);
-                  sim.setDestinoFrete("");
-                }}
+                onChange={() => {}}
                 options={origemOptions}
-                disabled={sim.isReadOnly}
+                disabled
+                editableHint={false}
               />
               <Combobox
                 label="Destino do frete"
                 placeholder={
                   sim.origemFrete
                     ? "Cidade de destino…"
-                    : "Selecione a origem primeiro"
+                    : sim.estado
+                      ? "Origem definida pelo estado…"
+                      : "Selecione o estado primeiro"
                 }
                 value={sim.destinoFrete ?? ""}
                 onTextChange={sim.setDestinoFrete}
@@ -1091,6 +1022,7 @@ export function Simulador() {
                 options={destinoOptions}
                 allowFreeText={false}
                 disabled={sim.isReadOnly || !sim.origemFrete}
+                editableHint
               />
               {freteLookupError ? (
                 <div className="sm:col-span-2">
@@ -1120,8 +1052,8 @@ export function Simulador() {
         >
           {sim.productsLocked ? (
             <AlertMessage tone="info">
-              Preencha a data de pagamento antes de adicionar ou editar
-              produtos.
+              Selecione o estado, a data de pagamento e o quarter antes de
+              adicionar ou editar produtos.
             </AlertMessage>
           ) : null}
           {sim.lines.length === 0 ? (
@@ -1135,12 +1067,19 @@ export function Simulador() {
                     row={row}
                     cultureOptions={sim.cultureOptions}
                     productOptions={productsForSelect}
+                    fornecedorOptions={fornecedorOptions}
                     isReadOnly={!sim.canEditProducts}
                     canOverrideFloor={sim.canOverrideFloor}
                     onVolumeChange={(v) => sim.setLineVolume(row.id, v)}
                     onCulturaChange={(c) => sim.setLineCultura(row.id, c)}
+                    onFornecedorChange={(id) =>
+                      sim.setLineFornecedor(row.id, id)
+                    }
                     onProductChange={(id) => sim.setLineProduct(row.id, id)}
                     onPropostaChange={(p) => sim.setLineProposta(row.id, p)}
+                    onDescontoPctChange={(p) =>
+                      sim.setLineDescontoPct(row.id, p)
+                    }
                     onOverrideChange={(field, value) =>
                       sim.setLineOverride(row.id, field, value)
                     }
@@ -1153,13 +1092,16 @@ export function Simulador() {
                 lines={sim.lines}
                 cultureOptions={sim.cultureOptions}
                 productOptions={productsForSelect}
+                fornecedorOptions={fornecedorOptions}
                 isReadOnly={!sim.canEditProducts}
                 canOverrideFloor={sim.canOverrideFloor}
                 showMargem={sim.isGestor}
                 onVolumeChange={sim.setLineVolume}
                 onCulturaChange={sim.setLineCultura}
+                onFornecedorChange={sim.setLineFornecedor}
                 onProductChange={sim.setLineProduct}
                 onPropostaChange={sim.setLineProposta}
+                onDescontoPctChange={sim.setLineDescontoPct}
                 onOverrideChange={sim.setLineOverride}
                 onClearOverride={sim.clearLineOverride}
                 onRemove={sim.removeLine}
@@ -1168,30 +1110,9 @@ export function Simulador() {
           )}
         </SimuladorSectionPanel>
 
-        <SimuladorSectionPanel
-          icon={SIMULADOR_SECTION_ICONS.observacoes}
-          title="Observações"
-          description="Anote condições especiais, prazos e detalhes comerciais."
-          gradient="from-primary-50/70 via-white to-sky-50/40"
-          actions={
-            !sim.isReadOnly ? (
-              <BotaoAssistenteIA
-                onClick={() => observacoesIARef.current?.abrirAssistente()}
-                disabled={!String(sim.observacoes ?? "").trim()}
-              />
-            ) : null
-          }
-        >
-          <CampoTextoComIA
-            ref={observacoesIARef}
-            hideTrigger
-            placeholder="Condições especiais, prazos, observações comerciais…"
-            value={sim.observacoes ?? ""}
-            onChange={sim.setObservacoes}
-            disabled={sim.isReadOnly}
-            rows={4}
-          />
-        </SimuladorSectionPanel>
+        {cotacaoBundle ? (
+          <SimulacaoCotacaoMensagem bundle={cotacaoBundle} />
+        ) : null}
 
         <SimuladorSectionPanel
           icon={SIMULADOR_SECTION_ICONS.consolidacao}
@@ -1255,20 +1176,6 @@ export function Simulador() {
               </p>
             ) : null}
             <div className="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap">
-              {canGeneratePdf ? (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className="w-full sm:flex-1"
-                  loading={savingDraft && isDraftEditable}
-                  disabled={savingDraft}
-                  onClick={() => void handleGerarPdf()}
-                >
-                  {savingDraft && isDraftEditable
-                    ? "Salvando…"
-                    : "Gerar Proposta p/ Cliente"}
-                </Button>
-              ) : null}
               {!sim.isReadOnly && !canGestorSaveReview ? (
                 <Button
                   type="button"
@@ -1336,7 +1243,7 @@ export function Simulador() {
                     disabled={reviewSaving || Boolean(reviewDeciding)}
                     onClick={() => void handleGestorConvertToPedido()}
                   >
-                    Converter em pedido
+                    Gerar pedido
                   </Button>
                 </>
               ) : sim.isGestor && simulationId && !isPedidoStatus(remoteStatus) ? (
@@ -1348,7 +1255,7 @@ export function Simulador() {
                   disabled={reviewSaving || Boolean(reviewDeciding)}
                   onClick={() => void handleGestorConvertToPedido()}
                 >
-                  Converter em pedido
+                  Gerar pedido
                 </Button>
               ) : !sim.isGestor &&
                 !isPedidoStatus(remoteStatus) &&
@@ -1372,15 +1279,12 @@ export function Simulador() {
                   loading={persisting}
                   onClick={() => void handleConvertToPedido()}
                 >
-                  Converter em pedido
+                  Gerar pedido
                 </Button>
               ) : null}
             </div>
           </div>
 
-          {pdfError ? (
-            <AlertMessage className="mt-4">{pdfError}</AlertMessage>
-          ) : null}
           {launchError ? (
             <AlertMessage className="mt-4">{launchError}</AlertMessage>
           ) : null}
@@ -1419,14 +1323,6 @@ export function Simulador() {
             void persistRequestConversion(client.id);
           }
         }}
-      />
-
-      <PdfPreviewModal
-        open={Boolean(pdfPreview)}
-        onClose={() => setPdfPreview(null)}
-        titulo={pdfPreview?.titulo}
-        gerador={pdfPreview?.gerador}
-        nomeFallback={pdfPreview?.nomeFallback}
       />
     </div>
   );

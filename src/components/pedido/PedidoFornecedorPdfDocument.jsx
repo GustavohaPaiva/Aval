@@ -1,5 +1,6 @@
 import { SYAGRI_COMPANY } from '../../constants/company'
 import { formatProdutoDisplayNome } from '../../constants/mapeamentoCampos'
+import { formatPrazoSemanaLabel } from '../../utils/calendarWeek'
 
 function freightLabel(tipo) {
   if (tipo === 'CIF') return 'CIF — Posto Fazenda'
@@ -68,9 +69,8 @@ export function PedidoFornecedorPdfDocument({
     [simulation.pedido_municipio, simulation.pedido_uf].filter(Boolean).join(' / ') ||
     [client?.municipio, client?.uf].filter(Boolean).join(' / ') ||
     '—'
-  const prazoLabel = simulation.prazo_dias
-    ? `${simulation.prazo_dias} dias`
-    : '14 dias'
+  const prazoLabel =
+    formatPrazoSemanaLabel(simulation.prazo_semana_inicio) || '—'
 
   const grouped = groupItemsByFornecedor(items)
 
@@ -177,10 +177,9 @@ export function PedidoFornecedorPdfDocument({
                   letterSpacing: '0.02em',
                   textTransform: 'uppercase',
                   opacity: 0.75,
-                  lineHeight: 1.25,
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
+                  lineHeight: 1.4,
+                  minHeight: '1.4em',
+                  wordBreak: 'break-word',
                 }}
               >
                 {site.label}

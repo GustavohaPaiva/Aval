@@ -1,4 +1,4 @@
-import { memo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { EditableNumber } from "../ui/EditableNumber";
 import { Select } from "../ui/Select";
 import { IconSliders } from "../icons";
@@ -9,26 +9,51 @@ import {
   getLineAutonomiaTintClass,
 } from "./LineAutonomiaBadge";
 import { formatBRL, formatPercent } from "../../utils/money";
+import { formatProdutoDisplayNome } from "../../constants/mapeamentoCampos";
+
+function filterProductsByFornecedor(productOptions, fornecedorId) {
+  if (!fornecedorId) return productOptions;
+  return productOptions.filter(
+    (p) => String(p.fornecedorId ?? "") === String(fornecedorId),
+  );
+}
+
+function productOptionLabel(product, omitFornecedor) {
+  const label = formatProdutoDisplayNome({
+    nome: product.nome,
+    referencia_complementar: product.referenciaComplementar,
+    fornecedor_nome: product.fornecedorNome,
+    omitFornecedor,
+  });
+  return label || product.displayNome || product.nome || "—";
+}
 
 const SimulationLinesTableRow = memo(function SimulationLinesTableRow({
   row,
   cell,
   cultureOptions,
   productOptions,
+  fornecedorOptions,
   isReadOnly,
   canOverrideFloor,
   showMargem,
   colSpan,
   onVolumeChange,
   onCulturaChange,
+  onFornecedorChange,
   onProductChange,
   onPropostaChange,
+  onDescontoPctChange,
   onOverrideChange,
   onClearOverride,
   onRemove,
 }) {
   const [overridesOpen, setOverridesOpen] = useState(false);
   const hasOverride = Boolean(row.overrides);
+  const filteredProducts = useMemo(
+    () => filterProductsByFornecedor(productOptions, row.fornecedorId),
+    [productOptions, row.fornecedorId],
+  );
 
   return (
     <>
@@ -57,6 +82,22 @@ const SimulationLinesTableRow = memo(function SimulationLinesTableRow({
           onChange={(e) => onCulturaChange(row.id, e.target.value)}
           options={cultureOptions.map((c) => ({ value: c, label: c }))}
           disabled={isReadOnly}
+          editableHint
+        />
+      </td>
+      <td className={`${cell} min-w-[9rem]`}>
+        <Select
+          aria-label="Fornecedor da linha"
+          size="compact"
+          placeholder="Selecione…"
+          value={row.fornecedorId ?? ""}
+          onChange={(e) => onFornecedorChange(row.id, e.target.value)}
+          options={fornecedorOptions.map((f) => ({
+            value: f.id,
+            label: f.nome,
+          }))}
+          disabled={isReadOnly}
+          editableHint
         />
       </td>
       <td className={`${cell} min-w-[10rem]`}>
@@ -66,8 +107,12 @@ const SimulationLinesTableRow = memo(function SimulationLinesTableRow({
           placeholder="Selecione…"
           value={row.productId ?? ""}
           onChange={(e) => onProductChange(row.id, e.target.value)}
-          options={productOptions.map((p) => ({ value: p.id, label: p.nome }))}
+          options={filteredProducts.map((p) => ({
+            value: p.id,
+            label: productOptionLabel(p, Boolean(row.fornecedorId)),
+          }))}
           disabled={isReadOnly}
+          editableHint
         />
       </td>
       <td className={`finance-text ${cell} font-medium text-slate-800`}>
@@ -76,7 +121,20 @@ const SimulationLinesTableRow = memo(function SimulationLinesTableRow({
       <td className={`finance-text ${cell} font-medium text-slate-900`}>
         {formatBRL(row.valorTotal)}
       </td>
-      <td className={`${cell} bg-primary-50/70`}>
+      <td className={cell}>
+        <EditableNumber
+          value={row.descontoPct ?? 0}
+          onChange={(p) => onDescontoPctChange(row.id, p)}
+          disabled={isReadOnly}
+          min={0}
+          step={0.01}
+          decimals={2}
+          ariaLabel="Desconto percentual"
+          className="text-sm"
+          centered
+        />
+      </td>
+      <td className={cell}>
         <EditableNumber
           value={row.proposta}
           onChange={(p) => onPropostaChange(row.id, p)}
@@ -87,7 +145,6 @@ const SimulationLinesTableRow = memo(function SimulationLinesTableRow({
           ariaLabel="Proposta unitária"
           className="text-sm"
           centered
-          emphasized
         />
       </td>
       <td className={`finance-text ${cell} font-medium text-slate-900`}>
@@ -156,20 +213,23 @@ export function SimulationLinesTable({
   lines,
   cultureOptions,
   productOptions,
+  fornecedorOptions = [],
   isReadOnly,
   canOverrideFloor,
   showMargem: showMargemProp,
   onVolumeChange,
   onCulturaChange,
+  onFornecedorChange,
   onProductChange,
   onPropostaChange,
+  onDescontoPctChange,
   onOverrideChange,
   onClearOverride,
   onRemove,
 }) {
   const cell = "px-3 py-2.5 text-center align-middle";
   const showMargem = showMargemProp ?? canOverrideFloor;
-  const colSpan = showMargem ? 10 : 9;
+  const colSpan = showMargem ? 12 : 11;
 
   return (
     <div className="hidden overflow-x-auto rounded-2xl border border-slate-100 lg:block">
@@ -178,12 +238,12 @@ export function SimulationLinesTable({
           <tr className="border-b border-slate-200 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-600">
             <th className={cell}>Volume</th>
             <th className={cell}>Cultura</th>
+            <th className={cell}>Fornecedor</th>
             <th className={cell}>Produto</th>
             <th className={cell}>Valor unit.</th>
             <th className={cell}>Valor total</th>
-            <th className={`${cell} bg-primary-50/80 text-primary-800`}>
-              Proposta unit.
-            </th>
+            <th className={cell}>Desconto %</th>
+            <th className={cell}>Proposta unit.</th>
             <th className={cell}>Proposta total</th>
             {showMargem ? <th className={cell}>Margem</th> : null}
             <th className={cell}>Status</th>
@@ -198,14 +258,17 @@ export function SimulationLinesTable({
               cell={cell}
               cultureOptions={cultureOptions}
               productOptions={productOptions}
+              fornecedorOptions={fornecedorOptions}
               isReadOnly={isReadOnly}
               canOverrideFloor={canOverrideFloor}
               showMargem={showMargem}
               colSpan={colSpan}
               onVolumeChange={onVolumeChange}
               onCulturaChange={onCulturaChange}
+              onFornecedorChange={onFornecedorChange}
               onProductChange={onProductChange}
               onPropostaChange={onPropostaChange}
+              onDescontoPctChange={onDescontoPctChange}
               onOverrideChange={onOverrideChange}
               onClearOverride={onClearOverride}
               onRemove={onRemove}

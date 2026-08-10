@@ -37,9 +37,16 @@ export const CLASSES_PRODUTO = [
   { value: 'Especial', label: 'Especial' },
 ]
 
-export function formatProdutoDisplayNome({ nome, referencia_complementar, fornecedor_nome }) {
-  const parts = [nome, referencia_complementar, fornecedor_nome].filter(
-    (p) => String(p ?? '').trim().length > 0,
-  )
+export function formatProdutoDisplayNome({
+  nome,
+  referencia_complementar,
+  fornecedor_nome,
+  omitFornecedor = false,
+}) {
+  const parts = [
+    nome,
+    referencia_complementar,
+    omitFornecedor ? null : fornecedor_nome,
+  ].filter((p) => String(p ?? '').trim().length > 0)
   return parts.join(' · ')
 }

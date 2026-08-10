@@ -2,6 +2,10 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { IconSearch } from "../icons";
 import { useDropdownPosition } from "../../hooks/useDropdownPosition";
 import { DropdownPortal } from "./DropdownPortal";
+import {
+  editableHintControlClass,
+  EditableHintIcon,
+} from "./editableFieldHint";
 
 /**
  * Combobox simples: input com busca + dropdown.
@@ -28,6 +32,7 @@ export function Combobox({
   allowFreeText = true,
   emptyMessage = "Nenhum resultado.",
   className = "",
+  editableHint = false,
 }) {
   const inputId = useId();
   const triggerRef = useRef(null);
@@ -103,6 +108,7 @@ export function Combobox({
   }
 
   const createActionLabel = createLabel ?? `Cadastrar "${trimmedValue}"`;
+  const showEditableHint = editableHint && !disabled;
 
   return (
     <div className={["flex w-full flex-col gap-1.5", className].join(" ")}>
@@ -127,8 +133,16 @@ export function Combobox({
             onTextChange?.(e.target.value);
             if (!open) setOpen(true);
           }}
-          className="h-11 w-full rounded-2xl border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 shadow-sm transition-[border-color,box-shadow] placeholder:text-slate-400 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500"
+          className={[
+            "h-11 w-full rounded-2xl border border-gray-200 bg-white py-2 pl-9 text-sm text-slate-900 shadow-sm transition-[border-color,box-shadow] placeholder:text-slate-400 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500",
+            showEditableHint
+              ? editableHintControlClass({ padEnd: "icon" })
+              : "pr-3",
+          ]
+            .filter(Boolean)
+            .join(" ")}
         />
+        {showEditableHint ? <EditableHintIcon /> : null}
         {open && !disabled && dropdownStyle ? (
           <DropdownPortal>
             <div style={dropdownStyle}>

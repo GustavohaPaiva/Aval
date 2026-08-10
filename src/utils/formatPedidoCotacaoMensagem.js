@@ -2,6 +2,9 @@ import { formatProdutoDisplayNome } from '../constants/mapeamentoCampos'
 import { formatBRL } from './money'
 import { roundMoney } from './roundMoney'
 
+const AVISO_VARIACAO_CAMBIAL =
+  'Os preços estão sujeitos a alterações devido a variação cambial ou por retiradas de listas.'
+
 function formatDateBr(isoOrDate) {
   if (!isoOrDate) return '—'
   const raw = String(isoOrDate)
@@ -32,6 +35,11 @@ function normalizePart(value) {
   return String(value ?? '')
     .trim()
     .replace(/\s+/g, ' ')
+}
+
+function whatsappBold(value) {
+  const text = normalizePart(value) || '—'
+  return `*${text}*`
 }
 
 function pushUnique(parts, value) {
@@ -85,22 +93,43 @@ function productDisplayNome(item) {
   )
 }
 
-function formatFreteLine(simulation, client) {
-  const tipo = String(simulation?.tipo_frete ?? '').toUpperCase()
-  if (tipo === 'FOB') return 'FOB'
-  if (tipo === 'CIF') {
-    return `CIF — ${buildEnderecoEntregaCif(simulation, client)}`
-  }
-  return tipo || '—'
+function formatDestinoCif(simulation, client) {
+  const destinoFrete = normalizePart(simulation?.destino_frete)
+  if (destinoFrete) return destinoFrete
+
+  const municipio =
+    normalizePart(simulation?.pedido_municipio) ||
+    normalizePart(client?.municipio)
+  const uf =
+    normalizePart(simulation?.pedido_uf) || normalizePart(client?.uf)
+  const municipioUf = [municipio, uf].filter(Boolean).join(' / ')
+  if (municipioUf) return municipioUf
+
+  return '—'
 }
 
-function formatItemLine(item) {
+function formatTipoEntregaLine(simulation, client) {
+  const tipo = String(simulation?.tipo_frete ?? '').toUpperCase()
+  if (tipo === 'CIF') {
+    return `Tipo de entrega: CIF (destino: ${formatDestinoCif(simulation, client)})`
+  }
+  if (tipo === 'FOB') return 'Tipo de entrega: FOB'
+  return `Tipo de entrega: ${tipo || '—'}`
+}
+
+function formatItemBlock(item) {
   const cultura = normalizePart(item.cultura) || '—'
   const volume = formatVolumeTon(item.volume)
   const produto = productDisplayNome(item)
   const vu = roundMoney(Number(item.proposta) || 0)
   const vt = roundMoney(vu * (Number(item.volume) || 0))
-  return `${cultura} - ${volume} - ${produto} - VU: ${formatBRL(vu)} - VT: ${formatBRL(vt)}`
+  return [
+    `Cultura: ${cultura}`,
+    `Volume: ${volume}`,
+    `Produto: ${produto}`,
+    `Val. Unt.: ${whatsappBold(formatBRL(vu))}`,
+    `Val. Tot.: ${whatsappBold(formatBRL(vt))}`,
+  ]
 }
 
 /**
@@ -112,23 +141,25 @@ export function formatPedidoCotacaoMensagem(bundle) {
 
   const { simulation, client } = bundle
   const items = (bundle.items ?? []).filter((it) => it.product_id)
+  const clienteNome = normalizePart(client.nome) || '—'
 
   const lines = [
     'Cotação:',
     '',
-    `Cliente: ${normalizePart(client.nome) || '—'}`,
+    `Cliente: ${whatsappBold(clienteNome)}`,
     `Data de vencimento: ${formatDateBr(simulation.data_pagamento)}`,
-    formatFreteLine(simulation, client),
-    '',
+    formatTipoEntregaLine(simulation, client),
   ]
 
   if (items.length === 0) {
-    lines.push('(Nenhum item)')
-  } else {
-    for (const item of items) {
-      lines.push(formatItemLine(item))
-    }
+    lines.push('', '(Nenhum item)', '', AVISO_VARIACAO_CAMBIAL)
+    return lines.join('\n')
   }
 
+  for (const item of items) {
+    lines.push('', ...formatItemBlock(item))
+  }
+
+  lines.push('', AVISO_VARIACAO_CAMBIAL)
   return lines.join('\n')
 }

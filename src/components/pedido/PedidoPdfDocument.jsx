@@ -2,6 +2,7 @@ import { SYAGRI_COMPANY } from '../../constants/company'
 import { PEDIDO_CONDICOES_VENDA } from '../../constants/pedidoCondicoesVenda'
 import { formatProdutoDisplayNome } from '../../constants/mapeamentoCampos'
 import { displayCpfCnpj, displayPhone } from '../../utils/dataFormatters'
+import { formatPrazoSemanaLabel } from '../../utils/calendarWeek'
 import { formatBRL } from '../../utils/money'
 import { roundMoney } from '../../utils/roundMoney'
 
@@ -42,6 +43,7 @@ function buildPedidoLocal(simulation) {
 /**
  * Documento visual da proposta comercial (PDF).
  * Largura fixa A4 (~794px @96dpi) para captura estável via html2canvas.
+ * Folha 1: dados / produtos / assinaturas. Folha 2+: condições de venda.
  */
 export function PedidoPdfDocument({
   bundle,
@@ -54,9 +56,8 @@ export function PedidoPdfDocument({
     [simulation.pedido_municipio, simulation.pedido_uf].filter(Boolean).join(' / ') ||
     [client.municipio, client.uf].filter(Boolean).join(' / ') ||
     '—'
-  const prazoLabel = simulation.prazo_dias
-    ? `${simulation.prazo_dias} dias`
-    : '14 dias'
+  const prazoLabel =
+    formatPrazoSemanaLabel(simulation.prazo_semana_inicio) || '—'
 
   return (
     <div
@@ -67,6 +68,8 @@ export function PedidoPdfDocument({
           '"Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif',
       }}
     >
+      {/* Folha 1: dados do pedido → produtos → assinaturas */}
+      <div className="pedido-pdf-page box-border bg-white">
       {/* Faixa superior marca */}
       <div
         style={{
@@ -162,10 +165,9 @@ export function PedidoPdfDocument({
                   letterSpacing: '0.02em',
                   textTransform: 'uppercase',
                   opacity: 0.75,
-                  lineHeight: 1.25,
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
+                  lineHeight: 1.4,
+                  minHeight: '1.4em',
+                  wordBreak: 'break-word',
                 }}
               >
                 {site.label}
@@ -357,11 +359,11 @@ export function PedidoPdfDocument({
             <thead>
               <tr style={{ background: '#064e3b', color: '#fff' }}>
                 <Th w={36}>Item</Th>
+                <Th w={110}>Cultura</Th>
                 <Th align="right" w={70}>
                   Qtd.
                 </Th>
                 <Th>Descrição</Th>
-                <Th w={110}>Cultura</Th>
                 <Th align="right" w={100}>
                   Preço unit.
                 </Th>
@@ -382,6 +384,7 @@ export function PedidoPdfDocument({
                     <Td align="center" muted>
                       {index + 1}
                     </Td>
+                    <Td>{item.cultura || '—'}</Td>
                     <Td align="right" mono>
                       {item.volume}
                     </Td>
@@ -395,7 +398,6 @@ export function PedidoPdfDocument({
                           }) || '—'
                         : '—'}
                     </Td>
-                    <Td>{item.cultura || '—'}</Td>
                     <Td align="right" mono>
                       {formatBRL(item.proposta)}
                     </Td>
@@ -528,62 +530,6 @@ export function PedidoPdfDocument({
           </p>
         </section>
 
-        {/* Condições de venda */}
-        <section
-          style={{
-            borderRadius: 14,
-            border: '1px solid #e2e8f0',
-            padding: '12px 14px',
-            marginBottom: 18,
-          }}
-        >
-          <p
-            style={{
-              margin: '0 0 8px',
-              fontSize: 9,
-              fontWeight: 700,
-              letterSpacing: '0.08em',
-              textTransform: 'uppercase',
-              color: '#64748b',
-            }}
-          >
-            Condições de venda
-          </p>
-          <ol
-            style={{
-              margin: 0,
-              padding: 0,
-              listStyle: 'none',
-            }}
-          >
-            {PEDIDO_CONDICOES_VENDA.map((texto, index) => (
-              <li
-                key={index}
-                style={{
-                  display: 'flex',
-                  gap: 8,
-                  marginBottom: index === PEDIDO_CONDICOES_VENDA.length - 1 ? 0 : 6,
-                  fontSize: 8.5,
-                  lineHeight: 1.4,
-                  color: '#475569',
-                }}
-              >
-                <span
-                  style={{
-                    flexShrink: 0,
-                    fontWeight: 700,
-                    color: '#0f172a',
-                    minWidth: 18,
-                  }}
-                >
-                  {String(index + 1).padStart(2, '0')}
-                </span>
-                <span>{texto}</span>
-              </li>
-            ))}
-          </ol>
-        </section>
-
         {/* Assinaturas */}
         <div
           style={{
@@ -611,6 +557,131 @@ export function PedidoPdfDocument({
           Documento gerado pela SYAGRI · Proposta nº {docNo} ·{' '}
           {formatDateBr(new Date().toISOString())}
         </p>
+      </div>
+      </div>
+
+      {/* Folha 2+: condições de venda / termos */}
+      <div className="pedido-pdf-page box-border bg-white">
+        <div
+          style={{
+            background: 'linear-gradient(135deg, #065f46 0%, #047857 45%, #064e3b 100%)',
+            padding: '18px 32px',
+            color: '#fff',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 16,
+          }}
+        >
+          <div>
+            <p
+              style={{
+                margin: 0,
+                fontSize: 16,
+                fontWeight: 700,
+                letterSpacing: '-0.02em',
+              }}
+            >
+              {SYAGRI_COMPANY.brandName}
+              <span style={{ fontWeight: 500, opacity: 0.9 }}>
+                {' '}
+                {SYAGRI_COMPANY.brandTagline}
+              </span>
+            </p>
+            <p
+              style={{
+                margin: '4px 0 0',
+                fontSize: 10,
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                opacity: 0.8,
+              }}
+            >
+              Condições de venda
+            </p>
+          </div>
+          <p
+            style={{
+              margin: 0,
+              fontSize: 12,
+              fontWeight: 600,
+              color: '#a7f3d0',
+              flexShrink: 0,
+            }}
+          >
+            Proposta nº {docNo}
+          </p>
+        </div>
+
+        <div style={{ padding: '22px 32px 28px' }}>
+          <section
+            style={{
+              borderRadius: 14,
+              border: '1px solid #e2e8f0',
+              padding: '14px 16px',
+            }}
+          >
+            <p
+              style={{
+                margin: '0 0 10px',
+                fontSize: 10,
+                fontWeight: 700,
+                letterSpacing: '0.1em',
+                textTransform: 'uppercase',
+                color: '#047857',
+              }}
+            >
+              Condições de venda / Termos
+            </p>
+            <ol
+              style={{
+                margin: 0,
+                padding: 0,
+                listStyle: 'none',
+              }}
+            >
+              {PEDIDO_CONDICOES_VENDA.map((texto, index) => (
+                <li
+                  key={index}
+                  style={{
+                    display: 'flex',
+                    gap: 8,
+                    marginBottom:
+                      index === PEDIDO_CONDICOES_VENDA.length - 1 ? 0 : 8,
+                    fontSize: 9,
+                    lineHeight: 1.45,
+                    color: '#475569',
+                  }}
+                >
+                  <span
+                    style={{
+                      flexShrink: 0,
+                      fontWeight: 700,
+                      color: '#0f172a',
+                      minWidth: 18,
+                    }}
+                  >
+                    {String(index + 1).padStart(2, '0')}
+                  </span>
+                  <span>{texto}</span>
+                </li>
+              ))}
+            </ol>
+          </section>
+
+          <p
+            style={{
+              margin: '22px 0 0',
+              textAlign: 'center',
+              fontSize: 9,
+              color: '#94a3b8',
+              letterSpacing: '0.02em',
+            }}
+          >
+            Documento gerado pela SYAGRI · Proposta nº {docNo} ·{' '}
+            {formatDateBr(new Date().toISOString())}
+          </p>
+        </div>
       </div>
     </div>
   )

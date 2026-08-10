@@ -1,32 +1,19 @@
 import html2canvas from 'html2canvas-pro'
 import { jsPDF } from 'jspdf'
 
+const PDF_MARGIN_MM = 10
+
 /**
- * Gera Blob PDF A4 a partir de um elemento HTML (proposta / pedido).
- * Fatia o canvas por página e aplica margem em todos os lados —
- * inclusive no topo das páginas após a quebra.
+ * Fatia um canvas em páginas A4 e adiciona ao PDF.
+ * @param {import('jspdf').jsPDF} pdf
+ * @param {HTMLCanvasElement} canvas
+ * @param {{ isFirstSliceOfDocument: boolean }} options
  */
-export async function buildPedidoPdfBlobFromElement(element) {
-  const canvas = await html2canvas(element, {
-    scale: 2,
-    useCORS: true,
-    logging: false,
-    backgroundColor: '#ffffff',
-    windowWidth: element.scrollWidth,
-    windowHeight: element.scrollHeight,
-  })
-
-  const pdf = new jsPDF({
-    orientation: 'portrait',
-    unit: 'mm',
-    format: 'a4',
-  })
-
+function appendCanvasSlices(pdf, canvas, { isFirstSliceOfDocument }) {
   const pageWidth = pdf.internal.pageSize.getWidth()
   const pageHeight = pdf.internal.pageSize.getHeight()
-  const margin = 10
-  const contentWidth = pageWidth - margin * 2
-  const contentHeight = pageHeight - margin * 2
+  const contentWidth = pageWidth - PDF_MARGIN_MM * 2
+  const contentHeight = pageHeight - PDF_MARGIN_MM * 2
 
   const imgWidthMm = contentWidth
   const imgHeightMm = (canvas.height * imgWidthMm) / canvas.width
@@ -34,10 +21,13 @@ export async function buildPedidoPdfBlobFromElement(element) {
   const sliceHeightPx = contentHeight * pxPerMm
 
   let offsetMm = 0
-  let pageIndex = 0
+  let sliceIndex = 0
 
   while (offsetMm < imgHeightMm - 0.5) {
-    if (pageIndex > 0) pdf.addPage()
+    const isVeryFirstSlice = isFirstSliceOfDocument && sliceIndex === 0
+    if (!isVeryFirstSlice) {
+      pdf.addPage()
+    }
 
     const srcY = offsetMm * pxPerMm
     const srcHeight = Math.min(sliceHeightPx, canvas.height - srcY)
@@ -65,10 +55,61 @@ export async function buildPedidoPdfBlobFromElement(element) {
     )
 
     const pageImg = pageCanvas.toDataURL('image/png')
-    pdf.addImage(pageImg, 'PNG', margin, margin, imgWidthMm, destHeightMm)
+    pdf.addImage(
+      pageImg,
+      'PNG',
+      PDF_MARGIN_MM,
+      PDF_MARGIN_MM,
+      imgWidthMm,
+      destHeightMm,
+    )
 
     offsetMm += contentHeight
-    pageIndex += 1
+    sliceIndex += 1
+  }
+
+  return sliceIndex
+}
+
+async function captureElement(element) {
+  return html2canvas(element, {
+    scale: 2,
+    useCORS: true,
+    logging: false,
+    backgroundColor: '#ffffff',
+    windowWidth: element.scrollWidth,
+    windowHeight: element.scrollHeight,
+  })
+}
+
+/**
+ * Gera Blob PDF A4 a partir de um elemento HTML (proposta / pedido).
+ * Fatia o canvas por página e aplica margem em todos os lados —
+ * inclusive no topo das páginas após a quebra.
+ *
+ * Filhos diretos `.pedido-pdf-page` definem quebras explícitas entre seções;
+ * cada seção alta continua paginando automaticamente.
+ */
+export async function buildPedidoPdfBlobFromElement(element) {
+  const pageNodes = Array.from(element.children).filter((child) =>
+    child.classList?.contains('pedido-pdf-page'),
+  )
+  const sections = pageNodes.length > 0 ? pageNodes : [element]
+
+  const pdf = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4',
+  })
+
+  let documentHasContent = false
+
+  for (const section of sections) {
+    const canvas = await captureElement(section)
+    const slices = appendCanvasSlices(pdf, canvas, {
+      isFirstSliceOfDocument: !documentHasContent,
+    })
+    if (slices > 0) documentHasContent = true
   }
 
   return pdf.output('blob')

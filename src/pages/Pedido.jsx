@@ -1,22 +1,24 @@
-import { createElement, useCallback, useMemo, useState } from 'react'
+import { createElement, useCallback, useMemo, useRef, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { AtribuirConsultorPanel } from '../components/AtribuirConsultorPanel'
-import { PedidoCotacaoMensagem } from '../components/pedido/PedidoCotacaoMensagem'
 import { PedidoPdfDocument } from '../components/pedido/PedidoPdfDocument'
 import { PedidoSimulationSummary } from '../components/pedido/PedidoSimulationSummary'
+import { PdfPreviewModal } from '../components/pdf/PdfPreviewModal'
 import { AlertMessage } from '../components/ui/AlertMessage'
 import { Button } from '../components/ui/Button'
+import {
+  BotaoAssistenteIA,
+  CampoTextoComIA,
+} from '../components/ui/CampoTextoComIA'
 import { Card } from '../components/ui/Card'
 import { Input } from '../components/ui/Input'
 import { PageBackLink } from '../components/ui/PageBackLink'
 import { PageHeader } from '../components/ui/PageHeader'
+import { DatePicker } from '../components/ui/DatePicker'
 import { Select } from '../components/ui/Select'
 import {
   ESTADO_UF_VALUES,
-  PRAZO_DIAS_DEFAULT,
-  PRAZO_OPTIONS,
   STATES,
-  normalizePrazoDias,
 } from '../constants/simulator'
 import {
   isPedidoStatus,
@@ -33,8 +35,13 @@ import {
   fetchSimulationOrderBundle,
   updatePedidoFields,
 } from '../services/simulationOrderService'
-import { baixarPdfBlob } from '../utils/downloadPdfBlob'
-
+import {
+  formatPrazoSemanaLabel,
+  isPrazoSemanaAllowed,
+  minPrazoEntregaDate,
+  minPrazoSemanaInicio,
+  startOfWeekSunday,
+} from '../utils/calendarWeek'
 export function Pedido({ simulationId }) {
   const { role } = useAuth()
   const isGestor = role === 'gestor'
@@ -48,7 +55,10 @@ export function Pedido({ simulationId }) {
   const [fazenda, setFazenda] = useState('')
   const [pedidoMunicipio, setPedidoMunicipio] = useState('')
   const [pedidoUf, setPedidoUf] = useState('')
-  const [prazoDias, setPrazoDias] = useState(PRAZO_DIAS_DEFAULT)
+  const [prazoSemanaInicio, setPrazoSemanaInicio] = useState('')
+  const [prazoDiaSelecionado, setPrazoDiaSelecionado] = useState('')
+  const [observacoes, setObservacoes] = useState('')
+  const observacoesIARef = useRef(null)
   const [fieldErrors, setFieldErrors] = useState({})
 
   const [municipioOptions, setMunicipioOptions] = useState([])
@@ -58,7 +68,7 @@ export function Pedido({ simulationId }) {
   const [actionError, setActionError] = useState(null)
   const [actionBanner, setActionBanner] = useState(null)
   const [savingPedido, setSavingPedido] = useState(false)
-  const [generatingPdf, setGeneratingPdf] = useState(false)
+  const [pdfPreview, setPdfPreview] = useState(null)
   const [deciding, setDeciding] = useState(null)
 
   const status = bundle?.simulation.status
@@ -92,7 +102,15 @@ export function Pedido({ simulationId }) {
       setFazenda(sim.fazenda ?? '')
       setPedidoMunicipio(sim.pedido_municipio ?? '')
       setPedidoUf(sim.pedido_uf ?? '')
-      setPrazoDias(normalizePrazoDias(sim.prazo_dias))
+      setObservacoes(sim.observacoes ?? '')
+      const storedWeek =
+        sim.prazo_semana_inicio != null
+          ? String(sim.prazo_semana_inicio).slice(0, 10)
+          : ''
+      const fallbackWeek = minPrazoSemanaInicio(sim.created_at) ?? ''
+      const week = storedWeek || fallbackWeek
+      setPrazoSemanaInicio(week)
+      setPrazoDiaSelecionado(week)
       setLoadState('ready')
     },
     [simulationId],
@@ -153,6 +171,14 @@ export function Pedido({ simulationId }) {
     pedidoUf,
   ])
 
+  const prazoMinDate = useMemo(() => {
+    if (isGestor || !bundle?.simulation?.created_at) return ''
+    return minPrazoEntregaDate(bundle.simulation.created_at) ?? ''
+  }, [bundle?.simulation?.created_at, isGestor])
+
+  const prazoSemanaLabel =
+    formatPrazoSemanaLabel(prazoSemanaInicio) || '—'
+
   function clearFieldError(key) {
     setFieldErrors((prev) => {
       if (!prev[key]) return prev
@@ -189,9 +215,18 @@ export function Pedido({ simulationId }) {
     if (!ESTADO_UF_VALUES.includes(pedidoUf)) {
       errors.pedidoUf = 'Selecione o estado.'
     }
-    const prazo = normalizePrazoDias(prazoDias)
-    if (![7, 14, 21].includes(prazo)) {
-      errors.prazoDias = 'Prazo inválido.'
+    const prazo = String(prazoSemanaInicio ?? '').trim()
+    if (
+      !bundle?.simulation?.created_at ||
+      !isPrazoSemanaAllowed(prazo, {
+        createdAt: bundle.simulation.created_at,
+        isGestor,
+        previousWeekStart: bundle.simulation.prazo_semana_inicio,
+      })
+    ) {
+      errors.prazoSemanaInicio = isGestor
+        ? 'Selecione a semana de entrega.'
+        : 'Selecione uma semana com pelo menos 14 dias corridos a partir da criação.'
     }
     setFieldErrors(errors)
     return Object.keys(errors).length === 0
@@ -241,11 +276,12 @@ export function Pedido({ simulationId }) {
               fazenda: fazenda.trim() || null,
               pedido_municipio: pedidoMunicipio.trim() || null,
               pedido_uf: pedidoUf || null,
-              prazo_dias: normalizePrazoDias(prazoDias),
+              prazo_semana_inicio: prazoSemanaInicio || null,
+              observacoes: observacoes.trim() || null,
             },
           }
         : null,
-    [bundle, fazenda, pedidoMunicipio, pedidoUf, prazoDias],
+    [bundle, fazenda, pedidoMunicipio, pedidoUf, prazoSemanaInicio, observacoes],
   )
 
   const pdfNomeFallback = useMemo(
@@ -268,17 +304,17 @@ export function Pedido({ simulationId }) {
       }
     }
 
-    const prazo = isGestor
-      ? normalizePrazoDias(prazoDias)
-      : normalizePrazoDias(bundle.simulation.prazo_dias ?? PRAZO_DIAS_DEFAULT)
+    const prazo = String(prazoSemanaInicio ?? '').trim()
 
     setSavingPedido(true)
+    const observacoesTrimmed = observacoes.trim() || null
     const pedidoRes = await updatePedidoFields({
       simulationId: bundle.simulation.id,
       fazenda: fazenda.trim(),
       pedidoMunicipio: pedidoMunicipio.trim(),
       pedidoUf,
-      prazoDias: prazo,
+      prazoSemanaInicio: prazo,
+      observacoes: observacoesTrimmed,
     })
     if (!pedidoRes.ok) {
       setSavingPedido(false)
@@ -294,22 +330,23 @@ export function Pedido({ simulationId }) {
               fazenda: fazenda.trim(),
               pedido_municipio: pedidoMunicipio.trim(),
               pedido_uf: pedidoUf,
-              prazo_dias: prazo,
+              prazo_semana_inicio: prazo,
+              observacoes: observacoesTrimmed,
             },
           }
         : prev,
     )
-    setPrazoDias(prazo)
+    setPrazoSemanaInicio(prazo)
 
     setSavingPedido(false)
     return { ok: true }
   }, [
     bundle,
     fazenda,
-    isGestor,
     pedidoMunicipio,
     pedidoUf,
-    prazoDias,
+    prazoSemanaInicio,
+    observacoes,
   ])
 
   const handleGerarPdf = useCallback(async () => {
@@ -332,23 +369,19 @@ export function Pedido({ simulationId }) {
       return
     }
 
-    setGeneratingPdf(true)
-    try {
-      const blob = await buildPdfBlobFromReactNode(
-        createElement(PedidoPdfDocument, {
-          bundle: snapshot,
-          vendedorNome,
-        }),
-      )
-      await baixarPdfBlob(blob, nomeArquivo)
-    } catch (e) {
-      console.error('[Pedido] PDF:', e)
-      setActionError(
-        e instanceof Error ? e.message : 'Não foi possível gerar o PDF.',
-      )
-    } finally {
-      setGeneratingPdf(false)
-    }
+    setPdfPreview({
+      titulo: 'Proposta comercial',
+      gerador: async () => {
+        const blob = await buildPdfBlobFromReactNode(
+          createElement(PedidoPdfDocument, {
+            bundle: snapshot,
+            vendedorNome,
+          }),
+        )
+        return { blob, nomePadrao: nomeArquivo }
+      },
+      nomeFallback: nomeArquivo,
+    })
   }, [bundle, pdfBundle, pdfNomeFallback, persistPedidoBeforePdf])
 
   async function handleSavePedidoFields() {
@@ -361,13 +394,15 @@ export function Pedido({ simulationId }) {
         setActionError('Preencha os dados obrigatórios do pedido.')
         return
       }
-      const prazo = normalizePrazoDias(prazoDias)
+      const prazo = String(prazoSemanaInicio ?? '').trim()
+      const observacoesTrimmed = observacoes.trim() || null
       const pedidoRes = await updatePedidoFields({
         simulationId: bundle.simulation.id,
         fazenda: fazenda.trim(),
         pedidoMunicipio: pedidoMunicipio.trim(),
         pedidoUf,
-        prazoDias: prazo,
+        prazoSemanaInicio: prazo,
+        observacoes: observacoesTrimmed,
       })
       if (!pedidoRes.ok) {
         setActionError(pedidoRes.error)
@@ -382,7 +417,8 @@ export function Pedido({ simulationId }) {
                 fazenda: fazenda.trim(),
                 pedido_municipio: pedidoMunicipio.trim(),
                 pedido_uf: pedidoUf,
-                prazo_dias: prazo,
+                prazo_semana_inicio: prazo,
+                observacoes: observacoesTrimmed,
                 gestor_alteracao_em: new Date().toISOString(),
                 gestor_alteracao_resumo: 'Dados do pedido atualizados',
               },
@@ -477,8 +513,6 @@ export function Pedido({ simulationId }) {
 
       {isGestor ? <PedidoSimulationSummary bundle={bundle} /> : null}
 
-      {pdfBundle ? <PedidoCotacaoMensagem bundle={pdfBundle} /> : null}
-
       <Card className="mb-6 rounded-3xl">
         <h2 className="mb-4 text-sm font-semibold text-primary-800">
           Dados do pedido
@@ -534,25 +568,60 @@ export function Pedido({ simulationId }) {
             error={fieldErrors.pedidoMunicipio || municipiosError}
             required
           />
-          {isGestor && canEditPedido ? (
-            <Select
-              label="Prazo de entrega"
-              value={String(prazoDias)}
-              onChange={(e) => {
-                setPrazoDias(normalizePrazoDias(e.target.value))
-                clearFieldError('prazoDias')
-              }}
-              options={PRAZO_OPTIONS}
-              error={fieldErrors.prazoDias}
-            />
+          {canEditPedido ? (
+            <div className="flex w-full flex-col gap-1.5">
+              <DatePicker
+                label="Prazo de entrega"
+                placeholder="Selecione um dia…"
+                value={prazoDiaSelecionado}
+                minDate={prazoMinDate}
+                onChange={(e) => {
+                  const day = e.target.value
+                  const weekStart = startOfWeekSunday(day) ?? ''
+                  setPrazoDiaSelecionado(day)
+                  setPrazoSemanaInicio(weekStart)
+                  clearFieldError('prazoSemanaInicio')
+                }}
+                error={fieldErrors.prazoSemanaInicio}
+                disabled={!canEditPedido}
+              />
+              {prazoSemanaInicio ? (
+                <p className="text-xs text-slate-500">
+                  Semana selecionada: {prazoSemanaLabel}
+                </p>
+              ) : null}
+            </div>
           ) : (
             <Input
               label="Prazo de entrega"
-              value={`${normalizePrazoDias(prazoDias)} dias`}
+              value={prazoSemanaLabel}
               disabled
               readOnly
             />
           )}
+          <div className="sm:col-span-2">
+            <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+              <label className="text-sm font-medium text-slate-700">
+                Observações
+              </label>
+              {canEditPedido ? (
+                <BotaoAssistenteIA
+                  onClick={() => observacoesIARef.current?.abrirAssistente()}
+                  disabled={!String(observacoes ?? '').trim()}
+                />
+              ) : null}
+            </div>
+            <CampoTextoComIA
+              ref={observacoesIARef}
+              hideTrigger
+              placeholder="Condições especiais, prazos, observações comerciais…"
+              value={observacoes}
+              onChange={setObservacoes}
+              disabled={!canEditPedido}
+              rows={4}
+              editableHint
+            />
+          </div>
         </div>
       </Card>
 
@@ -562,15 +631,11 @@ export function Pedido({ simulationId }) {
             type="button"
             variant="primary"
             className="w-full"
-            loading={savingPedido || generatingPdf}
-            disabled={savingPedido || generatingPdf || Boolean(deciding)}
+            loading={savingPedido}
+            disabled={savingPedido || Boolean(deciding)}
             onClick={() => void handleGerarPdf()}
           >
-            {savingPedido
-              ? 'Salvando…'
-              : generatingPdf
-                ? 'Gerando PDF…'
-                : 'Baixar Proposta p/ Cliente'}
+            {savingPedido ? 'Salvando…' : 'Baixar Proposta p/ Cliente'}
           </Button>
         ) : null}
         {isGestor && canEditPedido ? (
@@ -591,13 +656,21 @@ export function Pedido({ simulationId }) {
             variant="secondary"
             className="w-full"
             loading={deciding === 'cancel'}
-            disabled={Boolean(deciding) || savingPedido || generatingPdf}
+            disabled={Boolean(deciding) || savingPedido}
             onClick={() => void handleCancelOrder()}
           >
             Cancelar pedido
           </Button>
         ) : null}
       </div>
+
+      <PdfPreviewModal
+        open={Boolean(pdfPreview)}
+        onClose={() => setPdfPreview(null)}
+        titulo={pdfPreview?.titulo}
+        gerador={pdfPreview?.gerador}
+        nomeFallback={pdfPreview?.nomeFallback}
+      />
     </div>
   )
 }

@@ -4,6 +4,11 @@ import { Button } from "./Button";
 import { ButtonGroup } from "./ButtonGroup";
 import { Modal } from "./Modal";
 import { melhorarTextoPortugues } from "../../utils/textoPortuguesAssistant";
+import {
+  EDITABLE_HINT_BORDER,
+  EDITABLE_HINT_CURSOR,
+  EditableHintIcon,
+} from "./editableFieldHint";
 
 const textareaClass =
   "w-full resize-y rounded-2xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm transition-[border-color,box-shadow] placeholder:text-slate-400 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500";
@@ -19,6 +24,7 @@ export const CampoTextoComIA = forwardRef(function CampoTextoComIA(
     maxLinhas = 10,
     contexto = "simulacao",
     hideTrigger = false,
+    editableHint = false,
   },
   ref,
 ) {
@@ -40,6 +46,8 @@ export const CampoTextoComIA = forwardRef(function CampoTextoComIA(
   useImperativeHandle(ref, () => ({
     abrirAssistente,
   }));
+
+  const showEditableHint = editableHint && !disabled;
 
   const gerarSugestao = async () => {
     setCarregando(true);
@@ -98,14 +106,26 @@ export const CampoTextoComIA = forwardRef(function CampoTextoComIA(
             ) : null}
           </div>
         )}
-        <textarea
-          value={value ?? ""}
-          onChange={(e) => onChange(e.target.value)}
-          rows={rows}
-          disabled={disabled}
-          placeholder={placeholder}
-          className={textareaClass}
-        />
+        <div className="relative min-w-0">
+          <textarea
+            value={value ?? ""}
+            onChange={(e) => onChange(e.target.value)}
+            rows={rows}
+            disabled={disabled}
+            placeholder={placeholder}
+            className={[
+              textareaClass,
+              showEditableHint ? EDITABLE_HINT_BORDER : "",
+              showEditableHint ? EDITABLE_HINT_CURSOR : "",
+              showEditableHint ? "pr-9" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          />
+          {showEditableHint ? (
+            <EditableHintIcon offset="topEnd" />
+          ) : null}
+        </div>
       </div>
 
       <Modal
