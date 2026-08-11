@@ -52,6 +52,21 @@ export function resolveAppAbsoluteUrl(path = '/') {
 }
 
 /**
+ * Link público de assinatura.
+ * Usa a origem da aba atual para o link funcionar no mesmo ambiente
+ * (localhost em dev; domínio canônico em produção já publicado).
+ */
+export function resolveAssinaturaPublicUrl(token) {
+  const safeToken = encodeURIComponent(String(token ?? '').trim())
+  const path = `/assinar/${safeToken}`
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    const base = getAppBasePath().replace(/\/$/, '')
+    return `${window.location.origin}${base}${path}`
+  }
+  return resolveAppAbsoluteUrl(path)
+}
+
+/**
  * Destino padrão para fluxos Auth com redirect (recovery, magic link, OAuth).
  * Hoje o login é só senha (sem redirectTo), mas Site URL / Redirect URLs
  * no painel do Supabase ainda usam este valor quando houver e-mails Auth.

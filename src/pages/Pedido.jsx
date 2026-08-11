@@ -2,6 +2,7 @@ import { createElement, useCallback, useMemo, useRef, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { AtribuirConsultorPanel } from '../components/AtribuirConsultorPanel'
 import { PedidoPdfDocument } from '../components/pedido/PedidoPdfDocument'
+import { PedidoAssinaturaPanel } from '../components/pedido/PedidoAssinaturaPanel'
 import { PedidoSimulationSummary } from '../components/pedido/PedidoSimulationSummary'
 import { PdfPreviewModal } from '../components/pdf/PdfPreviewModal'
 import { AlertMessage } from '../components/ui/AlertMessage'
@@ -513,6 +514,37 @@ export function Pedido({ simulationId }) {
 
       {isGestor ? <PedidoSimulationSummary bundle={bundle} /> : null}
 
+      <PedidoAssinaturaPanel
+        simulationId={bundle.simulation.id}
+        canManage={canEditPedido}
+        disabled={savingPedido || Boolean(deciding) || !pdfBundle}
+        persistBeforeCreate={persistPedidoBeforePdf}
+        buildSnapshot={() => {
+          if (!pdfBundle) throw new Error('Pedido indisponível.')
+          return {
+            simulation: {
+              ...pdfBundle.simulation,
+              fazenda: fazenda.trim() || null,
+              pedido_municipio: pedidoMunicipio.trim() || null,
+              pedido_uf: pedidoUf || null,
+              prazo_semana_inicio: prazoSemanaInicio || null,
+              observacoes: observacoes.trim() || null,
+            },
+            client: { ...pdfBundle.client },
+            items: pdfBundle.items.map((item) => ({ ...item })),
+            vendedorNome: bundle.vendedorNome,
+          }
+        }}
+        buildPdfBlob={async (snapshot) =>
+          buildPdfBlobFromReactNode(
+            createElement(PedidoPdfDocument, {
+              bundle: snapshot,
+              vendedorNome: snapshot.vendedorNome,
+            }),
+          )
+        }
+      />
+
       <Card className="mb-6 rounded-3xl">
         <h2 className="mb-4 text-sm font-semibold text-primary-800">
           Dados do pedido
@@ -635,7 +667,7 @@ export function Pedido({ simulationId }) {
             disabled={savingPedido || Boolean(deciding)}
             onClick={() => void handleGerarPdf()}
           >
-            {savingPedido ? 'Salvando…' : 'Baixar Proposta p/ Cliente'}
+            {savingPedido ? 'Salvando…' : 'Baixar Pedido de Venda'}
           </Button>
         ) : null}
         {isGestor && canEditPedido ? (

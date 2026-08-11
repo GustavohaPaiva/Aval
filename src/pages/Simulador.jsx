@@ -910,6 +910,15 @@ export function Simulador() {
         </AlertMessage>
       ) : null}
 
+      {sim.softNotice ? (
+        <p
+          role="status"
+          className="rounded-xl border border-amber-200/70 bg-amber-50/80 px-3 py-2 text-xs font-medium text-amber-900/90"
+        >
+          {sim.softNotice}
+        </p>
+      ) : null}
+
       <SimuladorSummaryBar
         totalValor={sim.totalValor}
         totalProposta={sim.totalProposta}

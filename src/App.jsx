@@ -93,6 +93,11 @@ const ComissaoPage = lazy(() =>
 const PedidoPage = lazy(() =>
   import("./pages/PedidoPage").then((m) => ({ default: m.PedidoPage })),
 );
+const AssinarPedidoPage = lazy(() =>
+  import("./pages/AssinarPedidoPage").then((m) => ({
+    default: m.AssinarPedidoPage,
+  })),
+);
 const Simulador = lazy(() =>
   import("./pages/Simulador").then((m) => ({ default: m.Simulador })),
 );
@@ -114,6 +119,14 @@ export default function App() {
         <AlertDialogProvider>
           <Routes>
             <Route path="/login" element={<Login />} />
+            <Route
+              path="/assinar/:token"
+              element={
+                <LazyPage>
+                  <AssinarPedidoPage />
+                </LazyPage>
+              }
+            />
 
             <Route
               path="/"

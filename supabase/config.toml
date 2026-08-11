@@ -1,5 +1,13 @@
-# Config mínima para Edge Functions (deploy remoto via MCP/CLI).
-# Secrets (não versionar): GEMINI_API_KEY, opcionalmente GEMINI_MODEL.
+# Secrets (não versionar): SERVICE_ROLE já disponível no runtime das functions.
 
 [functions.melhorar-texto-proposta]
 verify_jwt = true
+
+[functions.criar-link-assinatura]
+verify_jwt = true
+
+[functions.obter-assinatura]
+verify_jwt = false
+
+[functions.concluir-assinatura]
+verify_jwt = false

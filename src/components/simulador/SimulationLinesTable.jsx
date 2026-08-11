@@ -123,7 +123,7 @@ const SimulationLinesTableRow = memo(function SimulationLinesTableRow({
       </td>
       <td className={cell}>
         <EditableNumber
-          value={row.descontoPct ?? 0}
+          value={row.descontoPct}
           onChange={(p) => onDescontoPctChange(row.id, p)}
           disabled={isReadOnly}
           min={0}

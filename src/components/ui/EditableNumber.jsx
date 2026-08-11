@@ -27,7 +27,9 @@ export function EditableNumber({
   }, [editing]);
 
   function startEditing() {
-    setDraft(String(value));
+    setDraft(
+      value == null || !Number.isFinite(Number(value)) ? "" : String(value),
+    );
     setEditing(true);
   }
 

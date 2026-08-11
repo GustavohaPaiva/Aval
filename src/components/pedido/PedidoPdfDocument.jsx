@@ -48,6 +48,7 @@ function buildPedidoLocal(simulation) {
 export function PedidoPdfDocument({
   bundle,
   vendedorNome,
+  assinaturaComprador = null,
 }) {
   const { simulation, client, items } = bundle
   const docNo = formatDocNumber(simulation.id)
@@ -540,7 +541,12 @@ export function PedidoPdfDocument({
             paddingTop: 8,
           }}
         >
-          <SignatureLine label="Assinatura do Comprador(a)" />
+          <SignatureLine
+            label="Assinatura do Comprador(a)"
+            signatureImage={assinaturaComprador?.imageDataUrl || null}
+            signerName={assinaturaComprador?.nome || null}
+            signerCpf={assinaturaComprador?.cpf || null}
+          />
           <SignatureLine label="Testemunha 1" />
           <SignatureLine label="Testemunha 2" />
         </div>
@@ -754,9 +760,23 @@ function Td({ children, align = 'left', mono, strong, muted }) {
   )
 }
 
-function SignatureLine({ label }) {
+function SignatureLine({ label, signatureImage, signerName, signerCpf }) {
+  const cpfLabel = signerCpf ? displayCpfCnpj(signerCpf) || signerCpf : null
   return (
-    <div style={{ paddingTop: 36 }}>
+    <div style={{ paddingTop: signatureImage ? 8 : 36 }}>
+      {signatureImage ? (
+        <img
+          src={signatureImage}
+          alt=""
+          style={{
+            display: 'block',
+            height: 52,
+            maxWidth: '100%',
+            objectFit: 'contain',
+            margin: '0 auto 4px',
+          }}
+        />
+      ) : null}
       <div style={{ borderTop: '1px solid #94a3b8' }} />
       <p
         style={{
@@ -768,6 +788,21 @@ function SignatureLine({ label }) {
       >
         {label}
       </p>
+      {signerName || cpfLabel ? (
+        <p
+          style={{
+            margin: '4px 0 0',
+            textAlign: 'center',
+            fontSize: 9,
+            color: '#0f172a',
+            lineHeight: 1.35,
+          }}
+        >
+          {[signerName, cpfLabel ? `CPF ${cpfLabel}` : null]
+            .filter(Boolean)
+            .join(' · ')}
+        </p>
+      ) : null}
     </div>
   )
 }

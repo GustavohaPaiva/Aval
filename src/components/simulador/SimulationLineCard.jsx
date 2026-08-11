@@ -156,7 +156,7 @@ export const SimulationLineCard = memo(function SimulationLineCard({
                   Desconto %
                 </label>
                 <EditableNumber
-                  value={row.descontoPct ?? 0}
+                  value={row.descontoPct}
                   onChange={onDescontoPctChange}
                   disabled={isReadOnly}
                   min={0}

@@ -2,6 +2,10 @@ import html2canvas from 'html2canvas-pro'
 import { jsPDF } from 'jspdf'
 
 const PDF_MARGIN_MM = 10
+/** JPEG reduz muito o tamanho vs PNG (html2canvas gera bitmaps). */
+const PDF_IMAGE_MIME = 'image/jpeg'
+const PDF_IMAGE_FORMAT = 'JPEG'
+const PDF_JPEG_QUALITY = 0.82
 
 /**
  * Fatia um canvas em páginas A4 e adiciona ao PDF.
@@ -54,14 +58,16 @@ function appendCanvasSlices(pdf, canvas, { isFirstSliceOfDocument }) {
       srcHeight,
     )
 
-    const pageImg = pageCanvas.toDataURL('image/png')
+    const pageImg = pageCanvas.toDataURL(PDF_IMAGE_MIME, PDF_JPEG_QUALITY)
     pdf.addImage(
       pageImg,
-      'PNG',
+      PDF_IMAGE_FORMAT,
       PDF_MARGIN_MM,
       PDF_MARGIN_MM,
       imgWidthMm,
       destHeightMm,
+      undefined,
+      'FAST',
     )
 
     offsetMm += contentHeight
@@ -73,7 +79,7 @@ function appendCanvasSlices(pdf, canvas, { isFirstSliceOfDocument }) {
 
 async function captureElement(element) {
   return html2canvas(element, {
-    scale: 2,
+    scale: 1.5,
     useCORS: true,
     logging: false,
     backgroundColor: '#ffffff',
@@ -100,6 +106,7 @@ export async function buildPedidoPdfBlobFromElement(element) {
     orientation: 'portrait',
     unit: 'mm',
     format: 'a4',
+    compress: true,
   })
 
   let documentHasContent = false
