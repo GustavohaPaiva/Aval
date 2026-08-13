@@ -84,8 +84,6 @@ export function ClienteDetalhePage() {
     );
     return { total, vendas, volume };
   }, [simulations]);
-    return { total, vendas, volume };
-  }, [simulations]);
 
   const conversionRate =
     stats.total > 0 ? Math.round((stats.vendas / stats.total) * 100) : 0;
