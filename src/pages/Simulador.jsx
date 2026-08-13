@@ -37,6 +37,8 @@ import {
   saveGestorReview,
   searchClients,
   updateSimulationStatus,
+  inactivateSimulation,
+  deleteSimulation,
 } from "../services/simulationOrderService";
 import { notifyGestoresSimulationPending } from "../services/notificationService";
 import { fetchComissaoFaixas } from "../services/comissaoService";
@@ -89,10 +91,12 @@ export function Simulador() {
   const hydrateFromBundleRef = useRef(sim.hydrateFromBundle);
   const resetLocalRef = useRef(sim.resetLocal);
   const clearDraftRef = useRef(sim.clearDraft);
+  const lockAsPendingRef = useRef(sim.lockAsPending);
   const navigateRef = useRef(navigate);
   hydrateFromBundleRef.current = sim.hydrateFromBundle;
   resetLocalRef.current = sim.resetLocal;
   clearDraftRef.current = sim.clearDraft;
+  lockAsPendingRef.current = sim.lockAsPending;
   navigateRef.current = navigate;
   const [assignedUserId, setAssignedUserId] = useState(null);
   const [assignedVendedorNome, setAssignedVendedorNome] = useState(null);
@@ -123,6 +127,8 @@ export function Simulador() {
   const [reviewDeciding, setReviewDeciding] = useState(null);
   const [reviewError, setReviewError] = useState(null);
   const [remoteStatus, setRemoteStatus] = useState(null);
+  const [remoteAtivo, setRemoteAtivo] = useState(true);
+  const [lifecycleBusy, setLifecycleBusy] = useState(null);
   const loadCatalog = useCallback(async (quarter, estado, isActive) => {
     if (!quarter || !estado) {
       setCatalog([]);
@@ -250,6 +256,7 @@ export function Simulador() {
         }
         wasRemoteSimRef.current = false;
         setRemoteStatus(null);
+        setRemoteAtivo(true);
         setAssignedUserId(null);
         setAssignedVendedorNome(null);
         return;
@@ -263,6 +270,10 @@ export function Simulador() {
       }
       hydrateFromBundleRef.current(result.data);
       setRemoteStatus(result.data.simulation.status ?? null);
+      setRemoteAtivo(result.data.simulation.ativo !== false);
+      if (result.data.simulation.ativo === false) {
+        lockAsPendingRef.current();
+      }
       setAssignedUserId(result.data.simulation.user_id ?? null);
       setAssignedVendedorNome(result.data.vendedorNome ?? null);
     },
@@ -671,6 +682,55 @@ export function Simulador() {
     if (!result.ok) return;
     sim.hydrateFromBundle(result.data);
     setRemoteStatus(result.data.simulation.status ?? null);
+    setRemoteAtivo(result.data.simulation.ativo !== false);
+    if (result.data.simulation.ativo === false) {
+      sim.lockAsPending();
+    }
+  }
+
+  async function handleInactivateSimulation() {
+    if (!sim.isGestor || !simulationId) return;
+    const confirmed = window.confirm(
+      "Inativar esta simulação? Ela sai das estatísticas e continua visível na listagem.",
+    );
+    if (!confirmed) return;
+    setLaunchError(null);
+    setLifecycleBusy("inactivate");
+    try {
+      const result = await inactivateSimulation(simulationId);
+      if (!result.ok) {
+        setLaunchError(result.error);
+        return;
+      }
+      setRemoteAtivo(false);
+      if (result.status) setRemoteStatus(result.status);
+      sim.lockAsPending();
+      sim.showActionBanner(
+        "Simulação inativada. Ela não entra mais nas estatísticas.",
+      );
+    } finally {
+      setLifecycleBusy(null);
+    }
+  }
+
+  async function handleDeleteSimulation() {
+    if (!sim.isGestor || !simulationId) return;
+    const confirmed = window.confirm(
+      "Excluir esta simulação? Ela não aparecerá mais no sistema. Esta ação não pode ser desfeita.",
+    );
+    if (!confirmed) return;
+    setLaunchError(null);
+    setLifecycleBusy("delete");
+    try {
+      const result = await deleteSimulation(simulationId);
+      if (!result.ok) {
+        setLaunchError(result.error);
+        return;
+      }
+      navigate("/simulacoes", { replace: true });
+    } finally {
+      setLifecycleBusy(null);
+    }
   }
 
   async function handleSaveReview() {
@@ -771,11 +831,14 @@ export function Simulador() {
     return [{ value, label: known?.label ?? value }];
   }, [sim.origemFrete, sim.estado]);
 
-  const showGestorReview = sim.isGestor && remoteStatus === "pending";
+  const isRemoteInactive = remoteAtivo === false;
+  const showGestorReview =
+    sim.isGestor && remoteStatus === "pending" && !isRemoteInactive;
   const canGestorSaveReview =
     sim.isGestor &&
     Boolean(simulationId) &&
-    !isPedidoStatus(remoteStatus);
+    !isPedidoStatus(remoteStatus) &&
+    !isRemoteInactive;
 
   const destinoOptions = freteDestinos.map((d) => ({ id: d, label: d }));
 
@@ -1166,7 +1229,12 @@ export function Simulador() {
           </dl>
 
           <div className="mt-5 space-y-3 rounded-2xl border border-slate-100 bg-slate-50/50 p-4 sm:p-5">
-            {showReadOnlyNotice ? (
+            {isRemoteInactive ? (
+              <p className="text-sm text-slate-600">
+                Simulação inativa — fora das estatísticas. Exclua para removê-la
+                do sistema.
+              </p>
+            ) : showReadOnlyNotice ? (
               <p className="text-sm text-slate-600">
                 {sim.isFrozen || isPedidoStatus(remoteStatus)
                   ? "Simulação convertida em pedido — valores congelados. Apenas visualização."
@@ -1255,7 +1323,10 @@ export function Simulador() {
                     Gerar pedido
                   </Button>
                 </>
-              ) : sim.isGestor && simulationId && !isPedidoStatus(remoteStatus) ? (
+              ) : sim.isGestor &&
+                simulationId &&
+                !isPedidoStatus(remoteStatus) &&
+                !isRemoteInactive ? (
                 <Button
                   type="button"
                   variant="primary"
@@ -1268,6 +1339,7 @@ export function Simulador() {
                 </Button>
               ) : !sim.isGestor &&
                 !isPedidoStatus(remoteStatus) &&
+                !isRemoteInactive &&
                 remoteStatus !== "conversion_requested" &&
                 (sim.globalStatus === "Aprovado" ||
                   remoteStatus === "approved") ? (
@@ -1289,6 +1361,33 @@ export function Simulador() {
                   onClick={() => void handleConvertToPedido()}
                 >
                   Gerar pedido
+                </Button>
+              ) : null}
+              {sim.isGestor &&
+              simulationId &&
+              !isPedidoStatus(remoteStatus) &&
+              !isRemoteInactive ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="w-full sm:flex-1"
+                  loading={lifecycleBusy === "inactivate"}
+                  disabled={Boolean(lifecycleBusy) || persisting || reviewSaving}
+                  onClick={() => void handleInactivateSimulation()}
+                >
+                  Inativar simulação
+                </Button>
+              ) : null}
+              {sim.isGestor && simulationId && !isPedidoStatus(remoteStatus) ? (
+                <Button
+                  type="button"
+                  variant="danger"
+                  className="w-full sm:flex-1"
+                  loading={lifecycleBusy === "delete"}
+                  disabled={Boolean(lifecycleBusy) || persisting || reviewSaving}
+                  onClick={() => void handleDeleteSimulation()}
+                >
+                  Excluir simulação
                 </Button>
               ) : null}
             </div>

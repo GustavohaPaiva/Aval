@@ -1,7 +1,9 @@
-import { createElement, useRef, useState } from 'react'
+import { createElement, useCallback, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { SignaturePad } from '../components/assinatura/SignaturePad'
+import { PedidoDocumentoPreview } from '../components/pedido/PedidoDocumentoPreview'
 import { PedidoPdfDocument } from '../components/pedido/PedidoPdfDocument'
+import { PdfInlinePreview } from '../components/pdf/PdfInlinePreview'
 import { BrandLogoFull } from '../components/brand/BrandLogo'
 import { AlertMessage } from '../components/ui/AlertMessage'
 import { Button } from '../components/ui/Button'
@@ -11,6 +13,7 @@ import { useAbortableAsync } from '../hooks/useAbortableAsync'
 import { buildPdfBlobFromReactNode } from '../services/renderReactPdf'
 import {
   concluirAssinaturaPublica,
+  obterAssinaturaPdfBlob,
   obterAssinaturaPublica,
 } from '../services/pedidoAssinaturaService'
 import { validateCpf } from '../utils/dataFormatters'
@@ -29,6 +32,12 @@ export function AssinarPedidoPage() {
   const [fieldError, setFieldError] = useState(null)
   const [submitting, setSubmitting] = useState(false)
   const [doneUrl, setDoneUrl] = useState(null)
+  const [signedBlob, setSignedBlob] = useState(null)
+
+  const loadPdf = useCallback(
+    () => obterAssinaturaPdfBlob(String(token ?? '')),
+    [token],
+  )
 
   useAbortableAsync(
     async (_signal, isActive) => {
@@ -110,6 +119,7 @@ export function AssinarPedidoPage() {
         return
       }
 
+      setSignedBlob(signedPdfBlob)
       setDoneUrl(res.data?.pdf_url || payload?.pdf_url || null)
       setPayload((prev) =>
         prev
@@ -165,14 +175,14 @@ export function AssinarPedidoPage() {
           Pedido assinado
           {payload.signer_name ? ` por ${payload.signer_name}` : ''}.
         </div>
-        {doneUrl || payload.pdf_url ? (
-          <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white">
-            <iframe
-              title="Pedido assinado"
-              src={doneUrl || payload.pdf_url}
-              className="h-[70vh] w-full"
-            />
-          </div>
+        {signedBlob || doneUrl || payload.pdf_url ? (
+          <PdfInlinePreview
+            className="mt-4 h-[70vh]"
+            title="Pedido assinado"
+            blob={signedBlob}
+            loader={signedBlob ? undefined : loadPdf}
+            nomeArquivo="pedido-assinado.pdf"
+          />
         ) : null}
       </PublicShell>
     )
@@ -191,15 +201,20 @@ export function AssinarPedidoPage() {
         </p>
       </div>
 
-      {payload.pdf_url ? (
-        <div className="mb-6 overflow-hidden rounded-2xl border border-slate-200 bg-white">
-          <iframe
-            title="Pedido de venda"
-            src={payload.pdf_url}
-            className="h-[55vh] w-full"
-          />
-        </div>
-      ) : null}
+      {payload.pedido_snapshot?.simulation ? (
+        <PedidoDocumentoPreview
+          bundle={payload.pedido_snapshot}
+          vendedorNome={payload.pedido_snapshot.vendedorNome}
+          className="mb-6 max-h-[55vh]"
+        />
+      ) : (
+        <PdfInlinePreview
+          className="mb-6 h-[55vh]"
+          title="Pedido de venda"
+          loader={loadPdf}
+          nomeArquivo="pedido.pdf"
+        />
+      )}
 
       <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
         <Input

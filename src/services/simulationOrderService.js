@@ -5,6 +5,10 @@ import { roundMoney } from '../utils/roundMoney';
 import { parseCpfCnpjInput } from '../utils/dataFormatters';
 import { formatBRL } from '../utils/money';
 import {
+    draftExpiryCutoffIso,
+    isHiddenDraft,
+} from '../utils/simulationLifecycle';
+import {
     notifyConsultorGestorSimulationUpdated,
     notifyConsultorOrderDecision,
     notifyConsultorPedidoFieldsUpdated,
@@ -117,6 +121,37 @@ function buildOverrideFields(overrides, userId) {
 
 async function deleteSimulationById(simulationId) {
     await supabase.from('simulations').delete().eq('id', simulationId);
+}
+
+async function expireStaleDrafts() {
+    const cutoff = draftExpiryCutoffIso()
+    const { error } = await supabase
+        .from('simulations')
+        .update({
+            ativo: false,
+            inativado_em: new Date().toISOString(),
+        })
+        .eq('status', 'draft')
+        .eq('ativo', true)
+        .lt('updated_at', cutoff)
+    if (error) {
+        console.warn('Falha ao expirar rascunhos:', error.message)
+    }
+}
+
+function applyVisibleSimulationsFilter(q) {
+    return q.or('status.neq.draft,ativo.eq.true')
+}
+
+function applyActiveStatsFilter(q) {
+    return q.eq('ativo', true)
+}
+
+function inactiveSimulationError() {
+    return {
+        ok: false,
+        error: 'Esta simulação está inativa e não pode ser alterada.',
+    }
 }
 
 function mapLinesToItemsPayload(simulationId, lines, statusLinha, userId) {
@@ -306,6 +341,17 @@ async function upsertSimulationWithItems(input, status, userId) {
     let simulationId = input.simulationId ?? null;
 
     if (simulationId) {
+        const { data: current, error: currentError } = await supabase
+            .from('simulations')
+            .select('id, status, ativo, updated_at')
+            .eq('id', simulationId)
+            .maybeSingle()
+        if (currentError) {
+            return { ok: false, error: currentError.message }
+        }
+        if (current && (current.ativo === false || isHiddenDraft(current))) {
+            return inactiveSimulationError()
+        }
         // Own rows only (consultor or gestor creating/editing their own drafts).
         // Gestor review of others' sims uses saveGestorReview instead.
         const { data: updatedRow, error: simError } = await supabase
@@ -466,6 +512,7 @@ function parseBundle(data) {
             total_bruto: Number(row.total_bruto),
             total_proposta: Number(row.total_proposta),
             status: row.status,
+            ativo: row.ativo !== false,
             tipo_frete: row.tipo_frete != null ? String(row.tipo_frete) : null,
             origem_frete: row.origem_frete != null ? String(row.origem_frete) : null,
             destino_frete: row.destino_frete != null ? String(row.destino_frete) : null,
@@ -507,6 +554,7 @@ function parseBundle(data) {
     };
 }
 export async function fetchSimulationOrderBundle(simulationId) {
+    await expireStaleDrafts()
     const { data, error } = await supabase
         .from('simulations')
         .select(`
@@ -516,6 +564,7 @@ export async function fetchSimulationOrderBundle(simulationId) {
       total_bruto,
       total_proposta,
       status,
+      ativo,
       tipo_frete,
       origem_frete,
       destino_frete,
@@ -579,6 +628,9 @@ export async function fetchSimulationOrderBundle(simulationId) {
         return { ok: false, error: error.message };
     }
     if (!data) {
+        return { ok: false, error: 'Simulação não encontrada.' };
+    }
+    if (isHiddenDraft(data)) {
         return { ok: false, error: 'Simulação não encontrada.' };
     }
     const bundle = parseBundle(data);
@@ -699,10 +751,13 @@ export async function persistConvertedSimulation(input) {
     if (input.simulationId) {
         const { data: existing, error: fetchError } = await supabase
             .from('simulations')
-            .select('id, status, user_id')
+            .select('id, status, user_id, ativo')
             .eq('id', input.simulationId)
             .maybeSingle();
         if (fetchError) return { ok: false, error: fetchError.message };
+        if (existing && existing.ativo === false) {
+            return inactiveSimulationError();
+        }
         if (existing && isPedidoStatus(existing.status)) {
             return {
                 ok: true,
@@ -803,10 +858,13 @@ export async function requestOrderConversion(input) {
     if (input.simulationId) {
         const { data: existing, error: fetchError } = await supabase
             .from('simulations')
-            .select('id, status')
+            .select('id, status, ativo')
             .eq('id', input.simulationId)
             .maybeSingle();
         if (fetchError) return { ok: false, error: fetchError.message };
+        if (existing && existing.ativo === false) {
+            return inactiveSimulationError();
+        }
         if (existing && isPedidoStatus(existing.status)) {
             return {
                 ok: false,
@@ -878,11 +936,14 @@ export async function saveGestorReview(input) {
 
     const { data: simRow, error: simFetchError } = await supabase
         .from('simulations')
-        .select('id, user_id, status')
+        .select('id, user_id, status, ativo')
         .eq('id', input.simulationId)
         .maybeSingle();
     if (simFetchError) return { ok: false, error: simFetchError.message };
     if (!simRow) return { ok: false, error: 'Simulação não encontrada.' };
+    if (simRow.ativo === false) {
+        return inactiveSimulationError();
+    }
     if (isPedidoStatus(simRow.status)) {
         return {
             ok: false,
@@ -1267,40 +1328,49 @@ export async function rejectOrder(simulationId, options = {}) {
 }
 
 /**
- * Gestor cancela pedido (pendente, convertido ou reprovado) → cancelled.
+ * Gestor inativa simulação ou pedido aprovado: sai das estatísticas, continua na listagem.
+ * Pedidos também vão para status cancelled.
  */
-export async function cancelOrder(simulationId) {
+export async function inactivateSimulation(simulationId) {
     const auth = await requireGestorUser();
     if (!auth.ok) return auth;
 
     const { data: existing, error: fetchError } = await supabase
         .from('simulations')
-        .select('id, status')
+        .select('id, status, ativo')
         .eq('id', simulationId)
         .maybeSingle();
     if (fetchError) return { ok: false, error: fetchError.message };
-    if (!existing) return { ok: false, error: 'Pedido não encontrado.' };
-    if (existing.status === 'cancelled') {
-        return { ok: true, status: 'cancelled' };
+    if (!existing) return { ok: false, error: 'Registro não encontrado.' };
+    if (existing.ativo === false) {
+        return { ok: true, status: existing.status, alreadyInactive: true };
     }
-    if (!['order_pending', 'converted', 'order_rejected'].includes(existing.status)) {
-        return { ok: false, error: 'Só é possível cancelar pedidos.' };
+
+    const now = new Date().toISOString();
+    const payload = {
+        ativo: false,
+        inativado_em: now,
+        inativado_por: auth.user.id,
+    };
+    const isPedido = isPedidoStatus(existing.status);
+    if (isPedido && existing.status !== 'cancelled') {
+        payload.status = 'cancelled';
+        payload.cancelado_por = auth.user.id;
+        payload.cancelado_em = now;
     }
 
     const { error } = await supabase
         .from('simulations')
-        .update({
-            status: 'cancelled',
-            cancelado_por: auth.user.id,
-            cancelado_em: new Date().toISOString(),
-        })
+        .update(payload)
         .eq('id', simulationId);
     if (error) return { ok: false, error: error.message };
 
-    await supabase
-        .from('simulation_items')
-        .update({ status_linha: 'cancelled' })
-        .eq('simulation_id', simulationId);
+    if (payload.status === 'cancelled') {
+        await supabase
+            .from('simulation_items')
+            .update({ status_linha: 'cancelled' })
+            .eq('simulation_id', simulationId);
+    }
 
     const { error: comissaoError } = await supabase
         .from('comissao_registros')
@@ -1308,9 +1378,47 @@ export async function cancelOrder(simulationId) {
         .eq('simulation_id', simulationId);
     if (comissaoError) return { ok: false, error: comissaoError.message };
 
+    return { ok: true, status: payload.status ?? existing.status };
+}
+
+/** @deprecated use inactivateSimulation */
+export async function cancelOrder(simulationId) {
+    const result = await inactivateSimulation(simulationId);
+    if (!result.ok) return result;
+    if (
+        result.status !== 'cancelled' &&
+        !isPedidoStatus(result.status)
+    ) {
+        return { ok: true, status: result.status };
+    }
     return { ok: true, status: 'cancelled' };
 }
+
+/**
+ * Gestor exclui simulação ou pedido — some do sistema (itens, comissão e notificações em cascade).
+ */
+export async function deleteSimulation(simulationId) {
+    const auth = await requireGestorUser();
+    if (!auth.ok) return auth;
+
+    const { data: existing, error: fetchError } = await supabase
+        .from('simulations')
+        .select('id')
+        .eq('id', simulationId)
+        .maybeSingle();
+    if (fetchError) return { ok: false, error: fetchError.message };
+    if (!existing) return { ok: false, error: 'Registro não encontrado.' };
+
+    const { error } = await supabase
+        .from('simulations')
+        .delete()
+        .eq('id', simulationId);
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+}
+
 export async function fetchSimulationsList(params) {
+    await expireStaleDrafts()
     const page = Math.max(1, params.page ?? 1)
     const pageSize = Math.min(100, Math.max(10, params.pageSize ?? 50))
     const from = (page - 1) * pageSize
@@ -1324,11 +1432,14 @@ export async function fetchSimulationsList(params) {
       created_at,
       total_proposta,
       status,
+      ativo,
       user_id,
       clients ( nome )
     `, { count: 'exact' })
         .order('created_at', { ascending: false })
         .range(from, to)
+
+    q = applyVisibleSimulationsFilter(q)
 
     if (params.role === 'consultor') {
         q = q.eq('user_id', params.userId)
@@ -1377,6 +1488,7 @@ export async function fetchSimulationsList(params) {
             client_nome: nome,
             total_proposta: Number(row.total_proposta),
             status: row.status,
+            ativo: row.ativo !== false,
             user_id: String(row.user_id),
         }
     })
@@ -1395,9 +1507,14 @@ export async function fetchSimulationsList(params) {
 }
 
 export async function fetchGestorDashboardStats() {
+    await expireStaleDrafts()
     const [pendingRes, approvedRes, clientsRes, consultoresRes] = await Promise.all([
-        supabase.from('simulations').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
-        supabase.from('simulations').select('id', { count: 'exact', head: true }).eq('status', 'approved'),
+        applyActiveStatsFilter(
+            supabase.from('simulations').select('id', { count: 'exact', head: true }),
+        ).eq('status', 'pending'),
+        applyActiveStatsFilter(
+            supabase.from('simulations').select('id', { count: 'exact', head: true }),
+        ).eq('status', 'approved'),
         supabase.from('clients').select('id', { count: 'exact', head: true }),
         supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'consultor'),
     ]);
@@ -1421,27 +1538,19 @@ export async function fetchGestorDashboardStats() {
 }
 
 export async function fetchConsultorDashboardStats(userId) {
+    await expireStaleDrafts()
+    const base = () =>
+        applyActiveStatsFilter(
+            supabase
+                .from('simulations')
+                .select('id', { count: 'exact', head: true })
+                .eq('user_id', userId),
+        )
     const [draftRes, pendingRes, approvedRes, convertedRes] = await Promise.all([
-        supabase
-            .from('simulations')
-            .select('id', { count: 'exact', head: true })
-            .eq('user_id', userId)
-            .eq('status', 'draft'),
-        supabase
-            .from('simulations')
-            .select('id', { count: 'exact', head: true })
-            .eq('user_id', userId)
-            .eq('status', 'pending'),
-        supabase
-            .from('simulations')
-            .select('id', { count: 'exact', head: true })
-            .eq('user_id', userId)
-            .eq('status', 'approved'),
-        supabase
-            .from('simulations')
-            .select('id', { count: 'exact', head: true })
-            .eq('user_id', userId)
-            .eq('status', 'converted'),
+        base().eq('status', 'draft'),
+        base().eq('status', 'pending'),
+        base().eq('status', 'approved'),
+        base().eq('status', 'converted'),
     ]);
     for (const res of [draftRes, pendingRes, approvedRes, convertedRes]) {
         if (res.error) return { ok: false, error: res.error.message };
@@ -1503,11 +1612,14 @@ export async function updatePedidoFields(input) {
 
     const { data: simCreated, error: simError } = await supabase
         .from('simulations')
-        .select('created_at, prazo_semana_inicio')
+        .select('created_at, prazo_semana_inicio, ativo')
         .eq('id', input.simulationId)
         .maybeSingle()
     if (simError) return { ok: false, error: simError.message }
     if (!simCreated) return { ok: false, error: 'Pedido não encontrado.' }
+    if (simCreated.ativo === false) {
+        return inactiveSimulationError()
+    }
 
     if (
         !isPrazoSemanaAllowed(prazoSemanaInicio, {

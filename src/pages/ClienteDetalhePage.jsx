@@ -75,12 +75,15 @@ export function ClienteDetalhePage() {
   );
 
   const stats = useMemo(() => {
-    const total = simulations.length;
-    const vendas = simulations.filter((s) => s.status === "converted").length;
-    const volume = simulations.reduce(
+    const counted = simulations.filter((s) => s.ativo !== false);
+    const total = counted.length;
+    const vendas = counted.filter((s) => s.status === "converted").length;
+    const volume = counted.reduce(
       (acc, s) => acc + Number(s.total_proposta ?? 0),
       0,
     );
+    return { total, vendas, volume };
+  }, [simulations]);
     return { total, vendas, volume };
   }, [simulations]);
 

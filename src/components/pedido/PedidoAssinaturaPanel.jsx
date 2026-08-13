@@ -2,12 +2,13 @@ import { useCallback, useState } from 'react'
 import { AlertMessage } from '../ui/AlertMessage'
 import { Button } from '../ui/Button'
 import { Card } from '../ui/Card'
+import { PdfPreviewModal } from '../pdf/PdfPreviewModal'
 import { resolveAssinaturaPublicUrl } from '../../config/appEnv'
 import { useAbortableAsync } from '../../hooks/useAbortableAsync'
 import {
   assinaturaStatusLabel,
-  createPedidoDocumentoSignedUrl,
   criarLinkAssinatura,
+  downloadPedidoDocumento,
   fetchPedidoAssinaturas,
   normalizeAssinaturaStatus,
   revogarLinkAssinatura,
@@ -31,6 +32,7 @@ export function PedidoAssinaturaPanel({
   const [error, setError] = useState(null)
   const [banner, setBanner] = useState(null)
   const [copiedId, setCopiedId] = useState(null)
+  const [pdfPreview, setPdfPreview] = useState(null)
 
   useAbortableAsync(
     async (_signal, isActive) => {
@@ -122,18 +124,26 @@ export function PedidoAssinaturaPanel({
     reload()
   }
 
-  async function handleBaixar(row, kind) {
+  async function handleVerPdf(row, kind) {
     const path =
       kind === 'signed' ? row.pdf_signed_path : row.pdf_original_path
+    const titulo = kind === 'signed' ? 'PDF assinado' : 'PDF original'
+    const nomeArquivo =
+      kind === 'signed' ? 'pedido-assinado.pdf' : 'pedido.pdf'
     setBusy(`download-${row.id}-${kind}`)
     setError(null)
-    const res = await createPedidoDocumentoSignedUrl(path)
+    const res = await downloadPedidoDocumento(path)
     setBusy(null)
     if (!res.ok) {
       setError(res.error)
       return
     }
-    window.open(res.url, '_blank', 'noopener,noreferrer')
+    const blob = res.blob
+    setPdfPreview({
+      titulo,
+      nomeFallback: nomeArquivo,
+      gerador: async () => ({ blob, nomePadrao: nomeArquivo }),
+    })
   }
 
   return (
@@ -229,7 +239,7 @@ export function PedidoAssinaturaPanel({
                         className="px-3! py-1.5! text-xs"
                         loading={busy === `download-${row.id}-signed`}
                         disabled={Boolean(busy)}
-                        onClick={() => void handleBaixar(row, 'signed')}
+                        onClick={() => void handleVerPdf(row, 'signed')}
                       >
                         Ver PDF assinado
                       </Button>
@@ -241,7 +251,7 @@ export function PedidoAssinaturaPanel({
                         className="px-3! py-1.5! text-xs"
                         loading={busy === `download-${row.id}-original`}
                         disabled={Boolean(busy)}
-                        onClick={() => void handleBaixar(row, 'original')}
+                        onClick={() => void handleVerPdf(row, 'original')}
                       >
                         Ver PDF original
                       </Button>
@@ -256,6 +266,14 @@ export function PedidoAssinaturaPanel({
           })}
         </ul>
       )}
+
+      <PdfPreviewModal
+        open={Boolean(pdfPreview)}
+        onClose={() => setPdfPreview(null)}
+        titulo={pdfPreview?.titulo}
+        gerador={pdfPreview?.gerador}
+        nomeFallback={pdfPreview?.nomeFallback}
+      />
     </Card>
   )
 }

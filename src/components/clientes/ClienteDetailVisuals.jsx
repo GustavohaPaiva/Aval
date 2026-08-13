@@ -22,8 +22,8 @@ function clienteInitial(nome) {
   return trimmed ? trimmed.charAt(0).toUpperCase() : "?";
 }
 
-function statusLabel(status) {
-  return statusLabelPt(status);
+function statusLabel(status, options) {
+  return statusLabelPt(status, options);
 }
 
 export function ClienteProfileHero({ client }) {
@@ -328,10 +328,10 @@ export function ClienteSimulationsTable({
                   <span
                     className={[
                       "inline-flex shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold",
-                      statusBadgeClass(row.status),
+                      statusBadgeClass(row.status, { ativo: row.ativo }),
                     ].join(" ")}
                   >
-                    {statusLabel(row.status)}
+                    {statusLabel(row.status, { ativo: row.ativo })}
                   </span>
                 </td>
 

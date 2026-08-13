@@ -85,6 +85,28 @@ Deno.serve(async (req) => {
       return jsonResponse({ erro: "Documento indisponível." }, 404);
     }
 
+    const wantsPdf = body?.as === "pdf" || body?.format === "pdf";
+    if (wantsPdf) {
+      const { data: file, error: dlError } = await admin.storage
+        .from("pedido-documentos")
+        .download(path);
+      if (dlError || !file) {
+        return jsonResponse(
+          { erro: dlError?.message ?? "Falha ao obter documento." },
+          500,
+        );
+      }
+      return new Response(file, {
+        status: 200,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/pdf",
+          "Content-Disposition": 'inline; filename="pedido.pdf"',
+          "Cache-Control": "private, max-age=60",
+        },
+      });
+    }
+
     const { data: signed, error: signedError } = await admin.storage
       .from("pedido-documentos")
       .createSignedUrl(path, 60 * 10);

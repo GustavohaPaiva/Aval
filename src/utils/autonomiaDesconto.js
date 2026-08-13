@@ -1,3 +1,5 @@
+import { roundMoney } from './roundMoney'
+
 /** Defaults alinhados à regra comercial (prazo >= limiar → longo). */
 export const DEFAULT_AUTONOMIA_PARAMS = {
   autonomia_dias_limiar: 90,
@@ -99,4 +101,23 @@ export function getFloorRatio(autonomiaPercentual) {
   const pct = Number(autonomiaPercentual)
   if (!Number.isFinite(pct) || pct < 0) return 1
   return Math.max(0, (100 - pct) / 100)
+}
+
+/** Piso unitário em R$ (2 casas). O desconto exatamente igual à autonomia fica no piso. */
+export function getFloorUnit(precoUnitario, autonomiaPercentual) {
+  const pu = Number(precoUnitario)
+  if (!Number.isFinite(pu)) return 0
+  return roundMoney(pu * getFloorRatio(autonomiaPercentual))
+}
+
+function toCents(value) {
+  return Math.round(Number(value) * 100)
+}
+
+/** Abaixo do piso: o valor exato da autonomia é permitido; 1 centavo a menos não. */
+export function isPropostaBelowFloor(proposta, floorUnit) {
+  const p = Number(proposta)
+  const f = Number(floorUnit)
+  if (!Number.isFinite(p) || !Number.isFinite(f)) return false
+  return toCents(p) < toCents(f)
 }

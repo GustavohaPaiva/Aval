@@ -757,9 +757,10 @@ export async function fetchConsultorVendasResumo(consultorId) {
 
   const { data, error } = await supabase
     .from('simulations')
-    .select('id, total_proposta')
-    .eq('user_id', consultorId)
-    .eq('status', 'converted')
+        .select('id, total_proposta')
+        .eq('user_id', consultorId)
+        .eq('status', 'converted')
+        .eq('ativo', true)
 
   if (error) return { ok: false, error: error.message }
 

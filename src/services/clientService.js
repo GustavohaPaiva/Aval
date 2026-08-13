@@ -4,6 +4,7 @@ import {
   parseCpfCnpjInput,
   parsePhoneInput,
 } from '../utils/dataFormatters'
+import { isHiddenDraft } from '../utils/simulationLifecycle'
 
 const CLIENT_FIELDS =
   'id, nome, razao_social, cnpj_cpf, email, telefone, municipio, uf, ativo, created_at'
@@ -44,12 +45,13 @@ export async function fetchClientById(id) {
 export async function fetchClientSimulations(clientId) {
   const { data, error } = await supabase
     .from('simulations')
-    .select('id, created_at, total_proposta, total_bruto, status')
+    .select('id, created_at, updated_at, total_proposta, total_bruto, status, ativo')
     .eq('client_id', clientId)
     .order('created_at', { ascending: false })
 
   if (error) return { ok: false, error: error.message }
-  return { ok: true, rows: data ?? [] }
+  const rows = (data ?? []).filter((row) => !isHiddenDraft(row))
+  return { ok: true, rows }
 }
 
 

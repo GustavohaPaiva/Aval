@@ -15,7 +15,8 @@ import {
 import {
   calcPrazoNegociacao,
   getAutonomiaPercentual,
-  getFloorRatio,
+  getFloorUnit,
+  isPropostaBelowFloor,
   normalizeAutonomiaParams,
   todayDateOnly,
 } from '../utils/autonomiaDesconto'
@@ -74,15 +75,11 @@ function calcPropostaFromDesconto(precoUnitario, descontoPct) {
 }
 
 function resolveLineAutonomia(classe, prazoDias, autonomiaParams) {
-  const autonomiaPct = getAutonomiaPercentual({
+  return getAutonomiaPercentual({
     prazoDias,
     classe,
     params: autonomiaParams,
   })
-  return {
-    autonomiaPct,
-    floorRatio: getFloorRatio(autonomiaPct),
-  }
 }
 
 function normalizeDraftLines(lines) {
@@ -261,13 +258,14 @@ function buildLineView(
     proposta,
     faixas: comissaoFaixas,
   })
-  const { autonomiaPct, floorRatio } = resolveLineAutonomia(
+  const autonomiaPct = resolveLineAutonomia(
     comissao.classe,
     prazoDias,
     autonomiaParams,
   )
-  const floorUnit = floorRatio * precoUnitario
-  const isLineBelowFloor = Boolean(product) && proposta < floorUnit
+  const floorUnit = getFloorUnit(precoUnitario, autonomiaPct)
+  const isLineBelowFloor =
+    Boolean(product) && isPropostaBelowFloor(proposta, floorUnit)
 
   const hasStoredDesconto =
     line.descontoPct != null && Number.isFinite(Number(line.descontoPct))
@@ -757,13 +755,14 @@ export function useSimulation(options = {}) {
             line.overrides,
           )
           const nextProposta = clampProposta(proposta)
-          const { floorRatio } = resolveLineAutonomia(
+          const autonomiaPct = resolveLineAutonomia(
             product?.classe,
             prazoDias,
             autonomiaParams,
           )
-          const floorUnit = floorRatio * pu
-          const belowFloor = Boolean(product) && nextProposta < floorUnit
+          const floorUnit = getFloorUnit(pu, autonomiaPct)
+          const belowFloor =
+            Boolean(product) && isPropostaBelowFloor(nextProposta, floorUnit)
           if (!canOverrideFloor && belowFloor) {
             return {
               ...line,
@@ -804,7 +803,7 @@ export function useSimulation(options = {}) {
         current.overrides,
       )
       if (!canOverrideFloor && product) {
-        const { autonomiaPct } = resolveLineAutonomia(
+        const autonomiaPct = resolveLineAutonomia(
           product?.classe,
           prazoDias,
           autonomiaParams,
@@ -1149,13 +1148,16 @@ export function useSimulation(options = {}) {
         const product = catalog.find((p) => p.id === line.productId)
         if (!product) return line
         const pu = resolvePrecoUnitario(product, pricingContext, line.overrides)
-        const { floorRatio } = resolveLineAutonomia(
+        const autonomiaPct = resolveLineAutonomia(
           product?.classe,
           prazoDias,
           autonomiaParams,
         )
-        const floorUnit = floorRatio * pu
-        const belowFloor = clampProposta(line.proposta) < floorUnit
+        const floorUnit = getFloorUnit(pu, autonomiaPct)
+        const belowFloor = isPropostaBelowFloor(
+          clampProposta(line.proposta),
+          floorUnit,
+        )
         const hasDesconto =
           line.descontoPct != null && Number.isFinite(Number(line.descontoPct))
 

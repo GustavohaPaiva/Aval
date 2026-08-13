@@ -27,7 +27,8 @@ export function isConsultorSimulationLocked(status) {
   )
 }
 
-export function statusLabelPt(status) {
+export function statusLabelPt(status, { ativo } = {}) {
+  if (ativo === false) return 'Inativo'
   switch (status) {
     case 'draft':
       return 'Rascunho'
@@ -52,7 +53,10 @@ export function statusLabelPt(status) {
   }
 }
 
-export function statusBadgeClass(status) {
+export function statusBadgeClass(status, { ativo } = {}) {
+  if (ativo === false) {
+    return 'bg-slate-100 text-slate-700 ring-1 ring-slate-200'
+  }
   switch (status) {
     case 'approved':
     case 'converted':

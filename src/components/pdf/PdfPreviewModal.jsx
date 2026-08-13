@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Button } from '../ui/Button'
-import { baixarPdfBlob } from '../../utils/downloadPdfBlob'
+import { baixarPdfBlob, ensurePdfBlob } from '../../utils/downloadPdfBlob'
 
 /**
  * Pré-visualização de PDF (estilo Montezuma): iframe + download com Salvar como.
@@ -53,7 +53,8 @@ export function PdfPreviewModal({
         if (!blob || !(blob instanceof Blob)) {
           throw new Error('Não foi possível gerar o documento.')
         }
-        const url = URL.createObjectURL(blob)
+        const typed = ensurePdfBlob(blob)
+        const url = URL.createObjectURL(typed)
         pdfUrlRef.current = url
         setNomeArquivo(resultado?.nomePadrao || nomeFallback)
         setPdfUrl(url)
@@ -234,7 +235,7 @@ export function PdfPreviewModal({
 
         {pdfUrl && !erro ? (
           <iframe
-            src={`${pdfUrl}#toolbar=1&navpanes=0`}
+            src={pdfUrl}
             title={titulo}
             className="h-full w-full rounded-xl border border-slate-200/80 bg-white shadow-md"
           />

@@ -1,4 +1,30 @@
 /**
+ * Garante MIME application/pdf para o viewer nativo do browser.
+ * @param {Blob} blob
+ * @returns {Blob}
+ */
+export function ensurePdfBlob(blob) {
+  if (!(blob instanceof Blob) || blob.size < 8) {
+    throw new Error('Documento PDF inválido.')
+  }
+  if (blob.type === 'application/pdf') return blob
+  return blob.slice(0, blob.size, 'application/pdf')
+}
+
+/**
+ * Baixa um PDF remoto e retorna Blob com MIME correto.
+ * @param {string} url
+ * @returns {Promise<Blob>}
+ */
+export async function fetchPdfBlob(url) {
+  const res = await fetch(url)
+  if (!res.ok) {
+    throw new Error('Não foi possível carregar o PDF.')
+  }
+  return ensurePdfBlob(await res.blob())
+}
+
+/**
  * Dispara download de um Blob PDF com nome sugerido.
  * Usa showSaveFilePicker quando disponível (usuário escolhe pasta/arquivo).
  */

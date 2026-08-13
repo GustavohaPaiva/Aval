@@ -1,4 +1,5 @@
 import { resolveAssinaturaPublicUrl } from '../config/appEnv'
+import { ensurePdfBlob, fetchPdfBlob } from '../utils/downloadPdfBlob'
 import { requireSupabase } from './supabase'
 
 const BUCKET = 'pedido-documentos'
@@ -116,6 +117,28 @@ export async function obterAssinaturaPublica(token) {
 }
 
 /**
+ * PDF da assinatura pública como Blob (para preview em iframe).
+ * @param {string} token
+ * @returns {Promise<Blob>}
+ */
+export async function obterAssinaturaPdfBlob(token) {
+  const supabase = requireSupabase()
+  const { data, error } = await supabase.functions.invoke('obter-assinatura', {
+    body: { token, as: 'pdf' },
+  })
+  if (!error && data instanceof Blob && data.size > 8) {
+    return ensurePdfBlob(data)
+  }
+  const res = await obterAssinaturaPublica(token)
+  if (!res.ok || !res.data?.pdf_url) {
+    throw new Error(
+      res.error || error?.message || 'Falha ao carregar o PDF.',
+    )
+  }
+  return fetchPdfBlob(res.data.pdf_url)
+}
+
+/**
  * @param {{
  *   token: string,
  *   signerName: string,
@@ -166,19 +189,22 @@ export async function revogarLinkAssinatura(assinaturaId) {
 
 /**
  * @param {string | null | undefined} path
- * @param {number} [expiresIn]
  */
-export async function createPedidoDocumentoSignedUrl(path, expiresIn = 600) {
+export async function downloadPedidoDocumento(path) {
   if (!path) return { ok: false, error: 'Documento indisponível.' }
   const supabase = requireSupabase()
-  const { data, error } = await supabase.storage
-    .from(BUCKET)
-    .createSignedUrl(path, expiresIn)
-
-  if (error || !data?.signedUrl) {
+  const { data, error } = await supabase.storage.from(BUCKET).download(path)
+  if (error || !data) {
     return { ok: false, error: error?.message ?? 'Falha ao obter documento.' }
   }
-  return { ok: true, url: data.signedUrl }
+  try {
+    return { ok: true, blob: ensurePdfBlob(data) }
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : 'Documento PDF inválido.',
+    }
+  }
 }
 
 /**

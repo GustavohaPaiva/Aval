@@ -1,5 +1,5 @@
 import { createElement, useCallback, useMemo, useRef, useState } from 'react'
-import { Navigate } from 'react-router-dom'
+import { Navigate, useNavigate } from 'react-router-dom'
 import { AtribuirConsultorPanel } from '../components/AtribuirConsultorPanel'
 import { PedidoPdfDocument } from '../components/pedido/PedidoPdfDocument'
 import { PedidoAssinaturaPanel } from '../components/pedido/PedidoAssinaturaPanel'
@@ -33,6 +33,7 @@ import { fetchMunicipiosBrasil } from '../services/ibgeLocalidades'
 import { buildPdfBlobFromReactNode } from '../services/renderReactPdf'
 import {
   cancelOrder,
+  deleteSimulation,
   fetchSimulationOrderBundle,
   updatePedidoFields,
 } from '../services/simulationOrderService'
@@ -46,6 +47,7 @@ import {
 export function Pedido({ simulationId }) {
   const { role } = useAuth()
   const isGestor = role === 'gestor'
+  const navigate = useNavigate()
 
   const [loadState, setLoadState] = useState('idle')
   const [loadError, setLoadError] = useState(null)
@@ -73,14 +75,18 @@ export function Pedido({ simulationId }) {
   const [deciding, setDeciding] = useState(null)
 
   const status = bundle?.simulation.status
+  const isInactive = bundle?.simulation.ativo === false
   const isOrderPending = status === 'order_pending'
   const isConverted = status === 'converted'
   const isOrderRejected = status === 'order_rejected'
   const canEditPedido = isGestor
-    ? isOrderPending || isConverted
-    : isConverted
+    ? !isInactive && (isOrderPending || isConverted)
+    : isConverted && !isInactive
   const canCancelPedido =
-    isGestor && (isOrderPending || isConverted || isOrderRejected)
+    isGestor &&
+    !isInactive &&
+    (isOrderPending || isConverted || isOrderRejected)
+  const canDeletePedido = isGestor && Boolean(bundle)
   const backTo = isPedidoStatus(status) ? '/pedidos' : '/simulacoes'
   const backLabel = isPedidoStatus(status)
     ? 'Voltar para pedidos'
@@ -233,12 +239,12 @@ export function Pedido({ simulationId }) {
     return Object.keys(errors).length === 0
   }
 
-  function patchSimulationStatus(nextStatus) {
+  function patchSimulation(next) {
     setBundle((prev) =>
       prev
         ? {
             ...prev,
-            simulation: { ...prev.simulation, status: nextStatus },
+            simulation: { ...prev.simulation, ...next },
           }
         : prev,
     )
@@ -247,7 +253,7 @@ export function Pedido({ simulationId }) {
   async function handleCancelOrder() {
     if (!bundle || !isGestor) return
     const confirmed = window.confirm(
-      'Cancelar este pedido? Essa ação registra quem cancelou e quando.',
+      'Inativar este pedido? Ele sai das estatísticas e continua visível na listagem.',
     )
     if (!confirmed) return
 
@@ -260,8 +266,33 @@ export function Pedido({ simulationId }) {
         setActionError(result.error)
         return
       }
-      patchSimulationStatus('cancelled')
-      setActionBanner('Pedido cancelado.')
+      patchSimulation({
+        status: result.status ?? 'cancelled',
+        ativo: false,
+      })
+      setActionBanner('Pedido inativado. Ele não entra mais nas estatísticas.')
+    } finally {
+      setDeciding(null)
+    }
+  }
+
+  async function handleDeletePedido() {
+    if (!bundle || !isGestor) return
+    const confirmed = window.confirm(
+      'Excluir este pedido? Ele não aparecerá mais no sistema. Esta ação não pode ser desfeita.',
+    )
+    if (!confirmed) return
+
+    setActionError(null)
+    setActionBanner(null)
+    setDeciding('delete')
+    try {
+      const result = await deleteSimulation(bundle.simulation.id)
+      if (!result.ok) {
+        setActionError(result.error)
+        return
+      }
+      navigate('/pedidos', { replace: true })
     } finally {
       setDeciding(null)
     }
@@ -485,10 +516,10 @@ export function Pedido({ simulationId }) {
             <span
               className={[
                 'inline-flex rounded-full px-3 py-1 text-sm font-semibold',
-                statusBadgeClass(status),
+                statusBadgeClass(status, { ativo: bundle.simulation.ativo }),
               ].join(' ')}
             >
-              {statusLabelPt(status)}
+              {statusLabelPt(status, { ativo: bundle.simulation.ativo })}
             </span>
           ) : null
         }
@@ -691,7 +722,19 @@ export function Pedido({ simulationId }) {
             disabled={Boolean(deciding) || savingPedido}
             onClick={() => void handleCancelOrder()}
           >
-            Cancelar pedido
+            Inativar pedido
+          </Button>
+        ) : null}
+        {canDeletePedido ? (
+          <Button
+            type="button"
+            variant="danger"
+            className="w-full"
+            loading={deciding === 'delete'}
+            disabled={Boolean(deciding) || savingPedido}
+            onClick={() => void handleDeletePedido()}
+          >
+            Excluir pedido
           </Button>
         ) : null}
       </div>

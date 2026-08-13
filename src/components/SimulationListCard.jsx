@@ -54,10 +54,10 @@ export function SimulationListCard({
           <span
             className={[
               'inline-flex shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold',
-              statusBadgeClass(row.status),
+              statusBadgeClass(row.status, { ativo: row.ativo }),
             ].join(' ')}
           >
-            {statusLabelPt(row.status)}
+            {statusLabelPt(row.status, { ativo: row.ativo })}
           </span>
         </div>
       </header>
@@ -116,9 +116,13 @@ export function SimulationListCard({
         ) : isPedidosList &&
           isPedidoStatus(row.status) &&
           !isGestor &&
-          row.status !== 'converted' ? (
+          (row.ativo === false ||
+            row.status === 'cancelled' ||
+            row.status !== 'converted') ? (
           <p className="text-center text-sm text-slate-500">
-            Aguardando aprovação do gestor
+            {row.ativo === false || row.status === 'cancelled'
+              ? 'Pedido inativo'
+              : 'Aguardando aprovação do gestor'}
           </p>
         ) : isPedidosList && row.status === 'order_pending' && isGestor ? (
           <Button

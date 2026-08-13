@@ -3,9 +3,12 @@ import {
   calcPrazoNegociacao,
   getAutonomiaPercentual,
   getFloorRatio,
+  getFloorUnit,
+  isPropostaBelowFloor,
   normalizeAutonomiaParams,
   todayDateOnly,
 } from './autonomiaDesconto'
+import { roundMoney } from './roundMoney'
 
 describe('autonomiaDesconto', () => {
   it('calcula prazo = pagamento − negociacao', () => {
@@ -52,5 +55,19 @@ describe('autonomiaDesconto', () => {
 
   it('todayDateOnly retorna YYYY-MM-DD', () => {
     expect(todayDateOnly()).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  })
+
+  it('aceita desconto exatamente igual à autonomia (5%) e recusa 1 centavo a menos', () => {
+    const pu = 19.99
+    const autonomiaPct = 5
+    const floorUnit = getFloorUnit(pu, autonomiaPct)
+    const propostaNoLimite = roundMoney(pu * (1 - autonomiaPct / 100))
+    const propostaUmCentavoAbaixo = roundMoney(propostaNoLimite - 0.01)
+    const propostaCincoUm = roundMoney(pu * (1 - 5.1 / 100))
+
+    expect(propostaNoLimite).toBe(floorUnit)
+    expect(isPropostaBelowFloor(propostaNoLimite, floorUnit)).toBe(false)
+    expect(isPropostaBelowFloor(propostaUmCentavoAbaixo, floorUnit)).toBe(true)
+    expect(isPropostaBelowFloor(propostaCincoUm, floorUnit)).toBe(true)
   })
 })

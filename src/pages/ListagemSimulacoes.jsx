@@ -139,7 +139,7 @@ export function ListagemSimulacoes() {
         <PageHeader
           eyebrow={isGestor ? "Gestão comercial" : "Operação"}
           title={isGestor ? "Simulações" : "Minhas simulações"}
-          description="Acompanhe rascunhos, aprovações, conversões e propostas em qualquer status."
+          description="Acompanhe rascunhos (expiram em 7 dias), aprovações, conversões e propostas em qualquer status."
           actions={
             <Button
               type="button"
