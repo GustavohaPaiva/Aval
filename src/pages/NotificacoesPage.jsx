@@ -33,6 +33,8 @@ const NOTIFICATION_TYPES = [
   "order_approved",
   "order_rejected",
   "pedido_fields_updated",
+  "exchange_rate_changed",
+  "price_list_changed",
 ];
 
 const TYPE_OPTIONS = [

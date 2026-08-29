@@ -14,6 +14,7 @@ import {
   IconLayoutDashboard,
   IconLeaf,
   IconPackage,
+  IconWarehouse,
   IconPanelLeft,
   IconSliders,
   IconTruck,
@@ -128,6 +129,7 @@ function navSectionsForRole(role) {
             icon: IconClipboardList,
           },
           { to: "/pedidos", label: "Pedidos", icon: IconPackage },
+          { to: "/compras", label: "Compras", icon: IconWarehouse },
         ],
       },
       {

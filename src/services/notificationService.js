@@ -216,6 +216,10 @@ export function notificationTypeLabel(type) {
       return 'Simulação alterada pelo gestor'
     case 'pedido_fields_updated':
       return 'Dados do pedido atualizados'
+    case 'exchange_rate_changed':
+      return 'Alteração no valor do dólar'
+    case 'price_list_changed':
+      return 'Nova lista de preços'
     default:
       return 'Notificação'
   }

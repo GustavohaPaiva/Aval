@@ -145,6 +145,11 @@ export function ConsultorInfoPanel({ profile, usuario, onEdit, onTrocarCredencia
     { label: 'Cadastro', value: formatShortDate(profile.created_at) },
     { label: 'Usuário', value: usuario ? formatCorporateEmail(usuario) : '—' },
     { label: 'Filial', value: profile.filial?.trim() || '—' },
+    { label: 'WhatsApp', value: profile.whatsapp_phone_e164?.trim() || '—' },
+    {
+      label: 'Notificações no WhatsApp',
+      value: profile.whatsapp_notifications_enabled ? 'Ativadas' : 'Desativadas',
+    },
     { label: 'Perfil', value: profile.role },
   ]
 

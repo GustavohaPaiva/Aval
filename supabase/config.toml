@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.concluir-assinatura]
 verify_jwt = false
+
+[functions.whatsapp-dispatch]
+verify_jwt = false

@@ -58,7 +58,7 @@ export function ConsultorDetalhePage() {
             .maybeSingle(),
           supabase
             .from("profiles")
-            .select("id, nome, filial, created_at, role")
+            .select("id, nome, filial, created_at, role, whatsapp_phone_e164, whatsapp_notifications_enabled")
             .eq("id", id)
             .maybeSingle(),
           supabase.rpc("get_consultant_email", { p_consultor_id: id }),
@@ -185,6 +185,8 @@ export function ConsultorDetalhePage() {
             consultorId={id}
             initialNome={profile.nome}
             initialFilial={profile.filial ?? ""}
+            initialWhatsappPhone={profile.whatsapp_phone_e164 ?? ""}
+            initialWhatsappEnabled={profile.whatsapp_notifications_enabled ?? false}
             onClose={() => setEditOpen(false)}
             onSaved={() => reload()}
           />

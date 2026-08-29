@@ -93,6 +93,36 @@ const ComissaoPage = lazy(() =>
 const PedidoPage = lazy(() =>
   import("./pages/PedidoPage").then((m) => ({ default: m.PedidoPage })),
 );
+const ComprasHubPage = lazy(() =>
+  import("./pages/compras/ComprasHubPage").then((m) => ({
+    default: m.ComprasHubPage,
+  })),
+);
+const ComprasDemandaPage = lazy(() =>
+  import("./pages/compras/ComprasDemandaPage").then((m) => ({
+    default: m.ComprasDemandaPage,
+  })),
+);
+const ComprasDemandaDetalhePage = lazy(() =>
+  import("./pages/compras/ComprasDemandaDetalhePage").then((m) => ({
+    default: m.ComprasDemandaDetalhePage,
+  })),
+);
+const ComprasOrdensPage = lazy(() =>
+  import("./pages/compras/ComprasOrdensPage").then((m) => ({
+    default: m.ComprasOrdensPage,
+  })),
+);
+const ComprasOrdemDetalhePage = lazy(() =>
+  import("./pages/compras/ComprasOrdemDetalhePage").then((m) => ({
+    default: m.ComprasOrdemDetalhePage,
+  })),
+);
+const ComprasEstoquePage = lazy(() =>
+  import("./pages/compras/ComprasEstoquePage").then((m) => ({
+    default: m.ComprasEstoquePage,
+  })),
+);
 const AssinarPedidoPage = lazy(() =>
   import("./pages/AssinarPedidoPage").then((m) => ({
     default: m.AssinarPedidoPage,
@@ -214,6 +244,66 @@ export default function App() {
                   <LazyPage>
                     <ListagemPedidos />
                   </LazyPage>
+                }
+              />
+              <Route
+                path="compras"
+                element={
+                  <ProtectedRoute roles={["gestor"]}>
+                    <LazyPage>
+                      <ComprasHubPage />
+                    </LazyPage>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="compras/demanda"
+                element={
+                  <ProtectedRoute roles={["gestor"]}>
+                    <LazyPage>
+                      <ComprasDemandaPage />
+                    </LazyPage>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="compras/demanda/:simulationId"
+                element={
+                  <ProtectedRoute roles={["gestor"]}>
+                    <LazyPage>
+                      <ComprasDemandaDetalhePage />
+                    </LazyPage>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="compras/ordens"
+                element={
+                  <ProtectedRoute roles={["gestor"]}>
+                    <LazyPage>
+                      <ComprasOrdensPage />
+                    </LazyPage>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="compras/ordens/:compraId"
+                element={
+                  <ProtectedRoute roles={["gestor"]}>
+                    <LazyPage>
+                      <ComprasOrdemDetalhePage />
+                    </LazyPage>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="compras/estoque"
+                element={
+                  <ProtectedRoute roles={["gestor"]}>
+                    <LazyPage>
+                      <ComprasEstoquePage />
+                    </LazyPage>
+                  </ProtectedRoute>
                 }
               />
               <Route

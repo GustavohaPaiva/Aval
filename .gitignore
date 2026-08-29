@@ -87,10 +87,12 @@ $RECYCLE.BIN/
 ~$*
 
 # --- Não publicar no GitHub ---
-# Mantém migrations/local state fora do repo; versiona só a Edge Function do corretor.
+# Mantém o estado local fora do repo; versiona Edge Functions e migrations.
 supabase/*
 !supabase/functions/
 !supabase/functions/**
+!supabase/migrations/
+!supabase/migrations/**
 !supabase/config.toml
 Planilhas de Fornecedores/
 

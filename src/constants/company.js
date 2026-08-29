@@ -7,6 +7,7 @@ export const SYAGRI_COMPANY = {
   brandTagline: 'Agronegócios · Fertilizantes',
   sites: [
     {
+      id: 'nova-ponte',
       label: 'Matriz — Nova Ponte',
       city: 'Nova Ponte/MG',
       cnpj: '04.570.312/0001-91',
@@ -15,6 +16,7 @@ export const SYAGRI_COMPANY = {
       phone: '(34) 3356-1549',
     },
     {
+      id: 'uberaba',
       label: 'Filial Uberaba',
       city: 'Uberaba/MG',
       cnpj: '04.570.312/0002-72',
@@ -23,6 +25,7 @@ export const SYAGRI_COMPANY = {
       phone: '(34) 3311-7360',
     },
     {
+      id: 'ituverava',
       label: 'Filial Ituverava',
       city: 'Ituverava/SP',
       cnpj: '04.570.312/0004-34',
@@ -31,6 +34,7 @@ export const SYAGRI_COMPANY = {
       phone: '(16) 3839-7896',
     },
     {
+      id: 'guaira',
       label: 'Filial Guaíra',
       city: 'Guaíra/SP',
       cnpj: '04.570.312/0005-15',
@@ -39,6 +43,7 @@ export const SYAGRI_COMPANY = {
       phone: '(17) 3332-2274',
     },
     {
+      id: 'frutal',
       label: 'Filial Frutal',
       city: 'Frutal/MG',
       cnpj: '04.570.312/0006-04',
