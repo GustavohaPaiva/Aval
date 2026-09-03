@@ -1,0 +1,1 @@
+function e(e=new Date){return new Date(e.getTime()-10080*60*1e3).toISOString()}function t(e,t=new Date){if(!e||e.status!==`draft`)return!1;if(e.ativo===!1)return!0;let n=new Date(e.updated_at??e.created_at??0).getTime();return Number.isFinite(n)?n<t.getTime()-10080*60*1e3:!1}export{t as n,e as t};

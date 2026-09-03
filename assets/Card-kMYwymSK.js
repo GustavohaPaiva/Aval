@@ -1,0 +1,1 @@
+import{t as e}from"./vendor-react-YvL5Yovn.js";var t=e();function n({children:e,className:n=``,...r}){return(0,t.jsx)(`div`,{className:[`rounded-3xl border border-slate-200/90 bg-white p-6 shadow-sm sm:p-8`,n].filter(Boolean).join(` `),...r,children:e})}export{n as t};
