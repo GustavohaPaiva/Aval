@@ -8,6 +8,83 @@ import {
 import { formatBRL } from '../utils/money'
 
 /**
+ * Shared action / label logic for simulation & pedido list cards and tables.
+ * @param {{
+ *   row: object,
+ *   isGestor?: boolean,
+ *   listKind?: 'simulacoes' | 'pedidos',
+ * }} args
+ */
+export function resolveSimulationListAction({
+  row,
+  isGestor,
+  listKind = 'simulacoes',
+}) {
+  const isPedidosList = listKind === 'pedidos'
+
+  const viewLabel = isPedidosList
+    ? isPedidoStatus(row.status)
+      ? row.status === 'order_pending' && isGestor
+        ? 'Revisar pedido'
+        : 'Ver pedido'
+      : 'Ver detalhes'
+    : isPedidoStatus(row.status) || row.status !== 'draft'
+      ? 'Ver simulação'
+      : 'Continuar edição'
+
+  if (!isPedidosList && row.status === 'draft') {
+    return {
+      kind: 'continue',
+      label: 'Continuar edição',
+      variant: 'primary',
+      handler: 'onContinueEdit',
+    }
+  }
+
+  if (!isPedidosList && row.status === 'pending' && isGestor) {
+    return {
+      kind: 'review',
+      label: 'Revisar',
+      variant: 'primary',
+      handler: 'onViewDetails',
+    }
+  }
+
+  if (
+    isPedidosList &&
+    isPedidoStatus(row.status) &&
+    !isGestor &&
+    (row.ativo === false ||
+      row.status === 'cancelled' ||
+      row.status !== 'converted')
+  ) {
+    return {
+      kind: 'message',
+      message:
+        row.ativo === false || row.status === 'cancelled'
+          ? 'Pedido inativo'
+          : 'Aguardando aprovação do gestor',
+    }
+  }
+
+  if (isPedidosList && row.status === 'order_pending' && isGestor) {
+    return {
+      kind: 'review',
+      label: 'Revisar pedido',
+      variant: 'primary',
+      handler: 'onViewDetails',
+    }
+  }
+
+  return {
+    kind: 'view',
+    label: viewLabel,
+    variant: 'secondary',
+    handler: 'onViewDetails',
+  }
+}
+
+/**
  * @param {{
  *   row: object,
  *   consultorNome?: string,
@@ -33,16 +110,8 @@ export function SimulationListCard({
     minute: '2-digit',
   })
 
-  const isPedidosList = listKind === 'pedidos'
-  const viewLabel = isPedidosList
-    ? isPedidoStatus(row.status)
-      ? row.status === 'order_pending' && isGestor
-        ? 'Revisar pedido'
-        : 'Ver pedido'
-      : 'Ver detalhes'
-    : isPedidoStatus(row.status) || row.status !== 'draft'
-      ? 'Ver simulação'
-      : 'Continuar edição'
+  const action = resolveSimulationListAction({ row, isGestor, listKind })
+  const handlers = { onContinueEdit, onViewDetails }
 
   return (
     <article className="group flex flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition-[box-shadow,border-color] hover:border-primary-200 hover:shadow-md">
@@ -96,51 +165,18 @@ export function SimulationListCard({
       </div>
 
       <footer className="mt-auto border-t border-slate-100 bg-slate-50/50 p-4">
-        {!isPedidosList && row.status === 'draft' ? (
-          <Button
-            type="button"
-            className="w-full"
-            onClick={() => onContinueEdit?.(row.id, row.status)}
-          >
-            Continuar edição
-          </Button>
-        ) : !isPedidosList && row.status === 'pending' && isGestor ? (
-          <Button
-            type="button"
-            variant="primary"
-            className="w-full"
-            onClick={() => onViewDetails?.(row.id, row.status)}
-          >
-            Revisar
-          </Button>
-        ) : isPedidosList &&
-          isPedidoStatus(row.status) &&
-          !isGestor &&
-          (row.ativo === false ||
-            row.status === 'cancelled' ||
-            row.status !== 'converted') ? (
-          <p className="text-center text-sm text-slate-500">
-            {row.ativo === false || row.status === 'cancelled'
-              ? 'Pedido inativo'
-              : 'Aguardando aprovação do gestor'}
-          </p>
-        ) : isPedidosList && row.status === 'order_pending' && isGestor ? (
-          <Button
-            type="button"
-            variant="primary"
-            className="w-full"
-            onClick={() => onViewDetails?.(row.id, row.status)}
-          >
-            Revisar pedido
-          </Button>
+        {action.kind === 'message' ? (
+          <p className="text-center text-sm text-slate-500">{action.message}</p>
         ) : (
           <Button
             type="button"
-            variant="secondary"
+            variant={action.variant}
             className="w-full"
-            onClick={() => onViewDetails?.(row.id, row.status)}
+            onClick={() =>
+              handlers[action.handler]?.(row.id, row.status)
+            }
           >
-            {viewLabel}
+            {action.label}
           </Button>
         )}
       </footer>

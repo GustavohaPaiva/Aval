@@ -8,7 +8,7 @@ import {
   LineAutonomiaBadge,
   getLineAutonomiaTintClass,
 } from "./LineAutonomiaBadge";
-import { formatBRL, formatPercent } from "../../utils/money";
+import { formatBRL, formatComissaoPctValor, formatPercent } from "../../utils/money";
 import { formatProdutoDisplayNome } from "../../constants/mapeamentoCampos";
 
 function filterProductsByFornecedor(productOptions, fornecedorId) {
@@ -37,6 +37,7 @@ const SimulationLinesTableRow = memo(function SimulationLinesTableRow({
   isReadOnly,
   canOverrideFloor,
   showMargem,
+  showComissao,
   colSpan,
   onVolumeChange,
   onCulturaChange,
@@ -155,6 +156,11 @@ const SimulationLinesTableRow = memo(function SimulationLinesTableRow({
           {formatPercent(row.margemLucro)}
         </td>
       ) : null}
+      {showComissao ? (
+        <td className={`finance-text ${cell} font-semibold text-slate-800`}>
+          {formatComissaoPctValor(row.comissaoPercentual, row.comissaoValor)}
+        </td>
+      ) : null}
       <td className={cell}>
         <LineAutonomiaBadge
           isLineBelowFloor={row.isLineBelowFloor}
@@ -217,6 +223,7 @@ export function SimulationLinesTable({
   isReadOnly,
   canOverrideFloor,
   showMargem: showMargemProp,
+  showComissao: showComissaoProp,
   onVolumeChange,
   onCulturaChange,
   onFornecedorChange,
@@ -229,7 +236,8 @@ export function SimulationLinesTable({
 }) {
   const cell = "px-3 py-2.5 text-center align-middle";
   const showMargem = showMargemProp ?? canOverrideFloor;
-  const colSpan = showMargem ? 12 : 11;
+  const showComissao = showComissaoProp ?? canOverrideFloor;
+  const colSpan = 11 + (showMargem ? 1 : 0) + (showComissao ? 1 : 0);
 
   return (
     <div className="hidden overflow-x-auto rounded-2xl border border-slate-100 lg:block">
@@ -246,6 +254,7 @@ export function SimulationLinesTable({
             <th className={cell}>Proposta unit.</th>
             <th className={cell}>Proposta total</th>
             {showMargem ? <th className={cell}>Margem</th> : null}
+            {showComissao ? <th className={cell}>Comissão</th> : null}
             <th className={cell}>Status</th>
             <th className={`${cell} w-24`} />
           </tr>
@@ -262,6 +271,7 @@ export function SimulationLinesTable({
               isReadOnly={isReadOnly}
               canOverrideFloor={canOverrideFloor}
               showMargem={showMargem}
+              showComissao={showComissao}
               colSpan={colSpan}
               onVolumeChange={onVolumeChange}
               onCulturaChange={onCulturaChange}

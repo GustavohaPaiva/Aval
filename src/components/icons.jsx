@@ -100,6 +100,19 @@ export function IconLayoutDashboard({ className }) {
   )
 }
 
+export function IconLayoutList({ className }) {
+  return (
+    <svg {...iconProps(className)}>
+      <rect width="7" height="7" x="3" y="3" rx="1" />
+      <rect width="7" height="7" x="3" y="14" rx="1" />
+      <path d="M14 4h7" />
+      <path d="M14 9h7" />
+      <path d="M14 15h7" />
+      <path d="M14 20h7" />
+    </svg>
+  )
+}
+
 export function IconClipboardList({ className }) {
   return (
     <svg {...iconProps(className)}>
@@ -235,6 +248,14 @@ export function IconBell({ className }) {
     <svg {...iconProps(className)}>
       <path d="M10.268 21a2 2 0 0 0 3.464 0" />
       <path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326" />
+    </svg>
+  )
+}
+
+export function IconCheck({ className }) {
+  return (
+    <svg {...iconProps(className)}>
+      <path d="M20 6 9 17l-5-5" />
     </svg>
   )
 }

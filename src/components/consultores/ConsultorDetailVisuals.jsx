@@ -7,6 +7,7 @@ import {
 } from '../icons'
 import { InfoStatCard } from '../ui/InfoStatCard'
 import { Button } from '../ui/Button'
+import { ButtonGroup } from '../ui/ButtonGroup'
 import { formatShortDate } from '../../utils/formatShortDate'
 import { formatBRL } from '../../utils/money'
 import { formatCorporateEmail } from '../../utils/syagriEmail'
@@ -140,7 +141,14 @@ export function ConsultorProfileHero({ nome, email, usuario }) {
   )
 }
 
-export function ConsultorInfoPanel({ profile, usuario, onEdit, onTrocarCredenciais }) {
+export function ConsultorInfoPanel({
+  profile,
+  usuario,
+  onEdit,
+  onTrocarCredenciais,
+  onDelete,
+  deleting = false,
+}) {
   const rows = [
     { label: 'Cadastro', value: formatShortDate(profile.created_at) },
     { label: 'Usuário', value: usuario ? formatCorporateEmail(usuario) : '—' },
@@ -154,55 +162,85 @@ export function ConsultorInfoPanel({ profile, usuario, onEdit, onTrocarCredencia
   ]
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm sm:rounded-3xl">
-      <div className="border-b border-slate-100 bg-gradient-to-r from-primary-50/70 via-white to-violet-50/40 px-4 py-3.5 sm:px-6 sm:py-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-2">
-            <span className="flex size-8 items-center justify-center rounded-xl bg-primary-50 text-primary-700">
-              <IconUser className="size-4" />
-            </span>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary-700">
-                Cadastro e acesso
-              </p>
-              <p className="mt-0.5 text-sm text-slate-600">
-                Dados de identificação do consultor.
-              </p>
+    <div className="space-y-4">
+      <section className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm sm:rounded-3xl">
+        <div className="border-b border-slate-100 bg-gradient-to-r from-primary-50/70 via-white to-violet-50/40 px-4 py-3.5 sm:px-6 sm:py-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2">
+              <span className="flex size-8 items-center justify-center rounded-xl bg-primary-50 text-primary-700">
+                <IconUser className="size-4" />
+              </span>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary-700">
+                  Cadastro e acesso
+                </p>
+                <p className="mt-0.5 text-sm text-slate-600">
+                  Dados de identificação do consultor.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-col gap-2 sm:shrink-0 sm:flex-row">
+              <Button
+                type="button"
+                variant="secondary"
+                className="h-9 w-full px-3 sm:w-auto"
+                onClick={onEdit}
+                disabled={deleting}
+              >
+                Editar cadastro
+              </Button>
+              <Button
+                type="button"
+                className="h-9 w-full px-3 sm:w-auto"
+                onClick={onTrocarCredenciais}
+                disabled={deleting}
+              >
+                Trocar credenciais
+              </Button>
             </div>
           </div>
-          <div className="flex flex-col gap-2 sm:shrink-0 sm:flex-row">
-            <Button
-              type="button"
-              variant="secondary"
-              className="h-9 w-full px-3 sm:w-auto"
-              onClick={onEdit}
-            >
-              Editar cadastro
-            </Button>
-            <Button
-              type="button"
-              className="h-9 w-full px-3 sm:w-auto"
-              onClick={onTrocarCredenciais}
-            >
-              Trocar credenciais
-            </Button>
-          </div>
         </div>
-      </div>
 
-      <dl className="divide-y divide-slate-100">
-        {rows.map((row) => (
-          <div
-            key={row.label}
-            className="flex flex-col items-center gap-1 px-4 py-4 text-center sm:flex-row sm:justify-between sm:px-6 sm:text-left"
-          >
-            <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-              {row.label}
-            </dt>
-            <dd className="text-sm font-medium capitalize text-slate-900">{row.value}</dd>
+        <dl className="divide-y divide-slate-100">
+          {rows.map((row) => (
+            <div
+              key={row.label}
+              className="flex flex-col items-center gap-1 px-4 py-4 text-center sm:flex-row sm:justify-between sm:px-6 sm:text-left"
+            >
+              <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                {row.label}
+              </dt>
+              <dd className="text-sm font-medium capitalize text-slate-900">{row.value}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+
+      {onDelete ? (
+        <section className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm sm:rounded-3xl">
+          <div className="border-b border-slate-100 bg-gradient-to-r from-slate-50/90 via-white to-amber-50/30 px-4 py-3.5 sm:px-6 sm:py-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-600">
+              Gerenciamento
+            </p>
+            <p className="mt-0.5 text-sm text-slate-600">
+              Exclua o cadastro quando não houver simulações ou pedidos vinculados. Esta ação remove o acesso ao sistema.
+            </p>
           </div>
-        ))}
-      </dl>
-    </section>
+          <div className="p-4 sm:p-6">
+            <ButtonGroup>
+              <Button
+                type="button"
+                variant="danger"
+                className="h-9"
+                loading={deleting}
+                onClick={onDelete}
+              >
+                Excluir consultor
+              </Button>
+            </ButtonGroup>
+          </div>
+        </section>
+      ) : null}
+    </div>
   )
 }

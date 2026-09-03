@@ -105,3 +105,16 @@ export function calcComissaoLinha({
     comissaoValor,
   }
 }
+
+/**
+ * Comissão média efetiva: total R$ / base (tipicamente proposta) × 100.
+ * @returns {number} percentual (ex.: 0.5 para 0,50%)
+ */
+export function calcComissaoMediaPercentual(comissaoValor, baseCalculo) {
+  const valor = Number(comissaoValor)
+  const base = Number(baseCalculo)
+  if (!Number.isFinite(valor) || !Number.isFinite(base) || base <= 0) {
+    return 0
+  }
+  return (valor / base) * 100
+}

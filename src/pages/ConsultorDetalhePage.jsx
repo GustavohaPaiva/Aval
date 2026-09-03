@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   ConsultorDetailStats,
   ConsultorInfoPanel,
@@ -23,8 +23,11 @@ import { parseSyagriLocalFromEmail } from "../utils/syagriEmail";
 
 export function ConsultorDetalhePage() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(Boolean(id));
   const [error, setError] = useState(null);
+  const [actionError, setActionError] = useState(null);
+  const [actionLoading, setActionLoading] = useState(false);
   const [profile, setProfile] = useState(null);
   const [metric, setMetric] = useState(null);
   const [vendasResumo, setVendasResumo] = useState(null);
@@ -46,6 +49,7 @@ export function ConsultorDetalhePage() {
 
       setLoading(true);
       setError(null);
+      setActionError(null);
 
       const [metricRes, profileRes, emailRes, vendasRes, comissaoRes] =
         await Promise.all([
@@ -121,6 +125,31 @@ export function ConsultorDetalhePage() {
     Boolean(id),
   );
 
+  async function handleDelete() {
+    if (!id || !profile) return;
+
+    const confirmed = window.confirm(
+      `Excluir o consultor "${profile.nome}"? Ele perderá o acesso ao sistema. Esta ação não pode ser desfeita.`,
+    );
+    if (!confirmed) return;
+
+    setActionLoading(true);
+    setActionError(null);
+    const { error: deleteError } = await supabase.rpc("delete_consultant", {
+      p_consultor_id: id,
+    });
+    setActionLoading(false);
+
+    if (deleteError) {
+      setActionError(
+        deleteError.message || "Não foi possível excluir o consultor.",
+      );
+      return;
+    }
+
+    navigate("/admin/consultores", { replace: true });
+  }
+
   if (!id) {
     return (
       <div className="w-full min-w-0 space-y-4">
@@ -173,11 +202,15 @@ export function ConsultorDetalhePage() {
             loading={loading}
           />
 
+          {actionError ? <AlertMessage>{actionError}</AlertMessage> : null}
+
           <ConsultorInfoPanel
             profile={profile}
             usuario={usuario}
+            deleting={actionLoading}
             onEdit={() => setEditOpen(true)}
             onTrocarCredenciais={() => setCredOpen(true)}
+            onDelete={() => void handleDelete()}
           />
 
           <ModalEditarConsultor

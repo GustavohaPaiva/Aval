@@ -16,3 +16,19 @@ export function formatPercent(ratio, decimals = 1) {
         maximumFractionDigits: decimals,
     })}%`
 }
+
+/** Formata pontos percentuais (ex.: 0.5 → 0,50%). */
+export function formatPercentPoints(value, decimals = 2) {
+    if (value == null || value === '') return '—'
+    const num = Number(value)
+    if (!Number.isFinite(num)) return '—'
+    return `${num.toLocaleString('pt-BR', {
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals,
+    })}%`
+}
+
+/** Exibe comissão como "0,50% / R$ 1.234,56". */
+export function formatComissaoPctValor(percentual, valor, decimals = 2) {
+    return `${formatPercentPoints(percentual ?? 0, decimals)} / ${formatBRL(Number(valor) || 0)}`
+}

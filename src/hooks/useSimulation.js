@@ -6,12 +6,15 @@ import {
   isConsultorSimulationLocked,
 } from '../constants/simulationStatus'
 import { parseCpfCnpjInput } from '../utils/dataFormatters'
-import { calcComissaoLinha } from '../utils/comissaoCalculations'
 import {
-  buildFrozenLineView,
-  buildFrozenTotals,
-  isSimulationFrozen,
-} from '../utils/frozenSimulationViews'
+  calcComissaoLinha,
+  calcComissaoMediaPercentual,
+} from '../utils/comissaoCalculations'
+  import {
+    buildFrozenLineView,
+    buildFrozenTotals,
+    shouldFreezeSimulationForViewer,
+  } from '../utils/frozenSimulationViews'
 import {
   calcPrazoNegociacao,
   getAutonomiaPercentual,
@@ -467,6 +470,7 @@ export function useSimulation(options = {}) {
     margemLucroTotal,
     margemLucroValorTotal,
     comissaoValorTotal,
+    comissaoMediaPercentual,
     globalStatus,
   } =
     useMemo(() => {
@@ -512,6 +516,10 @@ export function useSimulation(options = {}) {
           pisCofinsPercentual,
         ),
         comissaoValorTotal: roundMoney(comissaoValorRaw),
+        comissaoMediaPercentual: calcComissaoMediaPercentual(
+          roundMoney(comissaoValorRaw),
+          tProposta,
+        ),
         globalStatus: status,
       }
     }, [lineViews, frozenTotals, icmsPercentual, pisCofinsPercentual])
@@ -964,7 +972,7 @@ export function useSimulation(options = {}) {
   const hydrateFromBundle = useCallback(
     (bundle) => {
       const simulation = bundle.simulation
-      const frozen = isSimulationFrozen(simulation)
+      const frozen = shouldFreezeSimulationForViewer(simulation, { isGestor })
       const consultorLocked =
         !isGestor && isConsultorSimulationLocked(simulation.status)
       setRemotePendingLock(frozen || consultorLocked)
@@ -1222,6 +1230,7 @@ export function useSimulation(options = {}) {
     margemLucroTotal,
     margemLucroValorTotal,
     comissaoValorTotal,
+    comissaoMediaPercentual,
     globalStatus,
     isReadOnly,
     isGestor,

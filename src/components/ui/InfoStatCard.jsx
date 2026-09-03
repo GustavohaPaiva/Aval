@@ -44,11 +44,9 @@ export function PageInfoBanner({ icon: Icon, children, iconClassName }) {
     <div className="relative mt-4 flex items-center gap-3 rounded-xl border border-white/80 bg-white/60 p-3 text-left backdrop-blur-sm sm:mt-5 sm:rounded-2xl sm:px-4 sm:py-3">
       <span
         className={[
-          "flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary-600 text-white shadow-sm sm:size-9 sm:rounded-xl",
-          iconClassName,
-        ]
-          .filter(Boolean)
-          .join(" ")}
+          "flex size-8 shrink-0 items-center justify-center rounded-lg text-white shadow-sm sm:size-9 sm:rounded-xl",
+          iconClassName || "bg-primary-600",
+        ].join(" ")}
       >
         <Icon className="size-3.5 sm:size-4" />
       </span>

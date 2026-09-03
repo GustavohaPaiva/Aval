@@ -24,7 +24,7 @@ import { PageInfoBanner } from "../components/ui/InfoStatCard";
 import { Select } from "../components/ui/Select";
 import { FREIGHT_TYPES, QUARTERS, STATES } from "../constants/simulator";
 import { FRETE_ORIGENS, resolveOrigemFreteByEstado } from "../constants/fretes";
-import { isPedidoStatus } from "../constants/simulationStatus";
+import { isGestorEditableConverted, isPedidoStatus } from "../constants/simulationStatus";
 import { useAbortableAsync } from "../hooks/useAbortableAsync";
 import { useAuth } from "../hooks/useAuth";
 import { useSimulation } from "../hooks/useSimulation";
@@ -649,9 +649,9 @@ export function Simulador() {
   }
 
   function buildReviewPayload(extra = {}) {
+    const base = buildSimulationPayload();
     return {
-      simulationId,
-      clientName: sim.clientName,
+      ...base,
       lines: sim.lines.map((l) => ({
         id: l.id,
         precoUnitario: l.precoUnitario,
@@ -667,11 +667,11 @@ export function Simulador() {
         comissaoValor: l.comissaoValor,
         comissaoBaseCalculo: l.comissaoBaseCalculo,
       })),
-      totalValor: sim.totalValor,
-      totalProposta: sim.totalProposta,
-      comissaoValorTotal: sim.comissaoValorTotal,
-      resumoAlteracao:
-        "Produtos, quantidades ou parâmetros ajustados pelo gestor",
+      resumoAlteracao: isGestorEditableConverted(remoteStatus, {
+        ativo: remoteAtivo,
+      })
+        ? "Pedido convertido atualizado pelo gestor"
+        : "Produtos, quantidades ou parâmetros ajustados pelo gestor",
       ...extra,
     };
   }
@@ -736,6 +736,11 @@ export function Simulador() {
   async function handleSaveReview() {
     if (!sim.isGestor || !simulationId) return;
     setReviewError(null);
+    const blockReason = getSaveBlockReason();
+    if (blockReason) {
+      setReviewError(blockReason);
+      return;
+    }
     setReviewSaving(true);
     try {
       const result = await saveGestorReview(buildReviewPayload());
@@ -744,8 +749,15 @@ export function Simulador() {
         return;
       }
       await reloadSimulationBundle();
+      if (result.status) setRemoteStatus(result.status);
       sim.showActionBanner(
-        "Revisão salva. O consultor foi notificado das alterações.",
+        isGestorEditableConverted(result.status ?? remoteStatus, {
+          ativo: remoteAtivo,
+        })
+          ? result.notified
+            ? "Pedido atualizado. O consultor foi notificado. O status permanece convertido."
+            : "Pedido atualizado. O status permanece convertido."
+          : "Revisão salva. O consultor foi notificado das alterações.",
       );
     } finally {
       setReviewSaving(false);
@@ -832,12 +844,17 @@ export function Simulador() {
   }, [sim.origemFrete, sim.estado]);
 
   const isRemoteInactive = remoteAtivo === false;
+  const gestorEditingConverted =
+    sim.isGestor &&
+    isGestorEditableConverted(remoteStatus, {
+      ativo: remoteAtivo,
+    });
   const showGestorReview =
     sim.isGestor && remoteStatus === "pending" && !isRemoteInactive;
   const canGestorSaveReview =
     sim.isGestor &&
     Boolean(simulationId) &&
-    !isPedidoStatus(remoteStatus) &&
+    (gestorEditingConverted || !isPedidoStatus(remoteStatus)) &&
     !isRemoteInactive;
 
   const destinoOptions = freteDestinos.map((d) => ({ id: d, label: d }));
@@ -870,14 +887,18 @@ export function Simulador() {
 
   const pageTitle = !simulationId
     ? "Nova simulação"
-    : sim.isFrozen || isPedidoStatus(remoteStatus)
-      ? "Visualizar simulação"
-      : "Editar simulação";
+    : gestorEditingConverted
+      ? "Editar pedido convertido"
+      : sim.isFrozen || isPedidoStatus(remoteStatus)
+        ? "Visualizar simulação"
+        : "Editar simulação";
   const pageDescription = !simulationId
     ? "Monte a proposta comercial informando cliente, frete e produtos."
-    : sim.isFrozen || isPedidoStatus(remoteStatus)
-      ? "Proposta comercial congelada — apenas visualização."
-      : "Revise os dados, ajuste produtos e finalize a proposta comercial.";
+    : gestorEditingConverted
+      ? "Ajuste volume, valores e produtos. O pedido permanece convertido após salvar."
+      : sim.isFrozen || isPedidoStatus(remoteStatus)
+        ? "Proposta comercial congelada — apenas visualização."
+        : "Revise os dados, ajuste produtos e finalize a proposta comercial.";
 
   const showReadOnlyNotice = sim.isReadOnly;
 
@@ -913,7 +934,15 @@ export function Simulador() {
 
   return (
     <div className="w-full min-w-0 space-y-4 sm:space-y-6">
-      <PageBackLink to="/simulacoes">Voltar para simulações</PageBackLink>
+      <PageBackLink
+        to={
+          isPedidoStatus(remoteStatus) && simulationId
+            ? `/pedido/${simulationId}`
+            : "/simulacoes"
+        }
+      >
+        {isPedidoStatus(remoteStatus) ? "Voltar para o pedido" : "Voltar para simulações"}
+      </PageBackLink>
 
       <div className="relative overflow-hidden rounded-2xl border border-primary-100/80 bg-gradient-to-br from-primary-50/80 via-white to-violet-50/40 p-4 shadow-sm sm:rounded-[2rem] sm:p-6 lg:p-8">
         <div
@@ -989,6 +1018,9 @@ export function Simulador() {
         showMargem={sim.isGestor}
         margemLucroTotal={sim.margemLucroTotal}
         margemLucroValorTotal={sim.margemLucroValorTotal}
+        showComissao={sim.isGestor}
+        comissaoValorTotal={sim.comissaoValorTotal}
+        comissaoMediaPercentual={sim.comissaoMediaPercentual}
       />
 
       <div className="flex flex-col gap-4 sm:gap-6">
@@ -1142,6 +1174,8 @@ export function Simulador() {
                     fornecedorOptions={fornecedorOptions}
                     isReadOnly={!sim.canEditProducts}
                     canOverrideFloor={sim.canOverrideFloor}
+                    showMargem={sim.isGestor}
+                    showComissao={sim.isGestor}
                     onVolumeChange={(v) => sim.setLineVolume(row.id, v)}
                     onCulturaChange={(c) => sim.setLineCultura(row.id, c)}
                     onFornecedorChange={(id) =>
@@ -1168,6 +1202,7 @@ export function Simulador() {
                 isReadOnly={!sim.canEditProducts}
                 canOverrideFloor={sim.canOverrideFloor}
                 showMargem={sim.isGestor}
+                showComissao={sim.isGestor}
                 onVolumeChange={sim.setLineVolume}
                 onCulturaChange={sim.setLineCultura}
                 onFornecedorChange={sim.setLineFornecedor}
@@ -1234,6 +1269,11 @@ export function Simulador() {
                 Simulação inativa — fora das estatísticas. Exclua para removê-la
                 do sistema.
               </p>
+            ) : gestorEditingConverted ? (
+              <p className="text-sm text-slate-600">
+                Pedido convertido: altere produtos, volumes e valores e salve.
+                O status permanece convertido.
+              </p>
             ) : showReadOnlyNotice ? (
               <p className="text-sm text-slate-600">
                 {sim.isFrozen || isPedidoStatus(remoteStatus)
@@ -1287,7 +1327,20 @@ export function Simulador() {
                   disabled={Boolean(reviewDeciding) || persisting}
                   onClick={() => void handleSaveReview()}
                 >
-                  Salvar revisão
+                  {gestorEditingConverted
+                    ? "Salvar alterações do pedido"
+                    : "Salvar revisão"}
+                </Button>
+              ) : null}
+              {gestorEditingConverted && simulationId ? (
+                <Button
+                  type="button"
+                  variant="primary"
+                  className="w-full sm:flex-1"
+                  disabled={reviewSaving || persisting}
+                  onClick={() => navigate(`/pedido/${simulationId}`)}
+                >
+                  Ver pedido
                 </Button>
               ) : null}
               {showGestorReview ? (

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { IconClipboardList, IconLayoutDashboard, IconUser, IconUsers } from '../components/icons'
 import { AlertMessage } from '../components/ui/AlertMessage'
 import { Button } from '../components/ui/Button'
@@ -26,6 +26,10 @@ export function DashboardPage() {
 
   useAbortableAsync(
     async (_signal, isActive) => {
+      if (role === 'logistica') {
+        if (isActive()) setLoading(false)
+        return
+      }
       if (!user?.id || !role) {
         if (!isActive()) return
         setLoading(false)
@@ -58,8 +62,12 @@ export function DashboardPage() {
       setGestorStats(null)
     },
     [user?.id, role],
-    !initializing && Boolean(user?.id) && Boolean(role),
+    !initializing && Boolean(user?.id) && Boolean(role) && role !== 'logistica',
   )
+
+  if (role === 'logistica') {
+    return <Navigate to="/logistica" replace />
+  }
 
   const gestorCards = gestorStats
     ? [

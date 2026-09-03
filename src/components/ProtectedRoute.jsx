@@ -1,6 +1,7 @@
 import { Navigate, useLocation } from 'react-router-dom'
 
 import { useAuth } from '../hooks/useAuth'
+import { homePathForRole } from '../utils/homePathForRole'
 
 
 function AuthLoadingScreen({ message }) {
@@ -38,7 +39,7 @@ export function ProtectedRoute({
 
   if (roles && roles.length > 0) {
     if (!role || !roles.includes(role)) {
-      return <Navigate to="/dashboard" replace />
+      return <Navigate to={homePathForRole(role)} replace />
     }
   }
 

@@ -6,7 +6,8 @@ import {
   IconUser,
 } from '../icons'
 import { InfoStatCard } from '../ui/InfoStatCard'
-import { formatBRL, formatPercent } from '../../utils/money'
+import { calcComissaoMediaPercentual } from '../../utils/comissaoCalculations'
+import { formatBRL, formatComissaoPctValor, formatPercent } from '../../utils/money'
 
 export function SimuladorSectionPanel({
   icon: Icon,
@@ -59,6 +60,9 @@ export function SimuladorSummaryBar({
   showMargem = false,
   margemLucroTotal = null,
   margemLucroValorTotal = null,
+  showComissao = false,
+  comissaoValorTotal = null,
+  comissaoMediaPercentual = null,
 }) {
   const statusAccent =
     globalStatus === 'Aprovado'
@@ -106,6 +110,22 @@ export function SimuladorSummaryBar({
     )
   }
 
+  if (showComissao) {
+    const media =
+      comissaoMediaPercentual == null
+        ? calcComissaoMediaPercentual(comissaoValorTotal, totalProposta)
+        : Number(comissaoMediaPercentual)
+    items.push({
+      label: 'Comissão',
+      value: formatComissaoPctValor(media, comissaoValorTotal),
+      hint: 'Média e total do consultor',
+      icon: IconDollarSign,
+      accent: 'text-amber-700 bg-amber-50',
+      valueClassName:
+        'finance-text text-sm font-semibold leading-snug tracking-tight text-slate-900 sm:text-base',
+    })
+  }
+
   items.push({
     label: 'Status',
     value: globalStatus,
@@ -115,11 +135,13 @@ export function SimuladorSummaryBar({
   })
 
   const cols =
-    items.length >= 5
-      ? 'grid-cols-2 gap-3 lg:grid-cols-5'
-      : items.length === 4
-        ? 'grid-cols-2 gap-3 lg:grid-cols-4'
-        : 'grid-cols-2 gap-3 sm:grid-cols-3'
+    items.length >= 6
+      ? 'grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6'
+      : items.length >= 5
+        ? 'grid-cols-2 gap-3 lg:grid-cols-5'
+        : items.length === 4
+          ? 'grid-cols-2 gap-3 lg:grid-cols-4'
+          : 'grid-cols-2 gap-3 sm:grid-cols-3'
 
   return (
     <div className={`grid ${cols}`}>
@@ -141,7 +163,10 @@ export function SimuladorSummaryBar({
             className={['p-3 sm:p-4', orphanFullWidth]
               .filter(Boolean)
               .join(' ')}
-            valueClassName="finance-text truncate text-base font-semibold leading-tight tracking-tight text-slate-900 sm:text-lg"
+            valueClassName={
+              item.valueClassName ??
+              'finance-text truncate text-base font-semibold leading-tight tracking-tight text-slate-900 sm:text-lg'
+            }
           />
         )
       })}

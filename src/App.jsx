@@ -131,8 +131,32 @@ const AssinarPedidoPage = lazy(() =>
 const Simulador = lazy(() =>
   import("./pages/Simulador").then((m) => ({ default: m.Simulador })),
 );
+const GerenciarLogistica = lazy(() =>
+  import("./pages/GerenciarLogistica").then((m) => ({
+    default: m.GerenciarLogistica,
+  })),
+);
+const LogisticaUsuarioDetalhePage = lazy(() =>
+  import("./pages/LogisticaUsuarioDetalhePage").then((m) => ({
+    default: m.LogisticaUsuarioDetalhePage,
+  })),
+);
+const LogisticaPedidosPage = lazy(() =>
+  import("./pages/logistica/LogisticaPedidosPage").then((m) => ({
+    default: m.LogisticaPedidosPage,
+  })),
+);
+const LogisticaPedidoDetalhePage = lazy(() =>
+  import("./pages/logistica/LogisticaPedidoDetalhePage").then((m) => ({
+    default: m.LogisticaPedidoDetalhePage,
+  })),
+);
 
 const routerBasename = import.meta.env.BASE_URL.replace(/\/$/, "") || undefined;
+
+const ROLES_COMERCIAL = ["gestor", "consultor"];
+const ROLES_GESTOR = ["gestor"];
+const ROLES_LOGISTICA = ["logistica"];
 
 function LazyPage({ children }) {
   return <Suspense fallback={<RouteFallback />}>{children}</Suspense>;
@@ -173,23 +197,27 @@ export default function App() {
               <Route
                 path="dashboard"
                 element={
-                  <LazyPage>
-                    <DashboardPage />
-                  </LazyPage>
+                  <ProtectedRoute roles={ROLES_COMERCIAL}>
+                    <LazyPage>
+                      <DashboardPage />
+                    </LazyPage>
+                  </ProtectedRoute>
                 }
               />
               <Route
                 path="simulador"
                 element={
-                  <LazyPage>
-                    <Simulador />
-                  </LazyPage>
+                  <ProtectedRoute roles={ROLES_COMERCIAL}>
+                    <LazyPage>
+                      <Simulador />
+                    </LazyPage>
+                  </ProtectedRoute>
                 }
               />
               <Route
                 path="pedido/:simulationId"
                 element={
-                  <ProtectedRoute roles={["gestor", "consultor"]}>
+                  <ProtectedRoute roles={ROLES_COMERCIAL}>
                     <LazyPage>
                       <PedidoPage />
                     </LazyPage>
@@ -199,15 +227,17 @@ export default function App() {
               <Route
                 path="simulacoes"
                 element={
-                  <LazyPage>
-                    <ListagemSimulacoes />
-                  </LazyPage>
+                  <ProtectedRoute roles={ROLES_COMERCIAL}>
+                    <LazyPage>
+                      <ListagemSimulacoes />
+                    </LazyPage>
+                  </ProtectedRoute>
                 }
               />
               <Route
                 path="notificacoes"
                 element={
-                  <ProtectedRoute roles={["gestor", "consultor"]}>
+                  <ProtectedRoute roles={ROLES_COMERCIAL}>
                     <LazyPage>
                       <NotificacoesPage />
                     </LazyPage>
@@ -217,39 +247,67 @@ export default function App() {
               <Route
                 path="frete"
                 element={
-                  <LazyPage>
-                    <FretePage />
-                  </LazyPage>
+                  <ProtectedRoute roles={ROLES_COMERCIAL}>
+                    <LazyPage>
+                      <FretePage />
+                    </LazyPage>
+                  </ProtectedRoute>
                 }
               />
               <Route
                 path="clientes"
                 element={
-                  <LazyPage>
-                    <GerenciarClientes />
-                  </LazyPage>
+                  <ProtectedRoute roles={ROLES_COMERCIAL}>
+                    <LazyPage>
+                      <GerenciarClientes />
+                    </LazyPage>
+                  </ProtectedRoute>
                 }
               />
               <Route
                 path="clientes/:id"
                 element={
-                  <LazyPage>
-                    <ClienteDetalhePage />
-                  </LazyPage>
+                  <ProtectedRoute roles={ROLES_COMERCIAL}>
+                    <LazyPage>
+                      <ClienteDetalhePage />
+                    </LazyPage>
+                  </ProtectedRoute>
                 }
               />
               <Route
                 path="pedidos"
                 element={
-                  <LazyPage>
-                    <ListagemPedidos />
-                  </LazyPage>
+                  <ProtectedRoute roles={ROLES_COMERCIAL}>
+                    <LazyPage>
+                      <ListagemPedidos />
+                    </LazyPage>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="logistica"
+                element={
+                  <ProtectedRoute roles={ROLES_LOGISTICA}>
+                    <LazyPage>
+                      <LogisticaPedidosPage />
+                    </LazyPage>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="logistica/:simulationId"
+                element={
+                  <ProtectedRoute roles={ROLES_LOGISTICA}>
+                    <LazyPage>
+                      <LogisticaPedidoDetalhePage />
+                    </LazyPage>
+                  </ProtectedRoute>
                 }
               />
               <Route
                 path="compras"
                 element={
-                  <ProtectedRoute roles={["gestor"]}>
+                  <ProtectedRoute roles={ROLES_GESTOR}>
                     <LazyPage>
                       <ComprasHubPage />
                     </LazyPage>
@@ -259,7 +317,7 @@ export default function App() {
               <Route
                 path="compras/demanda"
                 element={
-                  <ProtectedRoute roles={["gestor"]}>
+                  <ProtectedRoute roles={ROLES_GESTOR}>
                     <LazyPage>
                       <ComprasDemandaPage />
                     </LazyPage>
@@ -269,7 +327,7 @@ export default function App() {
               <Route
                 path="compras/demanda/:simulationId"
                 element={
-                  <ProtectedRoute roles={["gestor"]}>
+                  <ProtectedRoute roles={ROLES_GESTOR}>
                     <LazyPage>
                       <ComprasDemandaDetalhePage />
                     </LazyPage>
@@ -279,7 +337,7 @@ export default function App() {
               <Route
                 path="compras/ordens"
                 element={
-                  <ProtectedRoute roles={["gestor"]}>
+                  <ProtectedRoute roles={ROLES_GESTOR}>
                     <LazyPage>
                       <ComprasOrdensPage />
                     </LazyPage>
@@ -289,7 +347,7 @@ export default function App() {
               <Route
                 path="compras/ordens/:compraId"
                 element={
-                  <ProtectedRoute roles={["gestor"]}>
+                  <ProtectedRoute roles={ROLES_GESTOR}>
                     <LazyPage>
                       <ComprasOrdemDetalhePage />
                     </LazyPage>
@@ -299,7 +357,7 @@ export default function App() {
               <Route
                 path="compras/estoque"
                 element={
-                  <ProtectedRoute roles={["gestor"]}>
+                  <ProtectedRoute roles={ROLES_GESTOR}>
                     <LazyPage>
                       <ComprasEstoquePage />
                     </LazyPage>
@@ -313,7 +371,7 @@ export default function App() {
               <Route
                 path="parametros"
                 element={
-                  <ProtectedRoute roles={["gestor"]}>
+                  <ProtectedRoute roles={ROLES_GESTOR}>
                     <LazyPage>
                       <ParametrosPage />
                     </LazyPage>
@@ -323,7 +381,7 @@ export default function App() {
               <Route
                 path="comissao"
                 element={
-                  <ProtectedRoute roles={["gestor"]}>
+                  <ProtectedRoute roles={ROLES_GESTOR}>
                     <LazyPage>
                       <ComissaoPage />
                     </LazyPage>
@@ -333,7 +391,7 @@ export default function App() {
               <Route
                 path="admin"
                 element={
-                  <ProtectedRoute roles={["gestor"]}>
+                  <ProtectedRoute roles={ROLES_GESTOR}>
                     <Outlet />
                   </ProtectedRoute>
                 }
@@ -359,6 +417,22 @@ export default function App() {
                   element={
                     <LazyPage>
                       <ConsultorDetalhePage />
+                    </LazyPage>
+                  }
+                />
+                <Route
+                  path="logistica"
+                  element={
+                    <LazyPage>
+                      <GerenciarLogistica />
+                    </LazyPage>
+                  }
+                />
+                <Route
+                  path="logistica/:id"
+                  element={
+                    <LazyPage>
+                      <LogisticaUsuarioDetalhePage />
                     </LazyPage>
                   }
                 />

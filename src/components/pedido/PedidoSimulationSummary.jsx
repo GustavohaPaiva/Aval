@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Card } from '../ui/Card'
+import { Button } from '../ui/Button'
 import { SimuladorSummaryBar } from '../simulador/SimuladorVisuals'
-import { formatBRL, formatPercent } from '../../utils/money'
+import { formatBRL, formatComissaoPctValor, formatPercent } from '../../utils/money'
 import {
   buildFrozenLineView,
   buildFrozenTotals,
@@ -21,9 +22,10 @@ function productDisplayName(item) {
 }
 
 /**
- * Resumo read-only da simulação congelada para a tela de pedido do gestor.
+ * Resumo da simulação na tela de pedido.
+ * Gestor pode reabrir o simulador para editar um pedido convertido.
  */
-export function PedidoSimulationSummary({ bundle }) {
+export function PedidoSimulationSummary({ bundle, onEdit }) {
   const [taxParams, setTaxParams] = useState({
     icmsPercentual: DEFAULT_ICMS_PERCENTUAL,
     pisCofinsPercentual: 0,
@@ -135,11 +137,24 @@ export function PedidoSimulationSummary({ bundle }) {
         showMargem
         margemLucroTotal={totals.margemLucroTotal}
         margemLucroValorTotal={totals.margemLucroValorTotal}
+        showComissao
+        comissaoValorTotal={totals.comissaoValorTotal}
+        comissaoMediaPercentual={totals.comissaoMediaPercentual}
       />
 
       <Card className="overflow-hidden rounded-3xl p-0">
-        <div className="border-b border-slate-100 px-4 py-3 sm:px-5">
+        <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3 sm:px-5">
           <h2 className="text-sm font-semibold text-primary-800">Produtos</h2>
+          {onEdit ? (
+            <Button
+              type="button"
+              variant="secondary"
+              className="h-8 px-3 text-xs"
+              onClick={onEdit}
+            >
+              Editar
+            </Button>
+          ) : null}
         </div>
 
         <ul className="flex flex-col gap-3 p-3 lg:hidden">
@@ -184,6 +199,15 @@ export function PedidoSimulationSummary({ bundle }) {
                       {formatBRL(row.proposta)}
                     </dd>
                   </div>
+                  <div className="col-span-2">
+                    <dt className="font-medium text-slate-500">Comissão</dt>
+                    <dd className="finance-text mt-0.5 text-slate-800">
+                      {formatComissaoPctValor(
+                        row.comissaoPercentual,
+                        row.comissaoValor,
+                      )}
+                    </dd>
+                  </div>
                   <div className="col-span-2 rounded-xl border border-primary-100 bg-primary-50/50 px-2.5 py-2">
                     <dt className="font-medium text-primary-800">Total</dt>
                     <dd className="finance-text mt-0.5 text-sm font-semibold text-slate-900">
@@ -205,6 +229,7 @@ export function PedidoSimulationSummary({ bundle }) {
                 <th className="px-4 py-3 font-semibold">Preço tabela</th>
                 <th className="px-4 py-3 font-semibold">Proposta</th>
                 <th className="px-4 py-3 font-semibold">Margem</th>
+                <th className="px-4 py-3 font-semibold">Comissão</th>
                 <th className="px-4 py-3 font-semibold">Total</th>
               </tr>
             </thead>
@@ -231,6 +256,12 @@ export function PedidoSimulationSummary({ bundle }) {
                   <td className="finance-text px-4 py-3 text-slate-700">
                     {formatPercent(row.margemLucro)}
                   </td>
+                  <td className="finance-text px-4 py-3 text-slate-700">
+                    {formatComissaoPctValor(
+                      row.comissaoPercentual,
+                      row.comissaoValor,
+                    )}
+                  </td>
                   <td className="finance-text px-4 py-3 font-medium text-slate-900">
                     {formatBRL(row.propostaTotal)}
                   </td>
@@ -239,7 +270,7 @@ export function PedidoSimulationSummary({ bundle }) {
               {lineViews.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={7}
                     className="px-4 py-6 text-center text-slate-500"
                   >
                     Nenhum produto nesta simulação.

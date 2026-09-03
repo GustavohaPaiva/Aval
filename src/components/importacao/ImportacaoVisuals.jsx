@@ -1,4 +1,5 @@
-import { Link } from 'react-router-dom'
+import { useMemo } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import {
   IconFileSpreadsheet,
   IconPackage,
@@ -6,6 +7,8 @@ import {
   IconUsers,
 } from '../icons'
 import { InfoStatCard } from '../ui/InfoStatCard'
+import { CardOrListLayout } from '../ui/CardOrListLayout'
+import { DataTable } from '../ui/DataTable'
 import { EmptyState } from '../ui/EmptyState'
 import {
   formatLoteDate,
@@ -193,6 +196,42 @@ export function ImportacaoLoteCard({ lote }) {
 }
 
 export function ImportacaoLotesSection({ lotes, loading }) {
+  const navigate = useNavigate()
+
+  const lotesColumns = useMemo(
+    () => [
+      {
+        key: 'fornecedor',
+        header: 'Fornecedor',
+        cell: (lote) => (
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-primary-50 text-sm font-semibold text-primary-700 ring-1 ring-primary-100">
+              {fornecedorInitial(lote.fornecedor_nome)}
+            </span>
+            <span className="truncate font-medium text-slate-900">
+              {lote.fornecedor_nome}
+            </span>
+          </div>
+        ),
+      },
+      {
+        key: 'status',
+        header: 'Status',
+        cell: (lote) => <ImportacaoStatusBadge status={lote.status} compact />,
+      },
+      {
+        key: 'enviado',
+        header: 'Enviado em',
+        cell: (lote) => (
+          <span className="whitespace-nowrap text-slate-600">
+            {formatLoteDate(lote.data_upload)}
+          </span>
+        ),
+      },
+    ],
+    [],
+  )
+
   return (
     <section className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm sm:rounded-3xl">
       <div className="border-b border-slate-100 bg-gradient-to-r from-violet-50/50 via-white to-primary-50/40 px-4 py-3.5 sm:px-6 sm:py-4">
@@ -216,11 +255,30 @@ export function ImportacaoLotesSection({ lotes, loading }) {
             description="Envie uma planilha acima para iniciar o primeiro lançamento."
           />
         ) : (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
-            {lotes.map((lote) => (
-              <ImportacaoLoteCard key={lote.id} lote={lote} />
-            ))}
-          </div>
+          <CardOrListLayout
+            cards={
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
+                {lotes.map((lote) => (
+                  <ImportacaoLoteCard key={lote.id} lote={lote} />
+                ))}
+              </div>
+            }
+            list={
+              <DataTable
+                columns={lotesColumns}
+                rows={lotes}
+                getRowKey={(lote) => lote.id}
+                onRowClick={(lote) => {
+                  const clickable =
+                    lote.status === 'aguardando_validacao' ||
+                    lote.status === 'concluido'
+                  if (!clickable) return
+                  navigate(`/admin/importacao/lote/${lote.id}`)
+                }}
+                emptyMessage="Nenhum lote importado ainda"
+              />
+            }
+          />
         )}
       </div>
     </section>

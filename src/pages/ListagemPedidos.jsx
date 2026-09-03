@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { SimulationListCard } from "../components/SimulationListCard";
+import { SimulationListTable } from "../components/SimulationListTable";
 import { IconPackage, IconSearch, IconSliders } from "../components/icons";
 import { AlertMessage } from "../components/ui/AlertMessage";
 import { Button } from "../components/ui/Button";
+import { CardOrListLayout } from "../components/ui/CardOrListLayout";
 import { EmptyState } from "../components/ui/EmptyState";
 import { PageHeader } from "../components/ui/PageHeader";
 import { PageInfoBanner } from "../components/ui/InfoStatCard";
@@ -266,19 +268,33 @@ export function ListagemPedidos() {
           }
         />
       ) : (
-        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
-          {rows.map((row) => (
-            <SimulationListCard
-              key={row.id}
-              row={row}
+        <CardOrListLayout
+          cards={
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
+              {rows.map((row) => (
+                <SimulationListCard
+                  key={row.id}
+                  row={row}
+                  isGestor={isGestor}
+                  consultorNome={consultorNomeById[row.user_id]}
+                  listKind="pedidos"
+                  onContinueEdit={openPedido}
+                  onViewDetails={openPedido}
+                />
+              ))}
+            </div>
+          }
+          list={
+            <SimulationListTable
+              rows={rows}
+              consultorNomeById={consultorNomeById}
               isGestor={isGestor}
-              consultorNome={consultorNomeById[row.user_id]}
               listKind="pedidos"
               onContinueEdit={openPedido}
               onViewDetails={openPedido}
             />
-          ))}
-        </div>
+          }
+        />
       )}
 
       <PaginationBar

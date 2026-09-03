@@ -508,7 +508,9 @@ export function Pedido({ simulationId }) {
         title={isGestor ? 'Pedido' : 'Proposta comercial'}
         description={
           isGestor
-            ? 'Revise a simulação fechada e preencha os dados do pedido.'
+            ? isConverted && !isInactive
+              ? 'Revise o pedido, edite produtos e valores ou preencha os dados logísticos.'
+              : 'Revise a simulação fechada e preencha os dados do pedido.'
             : 'Informe fazenda, município, estado e prazo antes de gerar o documento.'
         }
         actions={
@@ -543,7 +545,19 @@ export function Pedido({ simulationId }) {
         />
       ) : null}
 
-      {isGestor ? <PedidoSimulationSummary bundle={bundle} /> : null}
+      {isGestor ? (
+        <PedidoSimulationSummary
+          bundle={bundle}
+          onEdit={
+            isConverted && !isInactive
+              ? () =>
+                  navigate(
+                    `/simulador?simulationId=${encodeURIComponent(simulationId)}`,
+                  )
+              : undefined
+          }
+        />
+      ) : null}
 
       <PedidoAssinaturaPanel
         simulationId={bundle.simulation.id}
@@ -689,6 +703,21 @@ export function Pedido({ simulationId }) {
       </Card>
 
       <div className="mt-6 flex w-full flex-col gap-2">
+        {isGestor && isConverted && !isInactive ? (
+          <Button
+            type="button"
+            variant="secondary"
+            className="w-full"
+            disabled={savingPedido || Boolean(deciding)}
+            onClick={() =>
+              navigate(
+                `/simulador?simulationId=${encodeURIComponent(simulationId)}`,
+              )
+            }
+          >
+            Editar produtos e valores
+          </Button>
+        ) : null}
         {canEditPedido ? (
           <Button
             type="button"

@@ -1,5 +1,12 @@
 import { supabase } from './supabase'
 
+export const NOTIFICATIONS_CHANGED_EVENT = 'aval:notifications-changed'
+
+export function emitNotificationsChanged() {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED_EVENT))
+}
+
 function mapNotification(row) {
   return {
     id: String(row.id),
@@ -82,6 +89,7 @@ export async function markNotificationRead(notificationId) {
     .is('read_at', null)
 
   if (error) return { ok: false, error: error.message }
+  emitNotificationsChanged()
   return { ok: true }
 }
 
@@ -92,6 +100,7 @@ export async function markAllNotificationsRead() {
     .is('read_at', null)
 
   if (error) return { ok: false, error: error.message }
+  emitNotificationsChanged()
   return { ok: true }
 }
 

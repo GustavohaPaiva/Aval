@@ -1,6 +1,12 @@
-import { isPedidoStatus, PEDIDO_STATUSES } from '../constants/simulationStatus';
+import {
+    isGestorEditableConverted,
+    isPedidoStatus,
+    PEDIDO_STATUSES,
+} from '../constants/simulationStatus';
 import { ESTADO_UF_VALUES } from '../constants/simulator';
 import { isPrazoSemanaAllowed } from '../utils/calendarWeek';
+import { tonsToKg } from '../utils/comprasUnits';
+import { hasNotifiablePedidoComercialChanges } from '../utils/pedidoComercialChanges';
 import { roundMoney } from '../utils/roundMoney';
 import { parseCpfCnpjInput } from '../utils/dataFormatters';
 import { formatBRL } from '../utils/money';
@@ -304,6 +310,153 @@ async function replaceSimulationItems(simulationId, lines, statusLinha, userId) 
     return { ok: false, error: parseItemsInsertError(itemsError) };
 }
 
+async function fetchAllocatedKgByItemId(itemIds) {
+    if (!itemIds.length) return { ok: true, byId: {} };
+    const { data, error } = await supabase
+        .from('alocacoes')
+        .select('simulation_item_id, quantidade_kg')
+        .in('simulation_item_id', itemIds);
+    if (error) return { ok: false, error: error.message };
+    const byId = {};
+    for (const row of data ?? []) {
+        const id = String(row.simulation_item_id);
+        byId[id] = (byId[id] ?? 0) + Number(row.quantidade_kg);
+    }
+    return { ok: true, byId };
+}
+
+/**
+ * Atualiza linhas de um pedido convertido sem quebrar lastro de compras:
+ * preserva ids existentes, recusa remover/trocar produto ou reduzir volume
+ * abaixo do kg já alocado.
+ */
+async function syncConvertedSimulationItems(
+    simulationId,
+    lines,
+    statusLinha,
+    userId,
+) {
+    const invalid = lines.find(
+        (line) => !line.productId || String(line.productId).startsWith('demo-'),
+    );
+    if (invalid) {
+        return {
+            ok: false,
+            error: 'Selecione produtos do catálogo oficial (quarter e estado) antes de lançar.',
+        };
+    }
+
+    const { data: currentItems, error: currentError } = await supabase
+        .from('simulation_items')
+        .select('id, product_id')
+        .eq('simulation_id', simulationId);
+    if (currentError) return { ok: false, error: currentError.message };
+
+    const currentById = new Map(
+        (currentItems ?? []).map((row) => [String(row.id), row]),
+    );
+    const toUpdate = [];
+    const toInsert = [];
+    const incomingIds = new Set();
+
+    for (const line of lines) {
+        const id = line.id ? String(line.id) : '';
+        if (id && currentById.has(id)) {
+            incomingIds.add(id);
+            toUpdate.push(line);
+        } else {
+            toInsert.push(line);
+        }
+    }
+
+    const toDelete = [...currentById.keys()].filter((id) => !incomingIds.has(id));
+    const alloc = await fetchAllocatedKgByItemId([...currentById.keys()]);
+    if (!alloc.ok) return alloc;
+    const allocated = alloc.byId ?? {};
+
+    for (const id of toDelete) {
+        if ((allocated[id] ?? 0) > 0) {
+            return {
+                ok: false,
+                error:
+                    'Não é possível remover um produto com lastro em compras. Desvincule a alocação antes de alterar o pedido.',
+            };
+        }
+    }
+
+    for (const line of toUpdate) {
+        const id = String(line.id);
+        const allocatedKg = allocated[id] ?? 0;
+        if (!(allocatedKg > 0)) continue;
+        const current = currentById.get(id);
+        if (current && String(current.product_id) !== String(line.productId)) {
+            return {
+                ok: false,
+                error:
+                    'Não é possível trocar o produto de uma linha com lastro em compras. Desvincule a alocação antes.',
+            };
+        }
+        const volumeKg = tonsToKg(line.volume);
+        if (volumeKg + 0.0001 < allocatedKg) {
+            return {
+                ok: false,
+                error:
+                    'O volume não pode ser menor que o lastro já alocado em compras. Desvincule a alocação ou aumente o volume.',
+            };
+        }
+    }
+
+    for (const line of toUpdate) {
+        const payload = mapLinesToItemsPayload(
+            simulationId,
+            [line],
+            statusLinha,
+            userId,
+        )[0];
+        const { error: updateError } = await supabase
+            .from('simulation_items')
+            .update(payload)
+            .eq('id', line.id)
+            .eq('simulation_id', simulationId);
+        if (updateError) {
+            return { ok: false, error: parseItemsInsertError(updateError) };
+        }
+    }
+
+    if (toInsert.length) {
+        const insertResult = await insertSimulationItems(
+            simulationId,
+            toInsert,
+            statusLinha,
+            userId,
+        );
+        if (!insertResult.ok) return insertResult;
+    }
+
+    if (toDelete.length) {
+        const { error: deleteError } = await supabase
+            .from('simulation_items')
+            .delete()
+            .eq('simulation_id', simulationId)
+            .in('id', toDelete);
+        if (deleteError) {
+            if (
+                deleteError.code === '23503' ||
+                /foreign key|violates foreign key/i.test(deleteError.message ?? '')
+            ) {
+                return {
+                    ok: false,
+                    error:
+                        'Não é possível remover um produto vinculado a compras. Desvincule a alocação antes.',
+                };
+            }
+            return { ok: false, error: deleteError.message };
+        }
+    }
+
+    return { ok: true };
+}
+
 function parseSimulationWriteError(error, fallback) {
     const msg = error?.message ?? '';
     if (
@@ -351,6 +504,13 @@ async function upsertSimulationWithItems(input, status, userId) {
         }
         if (current && (current.ativo === false || isHiddenDraft(current))) {
             return inactiveSimulationError()
+        }
+        if (current && isPedidoStatus(current.status)) {
+            return {
+                ok: false,
+                error:
+                    'Este pedido já foi convertido. Apenas o gestor pode alterar produtos e valores.',
+            }
         }
         // Own rows only (consultor or gestor creating/editing their own drafts).
         // Gestor review of others' sims uses saveGestorReview instead.
@@ -936,7 +1096,7 @@ export async function saveGestorReview(input) {
 
     const { data: simRow, error: simFetchError } = await supabase
         .from('simulations')
-        .select('id, user_id, status, ativo')
+        .select('id, user_id, status, ativo, client_id')
         .eq('id', input.simulationId)
         .maybeSingle();
     if (simFetchError) return { ok: false, error: simFetchError.message };
@@ -944,16 +1104,21 @@ export async function saveGestorReview(input) {
     if (simRow.ativo === false) {
         return inactiveSimulationError();
     }
-    if (isPedidoStatus(simRow.status)) {
+    const editingConverted = isGestorEditableConverted(simRow.status, {
+        ativo: simRow.ativo,
+    });
+    if (isPedidoStatus(simRow.status) && !editingConverted) {
         return {
             ok: false,
-            error: 'Simulação já convertida em pedido — não é possível editar produtos.',
+            error: 'Só é possível editar produtos e valores de pedidos convertidos ativos.',
         };
     }
 
     const resumo =
         input.resumoAlteracao?.trim() ||
-        'Produtos, quantidades ou parâmetros ajustados pelo gestor';
+        (editingConverted
+            ? 'Pedido convertido atualizado pelo gestor'
+            : 'Produtos, quantidades ou parâmetros ajustados pelo gestor');
     const simUpdate = {
         total_bruto: roundMoney(input.totalValor),
         total_proposta: roundMoney(input.totalProposta),
@@ -965,6 +1130,53 @@ export async function saveGestorReview(input) {
     if (input.comissaoValorTotal != null) {
         simUpdate.comissao_valor_total = roundMoney(input.comissaoValorTotal);
     }
+    if (input.tipoFrete !== undefined) {
+        simUpdate.tipo_frete = input.tipoFrete ?? null;
+    }
+    if (input.origemFrete !== undefined) {
+        simUpdate.origem_frete = input.origemFrete?.trim() || null;
+    }
+    if (input.destinoFrete !== undefined) {
+        simUpdate.destino_frete = input.destinoFrete?.trim() || null;
+    }
+    if (input.dataPagamento !== undefined) {
+        simUpdate.data_pagamento = input.dataPagamento || null;
+    }
+    if (input.quarter !== undefined) {
+        simUpdate.quarter = input.quarter ?? null;
+    }
+    if (editingConverted) {
+        simUpdate.valores_congelados_em = new Date().toISOString();
+        simUpdate.status = 'converted';
+    }
+    if (input.clientId || input.clientName) {
+        const clientResult = await resolveClientId(input);
+        if (!clientResult.ok) return clientResult;
+        simUpdate.client_id = clientResult.clientId;
+    }
+
+    let shouldNotify =
+        !input.skipNotify &&
+        Boolean(simRow.user_id) &&
+        simRow.user_id !== auth.user.id;
+
+    if (shouldNotify && editingConverted) {
+        const { data: previousItems, error: previousError } = await supabase
+            .from('simulation_items')
+            .select(
+                'id, product_id, volume, cultura, proposta, override_custo_usd, override_desconto_usd, override_taxa, override_frete, override_taxa_antecipacao, override_taxa_juros',
+            )
+            .eq('simulation_id', input.simulationId);
+        if (previousError) {
+            return { ok: false, error: previousError.message };
+        }
+        const clientChanged =
+            simUpdate.client_id != null &&
+            String(simUpdate.client_id) !== String(simRow.client_id);
+        shouldNotify =
+            clientChanged ||
+            hasNotifiablePedidoComercialChanges(previousItems, input.lines);
+    }
 
     const { error: simError } = await supabase
         .from('simulations')
@@ -974,45 +1186,61 @@ export async function saveGestorReview(input) {
         return { ok: false, error: simError.message };
     }
 
-    const itemsResult = await replaceSimulationItems(
-        input.simulationId,
-        input.lines,
-        simRow.status,
-        auth.user.id,
-    );
+    const itemsResult = editingConverted
+        ? await syncConvertedSimulationItems(
+            input.simulationId,
+            input.lines,
+            'converted',
+            auth.user.id,
+        )
+        : await replaceSimulationItems(
+            input.simulationId,
+            input.lines,
+            simRow.status,
+            auth.user.id,
+        );
     if (!itemsResult.ok) return itemsResult;
 
     const comissaoResult = await syncComissaoForSimulation(
         input.simulationId,
         simRow.user_id,
-        simRow.status === 'approved' || simRow.status === 'conversion_requested'
-            ? 'approved'
-            : simRow.status,
+        editingConverted
+            ? 'converted'
+            : simRow.status === 'approved' || simRow.status === 'conversion_requested'
+                ? 'approved'
+                : simRow.status,
         input.lines,
     );
     if (!comissaoResult.ok) return comissaoResult;
 
-    if (
-        !input.skipNotify &&
-        simRow.user_id &&
-        simRow.user_id !== auth.user.id
-    ) {
+    if (shouldNotify) {
         const clientLabel = (input.clientName ?? '').trim() || 'Cliente';
         const notifyResult = await notifyConsultorGestorSimulationUpdated({
             simulationId: input.simulationId,
-            title: `Simulação alterada pelo gestor — ${clientLabel}`,
-            body: resumo,
+            title: editingConverted
+                ? `Pedido convertido atualizado — ${clientLabel}`
+                : `Simulação alterada pelo gestor — ${clientLabel}`,
+            body: editingConverted
+                ? 'O gestor alterou produtos, volumes ou valores do pedido.'
+                : resumo,
         });
         if (!notifyResult.ok) {
             return {
                 ok: true,
                 simulationId: input.simulationId,
+                status: editingConverted ? 'converted' : simRow.status,
+                notified: false,
                 notifyWarning: notifyResult.error,
             };
         }
     }
 
-    return { ok: true, simulationId: input.simulationId };
+    return {
+        ok: true,
+        simulationId: input.simulationId,
+        status: editingConverted ? 'converted' : simRow.status,
+        notified: shouldNotify,
+    };
 }
 
 export async function updateSimulationStatus(simulationId, status, options = {}) {
@@ -1329,7 +1557,7 @@ export async function rejectOrder(simulationId, options = {}) {
 
 /**
  * Gestor inativa simulação ou pedido aprovado: sai das estatísticas, continua na listagem.
- * Pedidos também vão para status cancelled.
+ * Pedidos também vão para status cancelled. A comissão do registro é apagada.
  */
 export async function inactivateSimulation(simulationId) {
     const auth = await requireGestorUser();
@@ -1374,7 +1602,7 @@ export async function inactivateSimulation(simulationId) {
 
     const { error: comissaoError } = await supabase
         .from('comissao_registros')
-        .update({ status: 'cancelada' })
+        .delete()
         .eq('simulation_id', simulationId);
     if (comissaoError) return { ok: false, error: comissaoError.message };
 
@@ -1413,7 +1641,16 @@ export async function deleteSimulation(simulationId) {
         .from('simulations')
         .delete()
         .eq('id', simulationId);
-    if (error) return { ok: false, error: error.message };
+    if (error) {
+        const msg = error.message ?? '';
+        if (/alocacoes/i.test(msg)) {
+            return {
+                ok: false,
+                error: 'Não é possível excluir: este pedido tem vínculo de estoque ou compra. Desvincule antes.',
+            };
+        }
+        return { ok: false, error: error.message };
+    }
     return { ok: true };
 }
 
@@ -1456,19 +1693,36 @@ export async function fetchSimulationsList(params) {
 
     if (search) {
         const pattern = `%${search.replace(/[%_,]/g, ' ').trim()}%`
+        const { data: matchingClients, error: clientSearchError } = await supabase
+            .from('clients')
+            .select('id')
+            .ilike('nome', pattern)
+        if (clientSearchError)
+            return { ok: false, error: clientSearchError.message }
+        const clientIds = (matchingClients ?? []).map((c) => c.id)
+
+        let consultorIds = []
         if (params.role === 'gestor') {
-            const { data: profs } = await supabase
+            const { data: profs, error: profError } = await supabase
                 .from('profiles')
                 .select('id')
                 .ilike('nome', pattern)
-            const consultorIds = (profs ?? []).map((p) => p.id)
-            if (consultorIds.length > 0) {
-                q = q.or(`clients.nome.ilike.${pattern},user_id.in.(${consultorIds.join(',')})`)
-            } else {
-                q = q.ilike('clients.nome', pattern)
-            }
+            if (profError)
+                return { ok: false, error: profError.message }
+            consultorIds = (profs ?? []).map((p) => p.id)
+        }
+
+        if (clientIds.length === 0 && consultorIds.length === 0) {
+            return { ok: true, rows: [], consultorNomeById: {}, total: 0 }
+        }
+        if (clientIds.length > 0 && consultorIds.length > 0) {
+            q = q.or(
+                `client_id.in.(${clientIds.join(',')}),user_id.in.(${consultorIds.join(',')})`,
+            )
+        } else if (consultorIds.length > 0) {
+            q = q.in('user_id', consultorIds)
         } else {
-            q = q.ilike('clients.nome', pattern)
+            q = q.in('client_id', clientIds)
         }
     }
 

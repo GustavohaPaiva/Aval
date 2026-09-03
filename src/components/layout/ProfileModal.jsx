@@ -1,7 +1,13 @@
 import { useRef, useState } from "react";
 import { Modal } from "../ui/Modal";
 import { Button } from "../ui/Button";
-import { IconCamera, IconLogOut, IconTrash, IconUserSwitch } from "../icons";
+import {
+  IconCamera,
+  IconLayoutList,
+  IconLogOut,
+  IconTrash,
+  IconUserSwitch,
+} from "../icons";
 import { removeAvatar, uploadAvatar } from "../../services/profileService";
 
 function userInitial(name) {
@@ -50,6 +56,9 @@ export function ProfileModal({
   email,
   roleLabel,
   avatarUrl,
+  isGestor = false,
+  listViewEnabled = false,
+  onListViewChange,
   onSwitchAccount,
   onSignOut,
 }) {
@@ -164,6 +173,39 @@ export function ProfileModal({
           ) : null}
         </div>
       </div>
+
+      {isGestor ? (
+        <div className="mt-5 hidden border-t border-slate-100 pt-4 lg:block">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+            Preferências
+          </p>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={listViewEnabled}
+            disabled={busy}
+            onClick={() => onListViewChange?.(!listViewEnabled)}
+            className="flex h-11 w-full items-center gap-3 rounded-2xl px-3 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
+          >
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
+              <IconLayoutList className="size-4" />
+            </span>
+            <span className="min-w-0 flex-1 text-left">Visualização em lista</span>
+            <span
+              className={[
+                "flex h-6 w-11 shrink-0 items-center rounded-full p-0.5 transition-colors",
+                listViewEnabled ? "bg-primary-600 justify-end" : "bg-slate-200 justify-start",
+              ].join(" ")}
+              aria-hidden
+            >
+              <span className="size-5 rounded-full bg-white shadow-sm" />
+            </span>
+          </button>
+          <p className="mt-1.5 px-3 text-xs text-slate-500">
+            No computador, troca cards por tabela nas listagens.
+          </p>
+        </div>
+      ) : null}
 
       <div className="mt-5 border-t border-slate-100 pt-4">
         <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">

@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { ComprasSubnav } from '../../components/compras/ComprasSubnav'
 import { IconClipboardList, IconSearch } from '../../components/icons'
 import { AlertMessage } from '../../components/ui/AlertMessage'
+import { CardOrListLayout } from '../../components/ui/CardOrListLayout'
+import { DataTable } from '../../components/ui/DataTable'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { PageHeader } from '../../components/ui/PageHeader'
 import { PageInfoBanner } from '../../components/ui/InfoStatCard'
@@ -68,6 +70,73 @@ export function ComprasDemandaPage() {
 
   const pendentes = filtered.filter((row) => row.faltanteKg > 0.0001).length
 
+  const demandaColumns = useMemo(
+    () => [
+      {
+        key: 'cliente',
+        header: 'Cliente',
+        cell: (row) => (
+          <span className="font-medium text-slate-900">{row.clienteNome}</span>
+        ),
+      },
+      {
+        key: 'status',
+        header: 'Status',
+        cell: (row) => (
+          <span
+            className={[
+              'inline-flex rounded-full px-2.5 py-1 text-xs font-semibold',
+              demandaStatusBadgeClass(row.status),
+            ].join(' ')}
+          >
+            {demandaStatusLabel(row.status)}
+          </span>
+        ),
+      },
+      {
+        key: 'fazenda',
+        header: 'Fazenda / local',
+        cell: (row) => {
+          const local = [row.municipio, row.uf].filter(Boolean).join('/')
+          return (
+            <span className="text-slate-600">
+              {row.fazenda || '—'}
+              {local ? ` · ${local}` : ''}
+            </span>
+          )
+        },
+      },
+      {
+        key: 'data',
+        header: 'Data',
+        cell: (row) => (
+          <span className="whitespace-nowrap text-slate-600">
+            {row.createdAt ? formatShortDate(row.createdAt) : '—'}
+          </span>
+        ),
+      },
+      {
+        key: 'produtos',
+        header: 'Produtos',
+        align: 'right',
+        cell: (row) => (
+          <span className="text-slate-600">{row.produtos}</span>
+        ),
+      },
+      {
+        key: 'falta',
+        header: 'Falta',
+        align: 'right',
+        cell: (row) => (
+          <span className="font-medium text-slate-800">
+            {formatQtyBoth(row.faltanteKg)}
+          </span>
+        ),
+      },
+    ],
+    [],
+  )
+
   return (
     <div className="w-full min-w-0 space-y-4 sm:space-y-6">
       <div className="relative overflow-hidden rounded-2xl border border-primary-100/80 bg-gradient-to-br from-primary-50/80 via-white to-emerald-50/40 p-4 shadow-sm sm:rounded-[2rem] sm:p-6">
@@ -128,42 +197,55 @@ export function ComprasDemandaPage() {
           description="Só entram pedidos convertidos e ativos."
         />
       ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          {filtered.map((row) => {
-            const local = [row.municipio, row.uf].filter(Boolean).join('/')
-            return (
-              <button
-                key={row.simulationId}
-                type="button"
-                className="rounded-3xl border border-slate-200/90 bg-white p-5 text-left shadow-sm transition hover:border-primary-200"
-                onClick={() => navigate(`/compras/demanda/${row.simulationId}`)}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <p className="text-lg font-semibold text-slate-900">{row.clienteNome}</p>
-                  <span
-                    className={[
-                      'inline-flex shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold',
-                      demandaStatusBadgeClass(row.status),
-                    ].join(' ')}
+        <CardOrListLayout
+          cards={
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              {filtered.map((row) => {
+                const local = [row.municipio, row.uf].filter(Boolean).join('/')
+                return (
+                  <button
+                    key={row.simulationId}
+                    type="button"
+                    className="rounded-3xl border border-slate-200/90 bg-white p-5 text-left shadow-sm transition hover:border-primary-200"
+                    onClick={() => navigate(`/compras/demanda/${row.simulationId}`)}
                   >
-                    {demandaStatusLabel(row.status)}
-                  </span>
-                </div>
-                <p className="mt-1 text-sm text-slate-600">
-                  {row.fazenda || '—'}
-                  {local ? ` · ${local}` : ''}
-                </p>
-                <p className="mt-3 text-sm text-slate-500">
-                  {row.createdAt ? formatShortDate(row.createdAt) : '—'} · {row.produtos}{' '}
-                  produto(s)
-                </p>
-                <p className="mt-2 text-sm font-medium text-slate-800">
-                  Falta {formatQtyBoth(row.faltanteKg)}
-                </p>
-              </button>
-            )
-          })}
-        </div>
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="text-lg font-semibold text-slate-900">{row.clienteNome}</p>
+                      <span
+                        className={[
+                          'inline-flex shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold',
+                          demandaStatusBadgeClass(row.status),
+                        ].join(' ')}
+                      >
+                        {demandaStatusLabel(row.status)}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-sm text-slate-600">
+                      {row.fazenda || '—'}
+                      {local ? ` · ${local}` : ''}
+                    </p>
+                    <p className="mt-3 text-sm text-slate-500">
+                      {row.createdAt ? formatShortDate(row.createdAt) : '—'} · {row.produtos}{' '}
+                      produto(s)
+                    </p>
+                    <p className="mt-2 text-sm font-medium text-slate-800">
+                      Falta {formatQtyBoth(row.faltanteKg)}
+                    </p>
+                  </button>
+                )
+              })}
+            </div>
+          }
+          list={
+            <DataTable
+              columns={demandaColumns}
+              rows={filtered}
+              getRowKey={(row) => row.simulationId}
+              onRowClick={(row) => navigate(`/compras/demanda/${row.simulationId}`)}
+              emptyMessage="Nenhum pedido"
+            />
+          }
+        />
       )}
     </div>
   )

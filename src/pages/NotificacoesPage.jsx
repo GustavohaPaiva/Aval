@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { IconBell } from "../components/icons";
+import { IconBell, IconCheck } from "../components/icons";
 import { AlertMessage } from "../components/ui/AlertMessage";
 import { Button } from "../components/ui/Button";
 import { DatePicker } from "../components/ui/DatePicker";
@@ -47,7 +47,7 @@ const TYPE_OPTIONS = [
 
 const READ_STATUS_OPTIONS = [
   { value: "", label: "Todos os status" },
-  { value: "unread", label: "Nova" },
+  { value: "unread", label: "Não lida" },
   { value: "read", label: "Lida" },
 ];
 
@@ -96,6 +96,30 @@ function typeBadgeClass(type) {
     default:
       return "bg-slate-100 text-slate-700 ring-1 ring-slate-200";
   }
+}
+
+function notificationCardClass(unread) {
+  return unread
+    ? "relative overflow-hidden rounded-2xl border-2 border-red-300 bg-red-50 shadow-sm sm:rounded-3xl"
+    : "relative overflow-hidden rounded-2xl border border-emerald-200 bg-emerald-50/40 shadow-sm sm:rounded-3xl";
+}
+
+function ReadStatusBadge({ unread }) {
+  if (unread) {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-red-600 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-white">
+        <span className="size-1.5 rounded-full bg-white" aria-hidden />
+        Não lida
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-600 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-white">
+      <IconCheck className="size-3" />
+      Lida
+    </span>
+  );
 }
 
 export function NotificacoesPage() {
@@ -290,13 +314,36 @@ export function NotificacoesPage() {
         }
       />
 
-      <PageInfoBanner icon={IconBell}>
+      <PageInfoBanner
+        icon={IconBell}
+        iconClassName={
+          unreadCount > 0
+            ? "bg-red-600"
+            : rows.length > 0
+              ? "bg-emerald-600"
+              : undefined
+        }
+      >
         {loading
           ? "Carregando notificações…"
           : unreadCount > 0
-            ? `${unreadCount} não lida(s) · ${rows.length} no total`
+            ? (
+              <>
+                <span className="font-semibold text-red-700">
+                  {unreadCount} não lida{unreadCount === 1 ? "" : "s"}
+                </span>
+                {` · ${rows.length} no total`}
+              </>
+            )
             : rows.length > 0
-              ? `${rows.length} notificação(ões) · todas lidas`
+              ? (
+                <>
+                  <span className="font-semibold text-emerald-700">
+                    {rows.length} notificação{rows.length === 1 ? "" : "ões"}
+                  </span>
+                  {" · todas lidas"}
+                </>
+              )
               : "Nenhuma notificação por enquanto."}
       </PageInfoBanner>
 
@@ -408,17 +455,18 @@ export function NotificacoesPage() {
                           : "Abrir simulação";
                 return (
                   <li key={row.id}>
-                    <article
-                      className={[
-                        "overflow-hidden rounded-2xl border bg-white shadow-sm sm:rounded-3xl",
-                        unread
-                          ? "border-primary-200 ring-1 ring-primary-100"
-                          : "border-slate-200/90",
-                      ].join(" ")}
-                    >
-                      <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+                    <article className={notificationCardClass(unread)}>
+                      <span
+                        className={[
+                          "absolute inset-y-0 left-0 w-1.5",
+                          unread ? "bg-red-500" : "bg-emerald-500",
+                        ].join(" ")}
+                        aria-hidden
+                      />
+                      <div className="flex flex-col gap-4 p-4 pl-5 sm:flex-row sm:items-center sm:justify-between sm:p-5 sm:pl-6">
                         <div className="min-w-0 space-y-1.5">
                           <div className="flex flex-wrap items-center gap-2">
+                            <ReadStatusBadge unread={unread} />
                             <span
                               className={[
                                 "inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-semibold",
@@ -427,13 +475,15 @@ export function NotificacoesPage() {
                             >
                               {notificationTypeLabel(row.type)}
                             </span>
-                            {unread ? (
-                              <span className="inline-flex rounded-full bg-primary-50 px-2 py-0.5 text-[11px] font-semibold text-primary-700">
-                                Nova
-                              </span>
-                            ) : null}
                           </div>
-                          <h2 className="text-base font-semibold tracking-tight text-slate-900">
+                          <h2
+                            className={[
+                              "text-base tracking-tight",
+                              unread
+                                ? "font-bold text-slate-900"
+                                : "font-semibold text-slate-700",
+                            ].join(" ")}
+                          >
                             {row.title}
                           </h2>
                           {row.body ? (

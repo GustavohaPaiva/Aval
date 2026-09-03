@@ -21,8 +21,9 @@ import {
   IconUser,
   IconUsers,
 } from "../components/icons";
+import { ListViewProvider, useListView } from "../contexts/ListViewContext";
 import { useAuth } from "../hooks/useAuth";
-import { fetchUnreadNotificationCount } from "../services/notificationService";
+import { fetchUnreadNotificationCount, NOTIFICATIONS_CHANGED_EVENT } from "../services/notificationService";
 import { supabase } from "../services/supabase";
 
 const COLLAPSE_STORAGE_KEY = "syagri:sidebar-collapsed";
@@ -70,7 +71,9 @@ function CloseIcon() {
 
 function pathMatchesItem(pathname, to) {
   if (pathname === to) return true;
-  if (to === "/dashboard") return false;
+  if (to === "/dashboard" || to === "/logistica") {
+    return to === "/logistica" ? pathname.startsWith("/logistica/") : false;
+  }
   return pathname.startsWith(`${to}/`);
 }
 
@@ -115,6 +118,11 @@ function navSectionsForRole(role) {
             label: "Consultores",
             icon: IconUsers,
           },
+          {
+            to: "/admin/logistica",
+            label: "Logística",
+            icon: IconTruck,
+          },
           { to: "/frete", label: "Fretes", icon: IconTruck },
         ],
       },
@@ -142,6 +150,20 @@ function navSectionsForRole(role) {
     ];
   }
 
+  if (role === "logistica") {
+    return [
+      {
+        items: [
+          {
+            to: "/logistica",
+            label: "Pedidos assinados",
+            icon: IconTruck,
+          },
+        ],
+      },
+    ];
+  }
+
   return [
     {
       items: [
@@ -162,6 +184,7 @@ function navSectionsForRole(role) {
 function cargoLabel(role) {
   if (role === "gestor") return "Gestor";
   if (role === "consultor") return "Consultor";
+  if (role === "logistica") return "Logística";
   return "—";
 }
 
@@ -212,7 +235,9 @@ function SidebarNavLink({
               "size-[1.125rem] shrink-0 transition-colors",
               isActive
                 ? "text-primary-600"
-                : "text-slate-400 group-hover:text-slate-600",
+                : item.to === "/notificacoes" && unreadCount > 0
+                  ? "text-red-600"
+                  : "text-slate-400 group-hover:text-slate-600",
             ].join(" ")}
           />
           <span
@@ -226,9 +251,9 @@ function SidebarNavLink({
           {item.to === "/notificacoes" && unreadCount > 0 ? (
             <span
               className={[
-                "inline-flex min-w-5 items-center justify-center rounded-full bg-primary-600 px-1.5 text-[0.65rem] font-bold text-white",
+                "inline-flex min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 text-[0.65rem] font-bold text-white",
                 collapsed
-                  ? "absolute -right-0.5 -top-0.5 size-2 min-w-0 p-0"
+                  ? "absolute -right-0.5 -top-0.5 size-2.5 min-w-0 animate-pulse p-0 ring-2 ring-white"
                   : "ml-auto",
               ].join(" ")}
             >
@@ -287,7 +312,7 @@ export function MainLayout() {
   }, [collapsed]);
 
   useEffect(() => {
-    if (!user?.id || !role) {
+    if (!user?.id || !role || role === "logistica") {
       return undefined;
     }
 
@@ -304,12 +329,20 @@ export function MainLayout() {
     function onVisibilityChange() {
       if (document.visibilityState === "visible") void loadCount();
     }
+    function onNotificationsChanged() {
+      void loadCount();
+    }
     document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener(NOTIFICATIONS_CHANGED_EVENT, onNotificationsChanged);
 
     return () => {
       cancelled = true;
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener(
+        NOTIFICATIONS_CHANGED_EVENT,
+        onNotificationsChanged,
+      );
     };
   }, [user?.id, role]);
 
@@ -338,6 +371,7 @@ export function MainLayout() {
     user?.id && role ? unreadNotifications : 0;
 
   return (
+    <ListViewProvider>
     <div className="h-svh overflow-hidden bg-slate-50">
       {mobileOpen ? (
         <button
@@ -548,6 +582,20 @@ export function MainLayout() {
               </span>
               Aval
             </span>
+            <NavLink
+              to="/notificacoes"
+              className="relative ml-auto flex size-9 items-center justify-center rounded-2xl text-slate-700 hover:bg-slate-100"
+              aria-label={
+                effectiveUnreadNotifications > 0
+                  ? `Notificações, ${effectiveUnreadNotifications} não lidas`
+                  : "Notificações"
+              }
+            >
+              <IconBell className="size-5" />
+              {effectiveUnreadNotifications > 0 ? (
+                <span className="absolute right-1.5 top-1.5 size-2.5 rounded-full bg-red-600 ring-2 ring-white" />
+              ) : null}
+            </NavLink>
           </header>
 
           <main className="relative z-10 min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-4 lg:px-[5%] lg:py-6">
@@ -556,7 +604,7 @@ export function MainLayout() {
         </div>
       </div>
 
-      <ProfileModal
+      <ProfileModalConnected
         open={profileOpen}
         onClose={() => setProfileOpen(false)}
         displayName={displayName}
@@ -567,5 +615,18 @@ export function MainLayout() {
         onSignOut={() => void handleSignOut()}
       />
     </div>
+    </ListViewProvider>
+  );
+}
+
+function ProfileModalConnected(props) {
+  const { enabled, setEnabled, isGestor } = useListView();
+  return (
+    <ProfileModal
+      {...props}
+      isGestor={isGestor}
+      listViewEnabled={enabled}
+      onListViewChange={setEnabled}
+    />
   );
 }

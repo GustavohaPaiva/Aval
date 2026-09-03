@@ -19,6 +19,11 @@ export function isPedidoStatus(status) {
   return PEDIDO_STATUSES.includes(status)
 }
 
+/** Pedido convertido ativo — gestor ainda pode editar produtos e valores. */
+export function isGestorEditableConverted(status, { ativo } = {}) {
+  return status === 'converted' && ativo !== false
+}
+
 export function isConsultorSimulationLocked(status) {
   return (
     status === 'pending' ||

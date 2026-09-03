@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   calcComissaoLinha,
+  calcComissaoMediaPercentual,
   calcComissaoValor,
   normalizeTipoComissao,
   resolveComissaoPercentual,
@@ -72,5 +73,12 @@ describe('comissaoCalculations', () => {
     expect(line.comissaoPercentual).toBe(1)
     expect(line.baseCalculo).toBe(10000)
     expect(line.comissaoValor).toBe(100)
+  })
+
+  it('calcula comissão média ponderada pela base', () => {
+    expect(calcComissaoMediaPercentual(50, 10000)).toBe(0.5)
+    expect(calcComissaoMediaPercentual(0, 10000)).toBe(0)
+    expect(calcComissaoMediaPercentual(100, 0)).toBe(0)
+    expect(calcComissaoMediaPercentual(null, 10000)).toBe(0)
   })
 })

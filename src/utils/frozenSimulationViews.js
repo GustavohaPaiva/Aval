@@ -1,3 +1,5 @@
+import { isGestorEditableConverted } from '../constants/simulationStatus'
+import { calcComissaoMediaPercentual } from './comissaoCalculations'
 import { roundMoney } from './roundMoney'
 import {
   calcMargemLucro,
@@ -111,9 +113,14 @@ export function buildFrozenTotals(lineViews, simulation, taxParams = {}) {
   const totalFinanceiro = roundMoney(
     lineViews.reduce((acc, row) => acc + (row.financeiroTotal ?? 0), 0),
   )
-  const comissaoValorTotal = roundMoney(
+  const fromLinesComissao = roundMoney(
     lineViews.reduce((acc, row) => acc + (row.comissaoValor ?? 0), 0),
   )
+  const persistedComissao =
+    simulation?.comissao_valor_total != null
+      ? roundMoney(Number(simulation.comissao_valor_total))
+      : 0
+  const comissaoValorTotal = fromLinesComissao || persistedComissao
   const totalValor =
     simulation?.total_bruto != null && Number(simulation.total_bruto) > 0
       ? roundMoney(Number(simulation.total_bruto))
@@ -140,6 +147,10 @@ export function buildFrozenTotals(lineViews, simulation, taxParams = {}) {
       pisCofinsPercentual,
     ),
     comissaoValorTotal,
+    comissaoMediaPercentual: calcComissaoMediaPercentual(
+      comissaoValorTotal,
+      totalProposta,
+    ),
     globalStatus: 'Aprovado',
   }
 }
@@ -154,4 +165,19 @@ export function isSimulationFrozen(simulation) {
     status === 'order_rejected' ||
     status === 'cancelled'
   )
+}
+
+/**
+ * Consultor sempre vê pedido convertido congelado.
+ * Gestor pode reeditar comercialmente um converted ativo.
+ */
+export function shouldFreezeSimulationForViewer(simulation, { isGestor } = {}) {
+  if (!isSimulationFrozen(simulation)) return false
+  if (
+    isGestor &&
+    isGestorEditableConverted(simulation.status, { ativo: simulation.ativo })
+  ) {
+    return false
+  }
+  return true
 }

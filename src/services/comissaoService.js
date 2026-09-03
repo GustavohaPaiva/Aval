@@ -1,6 +1,7 @@
 import { roundMoney } from '../utils/roundMoney'
 import {
   calcComissaoLinha,
+  calcComissaoMediaPercentual,
   calcComissaoValor,
   normalizeTipoComissao,
   toMargemPercentual,
@@ -723,25 +724,35 @@ export async function applyComissaoRegistroFaixas(input) {
 /**
  * Agrega totais de comissão pelos status do Prompt 10.
  * Canceladas entram só em `cancelada` / `count` — não somam em `total`.
- * @param {Array<{ status?: string, comissao_valor?: number }>} registros
+ * @param {Array<{ status?: string, comissao_valor?: number, base_calculo?: number }>} registros
  */
 export function aggregateComissaoTotais(registros = []) {
   let confirmada = 0
   let calculada = 0
   let cancelada = 0
+  let baseAtiva = 0
 
   for (const row of registros) {
     const valor = Number(row.comissao_valor) || 0
-    if (row.status === 'confirmada') confirmada += valor
-    else if (row.status === 'calculada') calculada += valor
-    else if (row.status === 'cancelada') cancelada += valor
+    const base = Number(row.base_calculo) || 0
+    if (row.status === 'confirmada') {
+      confirmada += valor
+      baseAtiva += base
+    } else if (row.status === 'calculada') {
+      calculada += valor
+      baseAtiva += base
+    } else if (row.status === 'cancelada') {
+      cancelada += valor
+    }
   }
 
+  const total = roundMoney(confirmada + calculada)
   return {
     confirmada: roundMoney(confirmada),
     calculada: roundMoney(calculada),
     cancelada: roundMoney(cancelada),
-    total: roundMoney(confirmada + calculada),
+    total,
+    mediaPercentual: calcComissaoMediaPercentual(total, baseAtiva),
     count: registros.length,
   }
 }

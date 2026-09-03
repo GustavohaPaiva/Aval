@@ -4,6 +4,8 @@ import { ComprasSubnav } from '../../components/compras/ComprasSubnav'
 import { IconPackage, IconPlus } from '../../components/icons'
 import { AlertMessage } from '../../components/ui/AlertMessage'
 import { Button } from '../../components/ui/Button'
+import { CardOrListLayout } from '../../components/ui/CardOrListLayout'
+import { DataTable } from '../../components/ui/DataTable'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { Modal } from '../../components/ui/Modal'
 import { ModalFormFooter } from '../../components/ui/ModalFormFooter'
@@ -58,6 +60,56 @@ export function ComprasOrdensPage() {
     [rows, statusFilter],
   )
 
+  const ordensColumns = useMemo(
+    () => [
+      {
+        key: 'numero',
+        header: 'Número',
+        cell: (row) => (
+          <span className="font-semibold text-slate-900">{row.numero}</span>
+        ),
+      },
+      {
+        key: 'status',
+        header: 'Status',
+        cell: (row) => (
+          <span
+            className={[
+              'inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold',
+              compraStatusBadgeClass(row.status),
+            ].join(' ')}
+          >
+            {compraStatusLabel(row.status)}
+          </span>
+        ),
+      },
+      {
+        key: 'fornecedor',
+        header: 'Fornecedor',
+        cell: (row) => (
+          <span className="text-slate-600">{row.fornecedorNome}</span>
+        ),
+      },
+      {
+        key: 'itens',
+        header: 'Itens',
+        align: 'right',
+        cell: (row) => (
+          <span className="text-slate-600">{row.itensCount}</span>
+        ),
+      },
+      {
+        key: 'volume',
+        header: 'Volume',
+        align: 'right',
+        cell: (row) => (
+          <span className="text-slate-600">{formatQtyBoth(row.volumeKg)}</span>
+        ),
+      },
+    ],
+    [],
+  )
+
   return (
     <div className="w-full min-w-0 space-y-4 sm:space-y-6">
       <div className="relative overflow-hidden rounded-2xl border border-primary-100/80 bg-gradient-to-br from-primary-50/80 via-white to-emerald-50/40 p-4 shadow-sm sm:rounded-[2rem] sm:p-6">
@@ -108,32 +160,45 @@ export function ComprasOrdensPage() {
       ) : filtered.length === 0 ? (
         <EmptyState title="Nenhuma ordem" description="Crie uma OC ou vincule a demanda." />
       ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {filtered.map((row) => (
-            <button
-              key={row.id}
-              type="button"
-              className="rounded-3xl border border-slate-200/90 bg-white p-5 text-left shadow-sm transition hover:border-primary-200"
-              onClick={() => navigate(`/compras/ordens/${row.id}`)}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <p className="font-semibold text-slate-900">{row.numero}</p>
-                <span
-                  className={[
-                    'inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold',
-                    compraStatusBadgeClass(row.status),
-                  ].join(' ')}
+        <CardOrListLayout
+          cards={
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {filtered.map((row) => (
+                <button
+                  key={row.id}
+                  type="button"
+                  className="rounded-3xl border border-slate-200/90 bg-white p-5 text-left shadow-sm transition hover:border-primary-200"
+                  onClick={() => navigate(`/compras/ordens/${row.id}`)}
                 >
-                  {compraStatusLabel(row.status)}
-                </span>
-              </div>
-              <p className="mt-1 text-sm text-slate-600">{row.fornecedorNome}</p>
-              <p className="mt-3 text-sm text-slate-500">
-                {row.itensCount} item(ns) · {formatQtyBoth(row.volumeKg)}
-              </p>
-            </button>
-          ))}
-        </div>
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="font-semibold text-slate-900">{row.numero}</p>
+                    <span
+                      className={[
+                        'inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold',
+                        compraStatusBadgeClass(row.status),
+                      ].join(' ')}
+                    >
+                      {compraStatusLabel(row.status)}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-sm text-slate-600">{row.fornecedorNome}</p>
+                  <p className="mt-3 text-sm text-slate-500">
+                    {row.itensCount} item(ns) · {formatQtyBoth(row.volumeKg)}
+                  </p>
+                </button>
+              ))}
+            </div>
+          }
+          list={
+            <DataTable
+              columns={ordensColumns}
+              rows={filtered}
+              getRowKey={(row) => row.id}
+              onRowClick={(row) => navigate(`/compras/ordens/${row.id}`)}
+              emptyMessage="Nenhuma ordem"
+            />
+          }
+        />
       )}
 
       {novaOpen ? (

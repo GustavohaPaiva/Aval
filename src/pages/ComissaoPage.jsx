@@ -27,9 +27,12 @@ import {
   fetchComissaoRegistros,
   updateComissaoFaixa,
 } from '../services/comissaoService'
-import { TIPOS_COMISSAO_PRODUTO } from '../utils/comissaoCalculations'
+import {
+  calcComissaoMediaPercentual,
+  TIPOS_COMISSAO_PRODUTO,
+} from '../utils/comissaoCalculations'
 import { formatShortDate } from '../utils/formatShortDate'
-import { formatBRL } from '../utils/money'
+import { formatBRL, formatComissaoPctValor, formatPercentPoints } from '../utils/money'
 
 function pedidoPath(simulationId) {
   if (!simulationId) return null
@@ -400,9 +403,17 @@ function clienteNome(row) {
   return row.simulations?.clients?.nome ?? '—'
 }
 
+function registroComissaoLabel(row) {
+  const pct = calcComissaoMediaPercentual(
+    row.comissao_valor,
+    row.base_calculo,
+  )
+  return formatComissaoPctValor(pct, row.comissao_valor)
+}
+
 function ComissaoValorLink({ row }) {
   const path = pedidoPath(row.simulation_id)
-  const label = formatBRL(Number(row.comissao_valor) || 0)
+  const label = registroComissaoLabel(row)
   if (!path) {
     return (
       <span className="finance-text font-semibold text-slate-900">{label}</span>
@@ -744,7 +755,7 @@ function ComissaoDetalheModal({ open, registroId, canEdit, onClose, onSaved }) {
                   Comissão atual
                 </p>
                 <p className="finance-text mt-1 text-sm font-semibold text-slate-900">
-                  {formatBRL(Number(registro.comissao_valor) || 0)}
+                  {registroComissaoLabel(registro)}
                 </p>
               </div>
             </div>
@@ -944,7 +955,7 @@ export function ComissaoPage() {
 
       {error ? <AlertMessage>{error}</AlertMessage> : null}
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-sm sm:rounded-3xl">
           <p className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
             Confirmadas
@@ -959,6 +970,14 @@ export function ComissaoPage() {
           </p>
           <p className="finance-text mt-1 text-lg font-semibold text-slate-900">
             {formatBRL(totals.calculada)}
+          </p>
+        </div>
+        <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-sm sm:rounded-3xl">
+          <p className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
+            Comissão média
+          </p>
+          <p className="finance-text mt-1 text-lg font-semibold text-slate-900">
+            {formatPercentPoints(totals.mediaPercentual)}
           </p>
         </div>
         <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-sm sm:rounded-3xl">
@@ -1074,7 +1093,7 @@ export function ComissaoPage() {
                           : '—'}
                       </p>
                       <span className="finance-text text-base font-semibold text-primary-700 underline-offset-2">
-                        {formatBRL(Number(row.comissao_valor) || 0)}
+                        {registroComissaoLabel(row)}
                       </span>
                     </div>
                   </button>

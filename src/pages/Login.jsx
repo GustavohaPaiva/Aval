@@ -13,6 +13,7 @@ import { BrandLogoFull, BrandMark } from "../components/brand/BrandLogo";
 import { Button } from "../components/ui/Button";
 import { useAuth } from "../hooks/useAuth";
 import { supabase } from "../services/supabase";
+import { homePathForRole } from "../utils/homePathForRole";
 import { buildSyagriEmail } from "../utils/syagriEmail";
 
 const BRAND_FEATURES = [
@@ -526,17 +527,19 @@ function FormShell({ children, showLoggedInCard }) {
 }
 
 export function Login() {
-  const { user, profile, initializing, signOut } = useAuth();
+  const { user, profile, role, initializing, profileLoading, signOut } =
+    useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
+  const home = homePathForRole(role);
   const from =
     typeof location.state === "object" &&
     location.state !== null &&
     "from" in location.state &&
     typeof location.state.from === "string"
       ? location.state.from
-      : "/dashboard";
+      : home;
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -549,9 +552,11 @@ export function Login() {
   const showLoggedInCard = Boolean(user);
 
   useEffect(() => {
-    if (!pendingRedirect || initializing || !user) return;
+    if (!pendingRedirect || initializing || profileLoading || !user || !role) {
+      return;
+    }
 
-    const target = from === "/login" ? "/dashboard" : from;
+    const target = !from || from === "/login" ? home : from;
     const prefersReduced = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
     ).matches;
@@ -562,9 +567,18 @@ export function Login() {
     }, delay);
 
     return () => window.clearTimeout(timer);
-  }, [pendingRedirect, initializing, user, navigate, from]);
+  }, [
+    pendingRedirect,
+    initializing,
+    profileLoading,
+    user,
+    role,
+    navigate,
+    from,
+    home,
+  ]);
 
-  if (initializing || signingOut) {
+  if (initializing || signingOut || (pendingRedirect && profileLoading)) {
     return (
       <LoginLoadingScreen
         message={signingOut ? "Encerrando sessão…" : "Preparando seu acesso…"}
@@ -658,12 +672,12 @@ export function Login() {
                   type="button"
                   className="login-btn-glow h-11 w-full rounded-2xl text-sm"
                   onClick={() =>
-                    navigate(from === "/login" ? "/dashboard" : from, {
+                    navigate(!from || from === "/login" ? home : from, {
                       replace: true,
                     })
                   }
                 >
-                  Ir para o Dashboard
+                  Continuar
                 </Button>
                 <Button
                   type="button"

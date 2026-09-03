@@ -3,6 +3,7 @@ import {
   buildFrozenLineView,
   buildFrozenTotals,
   isSimulationFrozen,
+  shouldFreezeSimulationForViewer,
 } from './frozenSimulationViews'
 
 describe('frozenSimulationViews', () => {
@@ -63,6 +64,7 @@ describe('frozenSimulationViews', () => {
     expect(totalsA.totalValor).toBe(400)
     expect(totalsA.totalProposta).toBe(360)
     expect(totalsA.comissaoValorTotal).toBe(5)
+    expect(totalsA.comissaoMediaPercentual).toBeCloseTo((5 / 360) * 100, 6)
   })
 
   it('identifica simulação congelada por status de pedido ou flag', () => {
@@ -76,5 +78,27 @@ describe('frozenSimulationViews', () => {
     ).toBe(true)
     expect(isSimulationFrozen({ status: 'draft' })).toBe(false)
     expect(isSimulationFrozen({ status: 'pending' })).toBe(false)
+  })
+
+  it('gestor pode editar pedido convertido ativo; consultor permanece congelado', () => {
+    const converted = { status: 'converted', ativo: true }
+    expect(shouldFreezeSimulationForViewer(converted, { isGestor: true })).toBe(
+      false,
+    )
+    expect(shouldFreezeSimulationForViewer(converted, { isGestor: false })).toBe(
+      true,
+    )
+    expect(
+      shouldFreezeSimulationForViewer(
+        { status: 'converted', ativo: false },
+        { isGestor: true },
+      ),
+    ).toBe(true)
+    expect(
+      shouldFreezeSimulationForViewer(
+        { status: 'cancelled', ativo: true },
+        { isGestor: true },
+      ),
+    ).toBe(true)
   })
 })

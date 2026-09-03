@@ -8,7 +8,7 @@ import {
   LineAutonomiaBadge,
   getLineAutonomiaTintClass,
 } from "./LineAutonomiaBadge";
-import { formatBRL, formatPercent } from "../../utils/money";
+import { formatBRL, formatComissaoPctValor, formatPercent } from "../../utils/money";
 import { formatProdutoDisplayNome } from "../../constants/mapeamentoCampos";
 
 function filterProductsByFornecedor(productOptions, fornecedorId) {
@@ -35,6 +35,8 @@ export const SimulationLineCard = memo(function SimulationLineCard({
   fornecedorOptions = [],
   isReadOnly,
   canOverrideFloor,
+  showMargem: showMargemProp,
+  showComissao: showComissaoProp,
   onVolumeChange,
   onCulturaChange,
   onFornecedorChange,
@@ -48,6 +50,8 @@ export const SimulationLineCard = memo(function SimulationLineCard({
   const selectClass = "text-xs";
   const [overridesOpen, setOverridesOpen] = useState(false);
   const hasOverride = Boolean(row.overrides);
+  const showMargem = showMargemProp ?? canOverrideFloor;
+  const showComissao = showComissaoProp ?? canOverrideFloor;
   const filteredProducts = useMemo(
     () => filterProductsByFornecedor(productOptions, row.fornecedorId),
     [productOptions, row.fornecedorId],
@@ -195,10 +199,23 @@ export const SimulationLineCard = memo(function SimulationLineCard({
         <p className="finance-text text-[11px] text-slate-500">
           Tabela {formatBRL(row.precoUnitario)}
         </p>
-        {canOverrideFloor ? (
-          <p className="finance-text text-[11px] font-semibold text-slate-700">
-            Margem {formatPercent(row.margemLucro)}
-          </p>
+        {showMargem || showComissao ? (
+          <div className="flex flex-wrap items-center justify-end gap-x-3">
+            {showMargem ? (
+              <p className="finance-text text-[11px] font-semibold text-slate-700">
+                Margem {formatPercent(row.margemLucro)}
+              </p>
+            ) : null}
+            {showComissao ? (
+              <p className="finance-text text-[11px] font-semibold text-slate-700">
+                Comissão{' '}
+                {formatComissaoPctValor(
+                  row.comissaoPercentual,
+                  row.comissaoValor,
+                )}
+              </p>
+            ) : null}
+          </div>
         ) : null}
       </div>
 
