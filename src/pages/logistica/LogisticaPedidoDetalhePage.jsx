@@ -14,8 +14,12 @@ import { PageHeader } from '../../components/ui/PageHeader'
 import { useSyncPageLoading } from '../../contexts/PageLoadingContext'
 import { useAbortableAsync } from '../../hooks/useAbortableAsync'
 import {
+  statusBadgeClass,
+  statusLabelPt,
+} from '../../constants/simulationStatus'
+import {
   fetchPdfAssinadoLogistica,
-  fetchPedidoAssinadoLogistica,
+  fetchPedidoLogistica,
 } from '../../services/logisticaService'
 import { formatPrazoSemanaLabel } from '../../utils/calendarWeek'
 import { formatShortDate } from '../../utils/formatShortDate'
@@ -63,7 +67,7 @@ export function LogisticaPedidoDetalhePage() {
       }
       setLoading(true)
       setError(null)
-      const res = await fetchPedidoAssinadoLogistica(simulationId)
+      const res = await fetchPedidoLogistica(simulationId)
       if (!isActive()) return
       setLoading(false)
       if (!res.ok) {
@@ -106,8 +110,8 @@ export function LogisticaPedidoDetalhePage() {
         </Link>
         <PageHeader
           eyebrow="Logística"
-          title={row?.clientNome || 'Pedido assinado'}
-          description="Resumo operacional e PDF assinado para entrega."
+          title={row?.clientNome || 'Pedido'}
+          description="Resumo operacional do pedido e PDF assinado, quando disponível."
           className="mb-0 flex-1"
         />
       </div>
@@ -122,8 +126,19 @@ export function LogisticaPedidoDetalhePage() {
         <>
           <Card className="space-y-4 p-5 sm:p-6">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800">
-                Assinado
+              <span
+                className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${statusBadgeClass(row.status, { ativo: row.ativo })}`}
+              >
+                {statusLabelPt(row.status, { ativo: row.ativo })}
+              </span>
+              <span
+                className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
+                  row.assinado
+                    ? 'bg-emerald-50 text-emerald-800'
+                    : 'bg-slate-100 text-slate-700'
+                }`}
+              >
+                {row.assinado ? 'Assinado' : 'Sem assinatura'}
               </span>
               {row.signedAt ? (
                 <span className="text-xs text-slate-500">
@@ -157,7 +172,9 @@ export function LogisticaPedidoDetalhePage() {
               <div>
                 <p className="font-semibold text-slate-900">PDF assinado</p>
                 <p className="text-sm text-slate-600">
-                  Documento do pedido com a assinatura do cliente.
+                  {row.pdfSignedPath
+                    ? 'Documento do pedido com a assinatura do cliente.'
+                    : 'Pedido ainda sem assinatura do cliente.'}
                 </p>
               </div>
             </div>
@@ -166,7 +183,7 @@ export function LogisticaPedidoDetalhePage() {
               disabled={!row.pdfSignedPath}
               onClick={() => setPdfOpen(true)}
             >
-              Ver PDF assinado
+              {row.pdfSignedPath ? 'Ver PDF assinado' : 'Aguardando assinatura'}
             </Button>
           </Card>
 

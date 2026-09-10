@@ -13,6 +13,7 @@ const item = {
   override_frete: null,
   override_taxa_antecipacao: null,
   override_taxa_juros: null,
+  override_vencimento_lista: null,
 }
 
 const line = {
@@ -34,6 +35,21 @@ describe('hasNotifiablePedidoComercialChanges', () => {
             ...line,
             proposta: 108,
             overrides: { taxa: 5.8, custoUsd: 210 },
+          },
+        ],
+      ),
+    ).toBe(false)
+  })
+
+  it('não notifica quando só o vencimento da lista é ajustado', () => {
+    expect(
+      hasNotifiablePedidoComercialChanges(
+        [item],
+        [
+          {
+            ...line,
+            proposta: 102,
+            overrides: { vencimentoLista: '2026-09-30' },
           },
         ],
       ),

@@ -6,6 +6,9 @@ export const PEDIDO_STATUSES = [
   'cancelled',
 ]
 
+/** Pedidos visíveis para a logística — espelha as políticas RLS de logística. */
+export const LOGISTICA_PEDIDO_STATUSES = ['order_pending', 'converted']
+
 /** Status de simulação (antes da conversão). */
 export const SIMULACAO_STATUSES = [
   'draft',

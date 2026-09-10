@@ -76,7 +76,7 @@ export function GerenciarLogistica() {
         <PageHeader
           eyebrow="Administração"
           title="Usuários de logística"
-          description="Cadastre gerentes de logística com acesso apenas a pedidos já assinados."
+          description="Cadastre gerentes de logística com acesso somente leitura aos pedidos com dados completos."
           actions={
             <Button
               type="button"

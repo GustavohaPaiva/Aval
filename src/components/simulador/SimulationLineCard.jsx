@@ -8,6 +8,7 @@ import {
   LineAutonomiaBadge,
   getLineAutonomiaTintClass,
 } from "./LineAutonomiaBadge";
+import { LineEstoqueAlert } from "./LineEstoqueAlert";
 import { formatBRL, formatComissaoPctValor, formatPercent } from "../../utils/money";
 import { formatProdutoDisplayNome } from "../../constants/mapeamentoCampos";
 
@@ -46,6 +47,7 @@ export const SimulationLineCard = memo(function SimulationLineCard({
   onOverrideChange,
   onClearOverride,
   onRemove,
+  estoqueDisponivelKg = 0,
 }) {
   const selectClass = "text-xs";
   const [overridesOpen, setOverridesOpen] = useState(false);
@@ -151,6 +153,10 @@ export const SimulationLineCard = memo(function SimulationLineCard({
           disabled={isReadOnly}
           className={selectClass}
           editableHint
+        />
+        <LineEstoqueAlert
+          disponivelKg={estoqueDisponivelKg}
+          className="w-full sm:col-span-2"
         />
         <div className="rounded-xl border border-slate-100 bg-white p-2 sm:col-span-2">
           <div className="flex items-end justify-between gap-2">

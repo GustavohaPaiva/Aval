@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { IconBell, IconCheck } from "../components/icons";
+import { IconBell, IconCheck, IconEyeOff } from "../components/icons";
 import { AlertMessage } from "../components/ui/AlertMessage";
 import { Button } from "../components/ui/Button";
 import { DatePicker } from "../components/ui/DatePicker";
@@ -18,6 +18,7 @@ import {
   fetchNotifications,
   markAllNotificationsRead,
   markNotificationRead,
+  markNotificationUnread,
   notificationOpensPedido,
   notificationTypeLabel,
 } from "../services/notificationService";
@@ -131,6 +132,7 @@ export function NotificacoesPage() {
   const [error, setError] = useState(null);
   const [markingAll, setMarkingAll] = useState(false);
   const [openingId, setOpeningId] = useState(null);
+  const [togglingId, setTogglingId] = useState(null);
   const [reloadToken, setReloadToken] = useState(0);
 
   const [filters, setFilters, patchFilters] = usePersistedFilters(
@@ -272,6 +274,29 @@ export function NotificacoesPage() {
       }
     } finally {
       setOpeningId(null);
+    }
+  }
+
+  async function handleToggleRead(notification) {
+    const unread = !notification.read_at;
+    setTogglingId(notification.id);
+    try {
+      const result = unread
+        ? await markNotificationRead(notification.id)
+        : await markNotificationUnread(notification.id);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setRows((prev) =>
+        prev.map((row) =>
+          row.id === notification.id
+            ? { ...row, read_at: unread ? new Date().toISOString() : null }
+            : row,
+        ),
+      );
+    } finally {
+      setTogglingId(null);
     }
   }
 
@@ -495,6 +520,21 @@ export function NotificacoesPage() {
                               : null}
                             {formatNotificationDate(row.created_at)}
                           </p>
+                          <button
+                            type="button"
+                            disabled={togglingId === row.id}
+                            onClick={() => void handleToggleRead(row)}
+                            className="-ml-1.5 inline-flex items-center gap-1.5 rounded-lg px-1.5 py-1 text-xs font-medium text-slate-500 transition-colors hover:bg-white/70 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:opacity-50"
+                          >
+                            {unread ? (
+                              <IconCheck className="size-3.5" />
+                            ) : (
+                              <IconEyeOff className="size-3.5" />
+                            )}
+                            {unread
+                              ? "Marcar como lida"
+                              : "Marcar como não lida"}
+                          </button>
                         </div>
                         {row.simulation_id ? (
                           <Button

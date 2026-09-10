@@ -1,3 +1,4 @@
+import { DatePicker } from "../ui/DatePicker";
 import { EditableNumber } from "../ui/EditableNumber";
 import { formatBRL } from "../../utils/money";
 
@@ -10,6 +11,12 @@ const FIELDS = [
   { key: "taxaJuros", label: "Juros %", decimals: 2, step: 0.1 },
 ];
 
+function formatDateBr(iso) {
+  const match = String(iso ?? "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return "—";
+  return `${match[3]}/${match[2]}/${match[1]}`;
+}
+
 export function LineCostOverrideEditor({
   row,
   onOverrideChange,
@@ -19,6 +26,7 @@ export function LineCostOverrideEditor({
   if (!breakdown) return null;
 
   const hasOverride = Boolean(row.overrides);
+  const vencimentoOverridden = row.overrides?.vencimentoLista != null;
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white px-2.5 py-2">
@@ -61,12 +69,29 @@ export function LineCostOverrideEditor({
             </div>
           );
         })}
+        <div className="min-w-0">
+          <label className="mb-0.5 block truncate text-[10px] font-medium text-slate-500">
+            Vencimento da lista
+            {vencimentoOverridden ? (
+              <span className="ml-0.5 text-primary-600">•</span>
+            ) : null}
+          </label>
+          <DatePicker
+            value={breakdown.vencimentoLista ?? ""}
+            onChange={(e) =>
+              onOverrideChange("vencimentoLista", e.target.value)
+            }
+            placeholder="Do catálogo…"
+            size="compact"
+          />
+        </div>
       </div>
 
       <p className="finance-text mt-1.5 text-[10px] leading-snug text-slate-500">
         Custo R$ {formatBRL(breakdown.custoBrl)} · ICMS{" "}
-        {formatBRL(breakdown.custoIcms)} · Frete {formatBRL(breakdown.frete)} →
-        Tabela {formatBRL(row.precoUnitario)}
+        {formatBRL(breakdown.custoIcms)} · Frete {formatBRL(breakdown.frete)} ·
+        Venc. lista {formatDateBr(breakdown.vencimentoLista)} → Tabela{" "}
+        {formatBRL(row.precoUnitario)}
       </p>
     </div>
   );

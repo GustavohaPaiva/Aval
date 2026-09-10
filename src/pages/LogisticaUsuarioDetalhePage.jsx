@@ -148,7 +148,7 @@ export function LogisticaUsuarioDetalhePage() {
               </div>
               <span className="inline-flex items-center gap-1.5 self-start rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800 sm:ml-auto">
                 <IconTruck className="size-3.5" />
-                Pedidos assinados
+                Pedidos
               </span>
             </div>
           </section>

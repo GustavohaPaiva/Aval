@@ -4,6 +4,7 @@ import {
   parseCpfCnpjInput,
   parsePhoneInput,
 } from '../utils/dataFormatters'
+import { ilikeOrClause } from '../utils/postgrestSearch'
 import { isHiddenDraft } from '../utils/simulationLifecycle'
 
 const CLIENT_FIELDS =
@@ -79,11 +80,13 @@ export async function fetchClientsList(params = {}) {
   const search = (params.search ?? '').trim()
   if (search) {
     const searchDigits = digitsOnly(search)
-    const filters = [`nome.ilike.%${search}%`, `cnpj_cpf.ilike.%${search}%`]
+    const clause = ilikeOrClause(['nome', 'razao_social', 'cnpj_cpf'], search)
+    const filters = clause ? [clause] : []
     if (searchDigits.length >= 3 && searchDigits !== search) {
-      filters.push(`cnpj_cpf.ilike.%${searchDigits}%`)
+      const digitsClause = ilikeOrClause(['cnpj_cpf'], searchDigits)
+      if (digitsClause) filters.push(digitsClause)
     }
-    q = q.or(filters.join(','))
+    if (filters.length > 0) q = q.or(filters.join(','))
   }
 
   const { data, error, count } = await q

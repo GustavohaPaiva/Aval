@@ -8,8 +8,10 @@ import { isPrazoSemanaAllowed } from '../utils/calendarWeek';
 import { tonsToKg } from '../utils/comprasUnits';
 import { hasNotifiablePedidoComercialChanges } from '../utils/pedidoComercialChanges';
 import { roundMoney } from '../utils/roundMoney';
+import { resolvePropostaTravadaEm } from '../utils/simulationPropostaLock';
 import { parseCpfCnpjInput } from '../utils/dataFormatters';
 import { formatBRL } from '../utils/money';
+import { ilikeOrClause } from '../utils/postgrestSearch';
 import {
     draftExpiryCutoffIso,
     isHiddenDraft,
@@ -103,8 +105,15 @@ function buildSimulationFields(input, status) {
     return fields;
 }
 
+function overrideVencimentoLista(value) {
+    if (value == null || value === '') return null
+    const match = String(value).trim().match(/^(\d{4}-\d{2}-\d{2})/)
+    return match ? match[1] : null
+}
+
 function buildOverrideFields(overrides, userId) {
     const ov = overrides ?? {};
+    const vencimentoLista = overrideVencimentoLista(ov.vencimentoLista)
     const hasOverride = [
         'custoUsd',
         'descontoUsd',
@@ -112,7 +121,7 @@ function buildOverrideFields(overrides, userId) {
         'frete',
         'taxaAntecipacao',
         'taxaJuros',
-    ].some((f) => ov[f] != null);
+    ].some((f) => ov[f] != null) || vencimentoLista != null;
     return {
         override_custo_usd: ov.custoUsd ?? null,
         override_desconto_usd: ov.descontoUsd ?? null,
@@ -120,6 +129,7 @@ function buildOverrideFields(overrides, userId) {
         override_frete: ov.frete ?? null,
         override_taxa_antecipacao: ov.taxaAntecipacao ?? null,
         override_taxa_juros: ov.taxaJuros ?? null,
+        override_vencimento_lista: vencimentoLista,
         override_por: hasOverride ? userId ?? null : null,
         override_em: hasOverride ? new Date().toISOString() : null,
     };
@@ -276,7 +286,7 @@ async function replaceSimulationItems(simulationId, lines, statusLinha, userId) 
     const { data: previousItems, error: snapshotError } = await supabase
         .from('simulation_items')
         .select(
-            'simulation_id, product_id, volume, preco_unitario, proposta, cultura, status_linha, produto_classe, margem_percentual, comissao_percentual, comissao_valor, financeiro_unitario, override_custo_usd, override_desconto_usd, override_taxa, override_frete, override_taxa_antecipacao, override_taxa_juros, override_por, override_em',
+            'simulation_id, product_id, volume, preco_unitario, proposta, cultura, status_linha, produto_classe, margem_percentual, comissao_percentual, comissao_valor, financeiro_unitario, override_custo_usd, override_desconto_usd, override_taxa, override_frete, override_taxa_antecipacao, override_taxa_juros, override_vencimento_lista, override_por, override_em',
         )
         .eq('simulation_id', simulationId);
     if (snapshotError) {
@@ -496,7 +506,7 @@ async function upsertSimulationWithItems(input, status, userId) {
     if (simulationId) {
         const { data: current, error: currentError } = await supabase
             .from('simulations')
-            .select('id, status, ativo, updated_at')
+            .select('id, status, ativo, updated_at, proposta_travada_em')
             .eq('id', simulationId)
             .maybeSingle()
         if (currentError) {
@@ -511,6 +521,10 @@ async function upsertSimulationWithItems(input, status, userId) {
                 error:
                     'Este pedido já foi convertido. Apenas o gestor pode alterar produtos e valores.',
             }
+        }
+        const propostaTravadaEm = resolvePropostaTravadaEm(status, current)
+        if (propostaTravadaEm) {
+            simulationFields.proposta_travada_em = propostaTravadaEm
         }
         // Own rows only (consultor or gestor creating/editing their own drafts).
         // Gestor review of others' sims uses saveGestorReview instead.
@@ -551,6 +565,11 @@ async function upsertSimulationWithItems(input, status, userId) {
         );
         if (!comissaoResult.ok) return comissaoResult;
         return { ok: true, simulationId };
+    }
+
+    const propostaTravadaEm = resolvePropostaTravadaEm(status, null)
+    if (propostaTravadaEm) {
+        simulationFields.proposta_travada_em = propostaTravadaEm
     }
 
     const { data: simRow, error: simError } = await supabase
@@ -625,6 +644,9 @@ function parseBundle(data) {
             override_frete: item.override_frete != null ? Number(item.override_frete) : null,
             override_taxa_antecipacao: item.override_taxa_antecipacao != null ? Number(item.override_taxa_antecipacao) : null,
             override_taxa_juros: item.override_taxa_juros != null ? Number(item.override_taxa_juros) : null,
+            override_vencimento_lista: item.override_vencimento_lista
+                ? String(item.override_vencimento_lista).slice(0, 10)
+                : null,
             margem_percentual:
                 item.margem_percentual != null ? Number(item.margem_percentual) : null,
             comissao_percentual:
@@ -693,6 +715,10 @@ function parseBundle(data) {
                 row.valores_congelados_em != null
                     ? String(row.valores_congelados_em)
                     : null,
+            proposta_travada_em:
+                row.proposta_travada_em != null
+                    ? String(row.proposta_travada_em)
+                    : null,
             gestor_alteracao_em:
                 row.gestor_alteracao_em != null
                     ? String(row.gestor_alteracao_em)
@@ -737,6 +763,7 @@ export async function fetchSimulationOrderBundle(simulationId) {
       prazo_dias,
       prazo_semana_inicio,
       valores_congelados_em,
+      proposta_travada_em,
       gestor_alteracao_em,
       gestor_alteracao_por,
       gestor_alteracao_resumo,
@@ -771,6 +798,7 @@ export async function fetchSimulationOrderBundle(simulationId) {
         override_frete,
         override_taxa_antecipacao,
         override_taxa_juros,
+        override_vencimento_lista,
         produtos_oficiais (
           nome,
           sku_fornecedor,
@@ -820,8 +848,9 @@ export async function searchClients(query, signal) {
         .order('nome', { ascending: true })
         .limit(8);
     const text = (query ?? '').trim();
-    if (text) {
-        q = q.ilike('nome', `%${text}%`);
+    const clause = ilikeOrClause(['nome', 'razao_social', 'cnpj_cpf'], text);
+    if (clause) {
+        q = q.or(clause);
     }
     const { data, error } = signal ? await q.abortSignal(signal) : await q;
     if (error) return { ok: false, error: error.message };
@@ -1164,7 +1193,7 @@ export async function saveGestorReview(input) {
         const { data: previousItems, error: previousError } = await supabase
             .from('simulation_items')
             .select(
-                'id, product_id, volume, cultura, proposta, override_custo_usd, override_desconto_usd, override_taxa, override_frete, override_taxa_antecipacao, override_taxa_juros',
+                'id, product_id, volume, cultura, proposta, override_custo_usd, override_desconto_usd, override_taxa, override_frete, override_taxa_antecipacao, override_taxa_juros, override_vencimento_lista',
             )
             .eq('simulation_id', input.simulationId);
         if (previousError) {
@@ -1692,24 +1721,31 @@ export async function fetchSimulationsList(params) {
     }
 
     if (search) {
-        const pattern = `%${search.replace(/[%_,]/g, ' ').trim()}%`
-        const { data: matchingClients, error: clientSearchError } = await supabase
-            .from('clients')
-            .select('id')
-            .ilike('nome', pattern)
-        if (clientSearchError)
-            return { ok: false, error: clientSearchError.message }
-        const clientIds = (matchingClients ?? []).map((c) => c.id)
+        const clientClause = ilikeOrClause(['nome', 'razao_social'], search)
+        let matchingClients = []
+        if (clientClause) {
+            const { data, error: clientSearchError } = await supabase
+                .from('clients')
+                .select('id')
+                .or(clientClause)
+            if (clientSearchError)
+                return { ok: false, error: clientSearchError.message }
+            matchingClients = data ?? []
+        }
+        const clientIds = matchingClients.map((c) => c.id)
 
         let consultorIds = []
         if (params.role === 'gestor') {
-            const { data: profs, error: profError } = await supabase
-                .from('profiles')
-                .select('id')
-                .ilike('nome', pattern)
-            if (profError)
-                return { ok: false, error: profError.message }
-            consultorIds = (profs ?? []).map((p) => p.id)
+            const consultorClause = ilikeOrClause(['nome'], search)
+            if (consultorClause) {
+                const { data: profs, error: profError } = await supabase
+                    .from('profiles')
+                    .select('id')
+                    .or(consultorClause)
+                if (profError)
+                    return { ok: false, error: profError.message }
+                consultorIds = (profs ?? []).map((p) => p.id)
+            }
         }
 
         if (clientIds.length === 0 && consultorIds.length === 0) {

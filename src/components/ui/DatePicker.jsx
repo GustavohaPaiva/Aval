@@ -31,8 +31,13 @@ const MONTHS = [
   "Dezembro",
 ];
 
-const TRIGGER_CLASS =
-  "flex h-11 w-full items-center gap-2 rounded-2xl border bg-white px-3 text-left text-sm shadow-sm transition-[border-color,box-shadow] focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500";
+const TRIGGER_BASE =
+  "flex w-full items-center gap-2 border bg-white text-left shadow-sm transition-[border-color,box-shadow] focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500";
+
+const TRIGGER_SIZE = {
+  default: "h-11 rounded-2xl px-3 text-sm",
+  compact: "h-10 min-w-0 rounded-lg px-2 text-sm sm:h-9 sm:text-xs",
+};
 
 function parseISODate(value) {
   if (!value) return null;
@@ -108,6 +113,7 @@ export const DatePicker = forwardRef(function DatePicker(
     minDate = "",
     className = "",
     editableHint = false,
+    size = "default",
   },
   ref,
 ) {
@@ -248,7 +254,8 @@ export const DatePicker = forwardRef(function DatePicker(
         aria-describedby={hasError ? errorId : undefined}
         onClick={() => (isOpen ? close() : open())}
         className={[
-          TRIGGER_CLASS,
+          TRIGGER_BASE,
+          TRIGGER_SIZE[size] ?? TRIGGER_SIZE.default,
           hasError
             ? "border-feedback-error focus:border-feedback-error focus:ring-feedback-error/25"
             : "border-gray-200",

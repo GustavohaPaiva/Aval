@@ -156,7 +156,7 @@ function navSectionsForRole(role) {
         items: [
           {
             to: "/logistica",
-            label: "Pedidos assinados",
+            label: "Pedidos",
             icon: IconTruck,
           },
         ],

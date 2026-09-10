@@ -46,6 +46,11 @@ import {
   fetchCatalogoSimulador,
 } from "../services/produtoCatalogoService";
 import { fetchParametrosSistema } from "../services/parametrosService";
+import { fetchEstoqueDisponivelSimulador } from "../services/comprasService";
+import {
+  indexEstoqueDisponivel,
+  lookupEstoqueDisponivelKg,
+} from "../utils/estoqueDisponivelSimulador";
 import {
   fetchFreteDestinosAtivos,
   lookupFreteValor,
@@ -62,6 +67,7 @@ export function Simulador() {
   const [catalog, setCatalog] = useState([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogReady, setCatalogReady] = useState(false);
+  const [estoqueRows, setEstoqueRows] = useState([]);
   const [freteUnitario, setFreteUnitario] = useState(0);
   const [freteDestinos, setFreteDestinos] = useState([]);
   const [freteLookupError, setFreteLookupError] = useState(null);
@@ -202,6 +208,15 @@ export function Simulador() {
       await loadCatalog(sim.quarter, sim.estado, isActive);
     },
     [sim.quarter, sim.estado, loadCatalog],
+  );
+
+  useAbortableAsync(
+    async (_signal, isActive) => {
+      const res = await fetchEstoqueDisponivelSimulador();
+      if (isActive && !isActive()) return;
+      setEstoqueRows(res.ok ? res.rows : []);
+    },
+    [],
   );
 
   useEffect(() => {
@@ -872,6 +887,16 @@ export function Simulador() {
     [sim.catalog],
   );
 
+  const estoqueKgByProductId = useMemo(() => {
+    const index = indexEstoqueDisponivel(estoqueRows);
+    const map = new Map();
+    for (const p of sim.catalog) {
+      const kg = lookupEstoqueDisponivelKg(index, p);
+      if (kg > 0.0001) map.set(String(p.id), kg);
+    }
+    return map;
+  }, [sim.catalog, estoqueRows]);
+
   const fornecedorOptions = useMemo(() => {
     const map = new Map();
     for (const p of sim.catalog) {
@@ -1191,6 +1216,9 @@ export function Simulador() {
                     }
                     onClearOverride={() => sim.clearLineOverride(row.id)}
                     onRemove={() => sim.removeLine(row.id)}
+                    estoqueDisponivelKg={
+                      estoqueKgByProductId.get(String(row.productId)) ?? 0
+                    }
                   />
                 ))}
               </div>
@@ -1212,6 +1240,7 @@ export function Simulador() {
                 onOverrideChange={sim.setLineOverride}
                 onClearOverride={sim.clearLineOverride}
                 onRemove={sim.removeLine}
+                estoqueKgByProductId={estoqueKgByProductId}
               />
             </>
           )}

@@ -17,13 +17,13 @@ import { useSyncPageLoading } from '../../contexts/PageLoadingContext'
 import { useAbortableAsync } from '../../hooks/useAbortableAsync'
 import {
   alocarDemanda,
-  criarOrdemCompra,
+  adicionarItemDemandaNaOc,
   desalocarDemanda,
   fetchDemandaPedido,
   fetchLotesDisponiveis,
   fetchOcItensParaProduto,
-  insertCompraItem,
-  itemPrecoFromDemanda,
+  gerarOrdensPorFornecedor,
+  obterOuCriarOcRascunho,
 } from '../../services/comprasService'
 import { formatQtyBoth, kgToTons, parseQtyInput } from '../../utils/comprasUnits'
 import {
@@ -76,48 +76,15 @@ export function ComprasDemandaDetalhePage() {
     setError(null)
     setBanner(null)
     try {
-      const byForn = new Map()
-      for (const row of chosen) {
-        const fid = row.product.fornecedor_id
-        if (!byForn.has(fid)) byForn.set(fid, [])
-        byForn.get(fid).push(row)
-      }
-      const numeros = []
-      for (const [fornecedorId, group] of byForn) {
-        const created = await criarOrdemCompra(fornecedorId)
-        if (!created.ok) {
-          setError(created.error)
-          return
-        }
-        for (const row of group) {
-          const prices = itemPrecoFromDemanda(row)
-          const inserted = await insertCompraItem(created.data, {
-            produto_oficial_id: row.product.id,
-            volume_kg: row.faltanteKg,
-            unidade_exibicao: 't',
-            cultura: row.cultura,
-            ...prices,
-          })
-          if (!inserted.ok) {
-            setError(inserted.error)
-            return
-          }
-          const aloc = await alocarDemanda({
-            simulationItemId: row.simulationItemId,
-            quantidadeKg: row.faltanteKg,
-            compraItemId: inserted.id,
-          })
-          if (!aloc.ok) {
-            setError(aloc.error)
-            return
-          }
-        }
-        numeros.push(created.data)
+      const generated = await gerarOrdensPorFornecedor(chosen)
+      if (!generated.ok) {
+        setError(generated.error)
+        return
       }
       setBanner(
-        numeros.length > 1
-          ? 'Ordens de compra criadas para o que faltava.'
-          : 'Ordem de compra criada para o que faltava.',
+        generated.compraIds.length > 1
+          ? 'Ordens de compra criadas: uma por fornecedor.'
+          : 'Ordem de compra criada para o fornecedor.',
       )
       setReloadKey((k) => k + 1)
     } finally {
@@ -218,7 +185,7 @@ export function ComprasDemandaDetalhePage() {
           loading={busy}
           onClick={() => void handlePedirFalta()}
         >
-          Pedir o que falta ao fornecedor
+          Pedir o que falta (uma OC por fornecedor)
         </Button>
       ) : null}
 
@@ -443,30 +410,14 @@ function PainelVincular({ row, disabled, onError, onDone }) {
         onDone()
         return
       }
-      const created = await criarOrdemCompra(row.product.fornecedor_id)
-      if (!created.ok) {
-        onError(created.error)
+      const oc = await obterOuCriarOcRascunho(row.product.fornecedor_id, row.simulationId)
+      if (!oc.ok) {
+        onError(oc.error)
         return
       }
-      const prices = itemPrecoFromDemanda(row)
-      const inserted = await insertCompraItem(created.data, {
-        produto_oficial_id: row.product.id,
-        volume_kg: parsed.kg,
-        unidade_exibicao: unidade,
-        cultura: row.cultura,
-        ...prices,
-      })
-      if (!inserted.ok) {
-        onError(inserted.error)
-        return
-      }
-      const aloc = await alocarDemanda({
-        simulationItemId: row.simulationItemId,
-        quantidadeKg: parsed.kg,
-        compraItemId: inserted.id,
-      })
-      if (!aloc.ok) {
-        onError(aloc.error)
+      const added = await adicionarItemDemandaNaOc(oc.data, row, parsed.kg, unidade)
+      if (!added.ok) {
+        onError(added.error)
         return
       }
       onDone()
@@ -488,9 +439,14 @@ function PainelVincular({ row, disabled, onError, onDone }) {
         options={[
           { value: 'estoque', label: 'Estoque existente (dá baixa)' },
           { value: 'oc', label: 'Item de OC existente (a caminho)' },
-          { value: 'nova', label: 'Nova ordem de compra' },
+          { value: 'nova', label: 'Ordem de compra do fornecedor' },
         ]}
       />
+      {origem === 'nova' ? (
+        <p className="text-sm text-slate-600">
+          Produtos do mesmo fornecedor neste pedido entram na mesma ordem de compra.
+        </p>
+      ) : null}
       {origem === 'estoque' ? (
         <Select
           label="Lote"

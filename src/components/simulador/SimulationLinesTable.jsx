@@ -8,6 +8,7 @@ import {
   LineAutonomiaBadge,
   getLineAutonomiaTintClass,
 } from "./LineAutonomiaBadge";
+import { LineEstoqueAlert } from "./LineEstoqueAlert";
 import { formatBRL, formatComissaoPctValor, formatPercent } from "../../utils/money";
 import { formatProdutoDisplayNome } from "../../constants/mapeamentoCampos";
 
@@ -48,6 +49,7 @@ const SimulationLinesTableRow = memo(function SimulationLinesTableRow({
   onOverrideChange,
   onClearOverride,
   onRemove,
+  estoqueDisponivelKg = 0,
 }) {
   const [overridesOpen, setOverridesOpen] = useState(false);
   const hasOverride = Boolean(row.overrides);
@@ -115,6 +117,9 @@ const SimulationLinesTableRow = memo(function SimulationLinesTableRow({
           disabled={isReadOnly}
           editableHint
         />
+        <div className="mt-1 flex justify-center">
+          <LineEstoqueAlert disponivelKg={estoqueDisponivelKg} />
+        </div>
       </td>
       <td className={`finance-text ${cell} font-medium text-slate-800`}>
         {formatBRL(row.precoUnitario)}
@@ -233,6 +238,7 @@ export function SimulationLinesTable({
   onOverrideChange,
   onClearOverride,
   onRemove,
+  estoqueKgByProductId,
 }) {
   const cell = "px-3 py-2.5 text-center align-middle";
   const showMargem = showMargemProp ?? canOverrideFloor;
@@ -282,6 +288,9 @@ export function SimulationLinesTable({
               onOverrideChange={onOverrideChange}
               onClearOverride={onClearOverride}
               onRemove={onRemove}
+              estoqueDisponivelKg={
+                estoqueKgByProductId?.get(String(row.productId)) ?? 0
+              }
             />
           ))}
         </tbody>

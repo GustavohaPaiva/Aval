@@ -16,7 +16,11 @@ import { useSyncPageLoading } from '../../contexts/PageLoadingContext'
 import { useAbortableAsync } from '../../hooks/useAbortableAsync'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { usePersistedFilters } from '../../hooks/usePersistedFilters'
-import { fetchPedidosAssinadosLogistica } from '../../services/logisticaService'
+import {
+  statusBadgeClass,
+  statusLabelPt,
+} from '../../constants/simulationStatus'
+import { fetchPedidosLogistica } from '../../services/logisticaService'
 import { formatPrazoSemanaLabel } from '../../utils/calendarWeek'
 import { formatShortDate } from '../../utils/formatShortDate'
 
@@ -43,7 +47,7 @@ export function LogisticaPedidosPage() {
     async (_signal, isActive) => {
       setLoading(true)
       setError(null)
-      const res = await fetchPedidosAssinadosLogistica({
+      const res = await fetchPedidosLogistica({
         search: debouncedSearch,
       })
       if (!isActive()) return
@@ -60,18 +64,19 @@ export function LogisticaPedidosPage() {
 
   const hasFilters = Boolean(searchQuery.trim())
   const bannerText = useMemo(() => {
-    if (loading) return 'Carregando pedidos assinados…'
+    if (loading) return 'Carregando pedidos…'
     if (hasFilters) return `${rows.length} pedido(s) encontrado(s).`
-    return `${rows.length} pedido(s) assinado(s) disponíveis.`
-  }, [loading, hasFilters, rows.length])
+    const assinados = rows.filter((r) => r.assinado).length
+    return `${rows.length} pedido(s) disponíveis · ${assinados} assinado(s).`
+  }, [loading, hasFilters, rows])
 
   return (
     <div className="w-full min-w-0 space-y-4 sm:space-y-6">
       <div className="relative overflow-hidden rounded-2xl border border-primary-100/80 bg-gradient-to-br from-primary-50/80 via-white to-emerald-50/40 p-4 shadow-sm sm:rounded-[2rem] sm:p-6 lg:p-8">
         <PageHeader
           eyebrow="Logística"
-          title="Pedidos assinados"
-          description="Pedidos com assinatura do cliente prontos para entrega."
+          title="Pedidos"
+          description="Pedidos em andamento com dados completos, assinados ou aguardando assinatura."
           className="relative mb-0"
         />
         <PageInfoBanner icon={IconTruck}>{bannerText}</PageInfoBanner>
@@ -100,7 +105,7 @@ export function LogisticaPedidosPage() {
             title={
               hasFilters
                 ? 'Nenhum resultado para a busca.'
-                : 'Nenhum pedido assinado ainda.'
+                : 'Nenhum pedido com dados completos ainda.'
             }
           />
         </section>
@@ -114,9 +119,22 @@ export function LogisticaPedidosPage() {
                     <h2 className="text-lg font-semibold tracking-tight text-slate-900">
                       {row.clientNome}
                     </h2>
-                    <span className="inline-flex shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800">
-                      Assinado
-                    </span>
+                    <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+                      <span
+                        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${statusBadgeClass(row.status, { ativo: row.ativo })}`}
+                      >
+                        {statusLabelPt(row.status, { ativo: row.ativo })}
+                      </span>
+                      <span
+                        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
+                          row.assinado
+                            ? 'bg-emerald-50 text-emerald-800'
+                            : 'bg-slate-100 text-slate-700'
+                        }`}
+                      >
+                        {row.assinado ? 'Assinado' : 'Sem assinatura'}
+                      </span>
+                    </div>
                   </div>
                   {row.fazenda ? (
                     <p className="mt-1 text-sm text-slate-600">{row.fazenda}</p>

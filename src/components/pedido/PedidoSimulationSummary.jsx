@@ -60,6 +60,7 @@ export function PedidoSimulationSummary({ bundle, onEdit }) {
             frete: it.override_frete ?? undefined,
             taxaAntecipacao: it.override_taxa_antecipacao ?? undefined,
             taxaJuros: it.override_taxa_juros ?? undefined,
+            vencimentoLista: it.override_vencimento_lista ?? undefined,
           },
         },
         productDisplayName(it),

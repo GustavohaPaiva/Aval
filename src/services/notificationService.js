@@ -93,6 +93,18 @@ export async function markNotificationRead(notificationId) {
   return { ok: true }
 }
 
+export async function markNotificationUnread(notificationId) {
+  const { error } = await supabase
+    .from('notifications')
+    .update({ read_at: null })
+    .eq('id', notificationId)
+    .not('read_at', 'is', null)
+
+  if (error) return { ok: false, error: error.message }
+  emitNotificationsChanged()
+  return { ok: true }
+}
+
 export async function markAllNotificationsRead() {
   const { error } = await supabase
     .from('notifications')

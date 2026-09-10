@@ -10,6 +10,12 @@ function numOrNull(value) {
   return Number.isFinite(n) ? n : null
 }
 
+function dateOrNull(value) {
+  if (value == null || value === '') return null
+  const match = String(value).trim().match(/^(\d{4}-\d{2}-\d{2})/)
+  return match ? match[1] : null
+}
+
 function overrideTupleFromItem(item) {
   return [
     numOrNull(item.override_custo_usd),
@@ -18,6 +24,7 @@ function overrideTupleFromItem(item) {
     numOrNull(item.override_frete),
     numOrNull(item.override_taxa_antecipacao),
     numOrNull(item.override_taxa_juros),
+    dateOrNull(item.override_vencimento_lista),
   ]
 }
 
@@ -30,6 +37,7 @@ function overrideTupleFromLine(line) {
     numOrNull(ov.frete),
     numOrNull(ov.taxaAntecipacao),
     numOrNull(ov.taxaJuros),
+    dateOrNull(ov.vencimentoLista),
   ]
 }
 
@@ -38,6 +46,9 @@ function overridesEqual(a, b) {
     const other = b[i]
     if (value == null && other == null) return true
     if (value == null || other == null) return false
+    if (typeof value === 'string' || typeof other === 'string') {
+      return value === other
+    }
     return Math.abs(value - other) < 1e-6
   })
 }

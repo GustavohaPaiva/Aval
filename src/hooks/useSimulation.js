@@ -10,11 +10,11 @@ import {
   calcComissaoLinha,
   calcComissaoMediaPercentual,
 } from '../utils/comissaoCalculations'
-  import {
-    buildFrozenLineView,
-    buildFrozenTotals,
-    shouldFreezeSimulationForViewer,
-  } from '../utils/frozenSimulationViews'
+import {
+  buildFrozenLineView,
+  buildFrozenTotals,
+  shouldFreezeSimulationForViewer,
+} from '../utils/frozenSimulationViews'
 import {
   calcPrazoNegociacao,
   getAutonomiaPercentual,
@@ -36,45 +36,36 @@ import {
   DEFAULT_TAXA_JUROS,
 } from '../utils/pricingCalculations'
 import { roundMoney } from '../utils/roundMoney'
+import {
+  calcDescontoPct,
+  calcPropostaFromDesconto,
+  clampProposta,
+  isPropostaTravada,
+  normalizeDescontoPct,
+  roundDescontoPct,
+  syncLineOnTableChange,
+} from '../utils/simulationPropostaLock'
 import { createDraftSaver, loadDraft } from '../utils/uiDraftStorage'
 
 const SIMULADOR_DRAFT_KEY = 'simulador-draft'
 const COST_OVERRIDE_FIELDS = ['custoUsd', 'descontoUsd', 'taxa', 'frete']
-const OVERRIDE_FIELDS = [
+const NUMERIC_OVERRIDE_FIELDS = [
   ...COST_OVERRIDE_FIELDS,
   'taxaAntecipacao',
   'taxaJuros',
 ]
+const OVERRIDE_FIELDS = [...NUMERIC_OVERRIDE_FIELDS, 'vencimentoLista']
+
+function normalizeIsoDate(value) {
+  if (value == null || value === '') return undefined
+  const match = String(value).trim().match(/^(\d{4}-\d{2}-\d{2})/)
+  return match ? match[1] : undefined
+}
 
 function readSimulationDraft() {
   const draft = loadDraft(SIMULADOR_DRAFT_KEY, null)
   if (!draft || typeof draft !== 'object') return null
   return draft
-}
-
-function normalizeDescontoPct(value) {
-  const n = Number(value)
-  if (!Number.isFinite(n)) return 0
-  return Math.min(100, Math.max(0, n))
-}
-
-/** Comparação de % com 2 casas (mesmo passo do input). */
-function roundDescontoPct(value) {
-  return Math.round(normalizeDescontoPct(value) * 100) / 100
-}
-
-/** Desconto % em relação ao valor unitário (tabela). */
-function calcDescontoPct(precoUnitario, proposta) {
-  const pu = Number(precoUnitario)
-  if (!(pu > 0)) return 0
-  const prop = clampProposta(proposta)
-  return normalizeDescontoPct(((pu - prop) / pu) * 100)
-}
-
-function calcPropostaFromDesconto(precoUnitario, descontoPct) {
-  const pu = Number(precoUnitario) || 0
-  const pct = normalizeDescontoPct(descontoPct)
-  return clampProposta(roundMoney(pu * (1 - pct / 100)))
 }
 
 function resolveLineAutonomia(classe, prazoDias, autonomiaParams) {
@@ -106,16 +97,15 @@ function normalizeDraftLines(lines) {
 function normalizeOverrides(overrides) {
   if (!overrides) return undefined
   const next = {}
-  for (const field of OVERRIDE_FIELDS) {
+  for (const field of NUMERIC_OVERRIDE_FIELDS) {
     const value = overrides[field]
-    if (value != null && Number.isFinite(value)) next[field] = value
+    if (value != null && Number.isFinite(Number(value))) {
+      next[field] = Number(value)
+    }
   }
+  const vencimentoLista = normalizeIsoDate(overrides.vencimentoLista)
+  if (vencimentoLista) next.vencimentoLista = vencimentoLista
   return Object.keys(next).length > 0 ? next : undefined
-}
-
-function clampProposta(proposta) {
-  const p = Number.isFinite(proposta) ? proposta : 0
-  return Math.max(0, p)
 }
 
 function resolvePricing(product, context, overrides) {
@@ -128,9 +118,11 @@ function resolvePricing(product, context, overrides) {
     icmsPercentual = DEFAULT_ICMS_PERCENTUAL,
     margemPercentual = DEFAULT_MARGEM_PERCENTUAL,
   } = context
-  const dias = calcDiasAntecipacao(dataPagamento, product.vencimentoLista)
   const ov = normalizeOverrides(overrides)
   const hasCostOverride = COST_OVERRIDE_FIELDS.some((f) => ov?.[f] != null)
+  const vencimentoLista =
+    ov?.vencimentoLista ?? product.vencimentoLista ?? ''
+  const dias = calcDiasAntecipacao(dataPagamento, vencimentoLista)
 
   const custoUsd = ov?.custoUsd ?? Number(product.custoUsd ?? 0)
   const descontoUsd = ov?.descontoUsd ?? Number(product.descontoUsd ?? 0)
@@ -174,6 +166,7 @@ function resolvePricing(product, context, overrides) {
       frete,
       taxaAntecipacao,
       taxaJuros,
+      vencimentoLista,
       valorComFrete,
       fatorFinanceiro: fator,
       diasAntecipacao: dias,
@@ -382,6 +375,7 @@ export function useSimulation(options = {}) {
   const [softNotice, setSoftNotice] = useState(null)
   const softNoticeTimerRef = useRef(null)
   const [remotePendingLock, setRemotePendingLock] = useState(false)
+  const [propostaLocked, setPropostaLocked] = useState(false)
   const [frozenTotals, setFrozenTotals] = useState(null)
   const [gestorAlteracao, setGestorAlteracao] = useState(null)
 
@@ -584,14 +578,14 @@ export function useSimulation(options = {}) {
     [isReadOnly, estado, tipoFrete],
   )
 
+  // O catálogo depende de estado/quarter, não da data: as linhas continuam
+  // válidas e só têm o preço recalculado (dias de antecipação/juros).
   const setDataPagamento = useCallback(
     (value) => {
       if (isReadOnly) return
-      if (value === dataPagamento) return
       setDataPagamentoState(value)
-      setLines([])
     },
-    [isReadOnly, dataPagamento],
+    [isReadOnly],
   )
 
   const setTipoFrete = useCallback(
@@ -857,7 +851,15 @@ export function useSimulation(options = {}) {
         prev.map((line) => {
           if (line.id !== lineId) return line
           const nextOverrides = { ...(line.overrides ?? {}) }
-          if (value == null || value === '' || !Number.isFinite(Number(value))) {
+          if (field === 'vencimentoLista') {
+            const iso = normalizeIsoDate(value)
+            if (!iso) delete nextOverrides[field]
+            else nextOverrides[field] = iso
+          } else if (
+            value == null ||
+            value === '' ||
+            !Number.isFinite(Number(value))
+          ) {
             delete nextOverrides[field]
           } else {
             nextOverrides[field] = Number(value)
@@ -907,6 +909,7 @@ export function useSimulation(options = {}) {
 
   const lockAsPending = useCallback(() => {
     setRemotePendingLock(true)
+    setPropostaLocked(true)
   }, [])
 
   const showActionBanner = useCallback((message) => {
@@ -976,6 +979,7 @@ export function useSimulation(options = {}) {
       const consultorLocked =
         !isGestor && isConsultorSimulationLocked(simulation.status)
       setRemotePendingLock(frozen || consultorLocked)
+      setPropostaLocked(isPropostaTravada(simulation))
       setClientId(bundle.client.id ?? null)
       setClientNameState(bundle.client.nome)
       setClientCnpjCpfState(parseCpfCnpjInput(bundle.client.cnpj_cpf ?? ''))
@@ -1041,6 +1045,7 @@ export function useSimulation(options = {}) {
               frete: it.override_frete ?? undefined,
               taxaAntecipacao: it.override_taxa_antecipacao ?? undefined,
               taxaJuros: it.override_taxa_juros ?? undefined,
+              vencimentoLista: it.override_vencimento_lista ?? undefined,
             }),
           }
           if (!frozen) return base
@@ -1095,6 +1100,7 @@ export function useSimulation(options = {}) {
 
   const resetLocal = useCallback(() => {
     setRemotePendingLock(false)
+    setPropostaLocked(false)
     setFrozenTotals(null)
     setGestorAlteracao(null)
     setClientId(null)
@@ -1143,12 +1149,12 @@ export function useSimulation(options = {}) {
     lines,
   ])
 
-  // Quando a tabela muda:
-  // - com % preenchido: proposta acompanha o desconto
+  // Quando a tabela muda (dólar, data de pagamento, frete, overrides…):
+  // - rascunho: com % preenchido a proposta acompanha o desconto sobre o novo preço
+  // - após solicitar revisão: a proposta fica travada; só edição manual altera
   // - consultor abaixo do piso: mantém proposta e % vazio
-  // - draft antigo sem %: deriva o desconto (se dentro do piso)
   useEffect(() => {
-    if (isReadOnly) return
+    if (isReadOnly && !propostaLocked) return
     setLines((prev) => {
       let changed = false
       const next = prev.map((line) => {
@@ -1161,32 +1167,14 @@ export function useSimulation(options = {}) {
           prazoDias,
           autonomiaParams,
         )
-        const floorUnit = getFloorUnit(pu, autonomiaPct)
-        const belowFloor = isPropostaBelowFloor(
-          clampProposta(line.proposta),
-          floorUnit,
-        )
-        const hasDesconto =
-          line.descontoPct != null && Number.isFinite(Number(line.descontoPct))
-
-        if (!canOverrideFloor && belowFloor) {
-          if (hasDesconto) {
-            changed = true
-            return { ...line, descontoPct: null }
-          }
-          return line
-        }
-
-        if (!hasDesconto) {
-          const derived = calcDescontoPct(pu, line.proposta)
-          changed = true
-          return { ...line, descontoPct: derived }
-        }
-        const descontoPct = normalizeDescontoPct(line.descontoPct)
-        const expected = calcPropostaFromDesconto(pu, descontoPct)
-        if (roundMoney(line.proposta) === expected) return line
-        changed = true
-        return { ...line, descontoPct, proposta: expected }
+        const synced = syncLineOnTableChange(line, {
+          precoUnitario: pu,
+          floorUnit: getFloorUnit(pu, autonomiaPct),
+          canOverrideFloor,
+          lockProposta: propostaLocked,
+        })
+        if (synced !== line) changed = true
+        return synced
       })
       return changed ? next : prev
     })
@@ -1197,6 +1185,7 @@ export function useSimulation(options = {}) {
     prazoDias,
     autonomiaParams,
     canOverrideFloor,
+    propostaLocked,
   ])
 
   return {

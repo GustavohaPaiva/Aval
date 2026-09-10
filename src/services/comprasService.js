@@ -6,6 +6,7 @@ import {
   COMPRAS_EMBALAGEM_DEFAULT,
   COMPRAS_FILIAL_DEFAULT,
 } from '../constants/compras'
+import { agruparLinhasPorFornecedor } from '../utils/comprasOcAgrupamento'
 
 function rewriteComprasError(text) {
   if (!text) return text
@@ -94,6 +95,7 @@ const DEMANDA_SIM_SELECT = `
     cultura,
     override_custo_usd,
     override_desconto_usd,
+    override_vencimento_lista,
     produtos_oficiais (
       id, nome, referencia_complementar, fornecedor_id, estado, classe, quarter,
       preco_original, desconto_usd, vencimento_lista, fornecedores ( nome )
@@ -154,6 +156,7 @@ function mapDemandaLinhas(sims, alocs) {
         product,
         overrideCustoUsd: item.override_custo_usd,
         overrideDescontoUsd: item.override_desconto_usd,
+        overrideVencimentoLista: item.override_vencimento_lista,
         alocacoes: alocacoesByItem[item.id] ?? [],
         createdAt: sim.created_at,
       })
@@ -407,6 +410,14 @@ export async function fetchLotesDisponiveis(produtoOficialId) {
   return { ok: true, rows }
 }
 
+export async function fetchEstoqueDisponivelSimulador() {
+  const { data, error } = await supabase.rpc('estoque_disponivel_simulador')
+  if (error) {
+    return { ...fail(error, 'Não foi possível consultar o estoque.'), rows: [] }
+  }
+  return { ok: true, rows: data ?? [] }
+}
+
 export async function fetchOcItensParaProduto(produtoOficialId) {
   const { data, error } = await supabase
     .from('compra_itens')
@@ -462,6 +473,111 @@ async function rpc(name, args, fallback) {
 
 export function criarOrdemCompra(fornecedorId) {
   return rpc('compras_criar', { p_fornecedor_id: fornecedorId }, 'Não foi possível criar a OC.')
+}
+
+const ocRascunhoCache = new Map()
+const ocRascunhoInflight = new Map()
+
+function ocRascunhoCacheKey(fornecedorId, simulationId) {
+  return `${simulationId}:${fornecedorId}`
+}
+
+export async function buscarOcRascunhoDoPedido(fornecedorId, simulationId) {
+  if (!fornecedorId || !simulationId) return { ok: true, id: null }
+
+  const { data: items, error: itemsError } = await supabase
+    .from('simulation_items')
+    .select('id')
+    .eq('simulation_id', simulationId)
+  if (itemsError) return fail(itemsError, 'Não foi possível localizar o pedido.')
+  const itemIds = (items ?? []).map((row) => row.id)
+  if (itemIds.length === 0) return { ok: true, id: null }
+
+  const { data, error } = await supabase
+    .from('alocacoes')
+    .select(
+      `
+      compra_itens!inner (
+        compra_id,
+        compras!inner ( id, status, fornecedor_id, created_at )
+      )
+    `,
+    )
+    .eq('origem_tipo', 'compra')
+    .in('simulation_item_id', itemIds)
+  if (error) return fail(error, 'Não foi possível localizar a OC do pedido.')
+
+  const candidatos = (data ?? [])
+    .map((row) => row.compra_itens?.compras)
+    .filter((c) => c && c.status === 'rascunho' && c.fornecedor_id === fornecedorId)
+    .sort((a, b) => String(b.created_at ?? '').localeCompare(String(a.created_at ?? '')))
+
+  return { ok: true, id: candidatos[0]?.id ?? null }
+}
+
+export async function obterOuCriarOcRascunho(fornecedorId, simulationId) {
+  if (!fornecedorId) return { ok: false, error: 'Fornecedor é obrigatório.' }
+  const key = ocRascunhoCacheKey(fornecedorId, simulationId)
+  const cached = ocRascunhoCache.get(key)
+  if (cached) return { ok: true, data: cached }
+
+  const pending = ocRascunhoInflight.get(key)
+  if (pending) return pending
+
+  const promise = (async () => {
+    const existing = await buscarOcRascunhoDoPedido(fornecedorId, simulationId)
+    if (!existing.ok) return existing
+    if (existing.id) {
+      ocRascunhoCache.set(key, existing.id)
+      return { ok: true, data: existing.id }
+    }
+    const created = await criarOrdemCompra(fornecedorId)
+    if (created.ok && created.data) ocRascunhoCache.set(key, created.data)
+    return created
+  })()
+
+  ocRascunhoInflight.set(key, promise)
+  try {
+    return await promise
+  } finally {
+    ocRascunhoInflight.delete(key)
+  }
+}
+
+export async function adicionarItemDemandaNaOc(compraId, row, quantidadeKg, unidade = 't') {
+  const prices = itemPrecoFromDemanda(row)
+  const inserted = await insertCompraItem(compraId, {
+    produto_oficial_id: row.product.id,
+    volume_kg: quantidadeKg,
+    unidade_exibicao: unidade,
+    cultura: row.cultura,
+    ...prices,
+  })
+  if (!inserted.ok) return inserted
+  const aloc = await alocarDemanda({
+    simulationItemId: row.simulationItemId,
+    quantidadeKg,
+    compraItemId: inserted.id,
+  })
+  if (!aloc.ok) return aloc
+  return { ok: true, compraId, compraItemId: inserted.id }
+}
+
+export async function gerarOrdensPorFornecedor(linhas) {
+  const chosen = (linhas ?? []).filter((row) => row.faltanteKg > 0.0001)
+  const grouped = agruparLinhasPorFornecedor(chosen)
+  if (!grouped.ok) return grouped
+  const compraIds = []
+  for (const [fornecedorId, group] of grouped.groups) {
+    const oc = await obterOuCriarOcRascunho(fornecedorId, group[0].simulationId)
+    if (!oc.ok) return oc
+    for (const row of group) {
+      const added = await adicionarItemDemandaNaOc(oc.data, row, row.faltanteKg, 't')
+      if (!added.ok) return added
+    }
+    compraIds.push(oc.data)
+  }
+  return { ok: true, compraIds }
 }
 
 export function confirmarOrdemCompra(compraId) {
@@ -608,6 +724,7 @@ export function itemPrecoFromDemanda(row) {
   return {
     preco_usd: Number.isFinite(custo) ? custo : null,
     desconto_usd: Number.isFinite(desconto) ? desconto : null,
-    vencimento_lista: row.product?.vencimento_lista ?? null,
+    vencimento_lista:
+      row.overrideVencimentoLista || row.product?.vencimento_lista || null,
   }
 }
