@@ -22,13 +22,6 @@ export const EMBALAGEM_OPTIONS = [
   { value: 'SACO 50 KG', label: 'Saco 50 kg' },
 ]
 
-export const PLANTA_OPTIONS = [
-  { value: '', label: 'Não informado' },
-  { value: 'Uberaba', label: 'Uberaba' },
-  { value: 'Cubatão', label: 'Cubatão' },
-  { value: 'Rio Grande', label: 'Rio Grande' },
-]
-
 export const TIPO_ENTREGA_OPTIONS = [
   { value: '', label: 'Não informado' },
   { value: 'CIF', label: 'CIF' },
@@ -118,6 +111,13 @@ export function filialById(id) {
     SYAGRI_COMPANY.sites.find((site) => site.id === id) ??
     SYAGRI_COMPANY.sites.find((site) => site.id === COMPRAS_FILIAL_DEFAULT)
   )
+}
+
+/** Planta da OC sempre replica a filial Syagri. */
+export function plantaFromFilial(filialId) {
+  const site = filialById(filialId)
+  const city = String(site?.city ?? '').split('/')[0].trim()
+  return city || site?.label || ''
 }
 
 export const COMPRAS_NAV = [

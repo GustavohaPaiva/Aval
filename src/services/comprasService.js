@@ -2,9 +2,11 @@ import { supabase } from './supabase'
 import { formatProdutoDisplayNome } from '../constants/mapeamentoCampos'
 import { formatSupabaseError } from '../utils/supabaseErrors'
 import { tonsToKg } from '../utils/comprasUnits'
+import { calcOcItemValores } from '../utils/comprasPrecos'
 import {
   COMPRAS_EMBALAGEM_DEFAULT,
   COMPRAS_FILIAL_DEFAULT,
+  plantaFromFilial,
 } from '../constants/compras'
 import { agruparLinhasPorFornecedor } from '../utils/comprasOcAgrupamento'
 
@@ -95,6 +97,7 @@ const DEMANDA_SIM_SELECT = `
     cultura,
     override_custo_usd,
     override_desconto_usd,
+    override_taxa,
     override_vencimento_lista,
     produtos_oficiais (
       id, nome, referencia_complementar, fornecedor_id, estado, classe, quarter,
@@ -156,6 +159,7 @@ function mapDemandaLinhas(sims, alocs) {
         product,
         overrideCustoUsd: item.override_custo_usd,
         overrideDescontoUsd: item.override_desconto_usd,
+        overrideTaxa: item.override_taxa,
         overrideVencimentoLista: item.override_vencimento_lista,
         alocacoes: alocacoesByItem[item.id] ?? [],
         createdAt: sim.created_at,
@@ -545,7 +549,10 @@ export async function obterOuCriarOcRascunho(fornecedorId, simulationId) {
 }
 
 export async function adicionarItemDemandaNaOc(compraId, row, quantidadeKg, unidade = 't') {
-  const prices = itemPrecoFromDemanda(row)
+  const prices = itemPrecoFromDemanda(row, {
+    volumeKg: quantidadeKg,
+    unidade,
+  })
   const inserted = await insertCompraItem(compraId, {
     produto_oficial_id: row.product.id,
     volume_kg: quantidadeKg,
@@ -648,12 +655,26 @@ export function ajusteSaida(payload) {
   )
 }
 
+export async function fetchTaxaUsdVigente() {
+  const { data, error } = await supabase
+    .from('cotacoes_moeda')
+    .select('taxa_conversao')
+    .eq('moeda_origem', 'USD')
+    .order('data_vigencia', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) return fail(error, 'Não foi possível carregar o dólar.')
+  const taxa = Number(data?.taxa_conversao)
+  return { ok: true, taxa: Number.isFinite(taxa) && taxa > 0 ? taxa : null }
+}
+
 export async function updateCompraCabecalho(compraId, fields) {
+  const filialSite = fields.filial_site ?? COMPRAS_FILIAL_DEFAULT
   const { error } = await supabase
     .from('compras')
     .update({
-      filial_site: fields.filial_site ?? COMPRAS_FILIAL_DEFAULT,
-      planta: fields.planta || null,
+      filial_site: filialSite,
+      planta: plantaFromFilial(filialSite),
       tipo_entrega: fields.tipo_entrega || null,
       cidade_retirada: fields.cidade_retirada,
       condicao_pagamento: fields.condicao_pagamento,
@@ -712,7 +733,7 @@ export async function deleteCompraItem(itemId) {
   return { ok: true }
 }
 
-export function itemPrecoFromDemanda(row) {
+export function itemPrecoFromDemanda(row, { volumeKg, unidade, taxaDolar } = {}) {
   const custo =
     row.overrideCustoUsd != null && row.overrideCustoUsd !== ''
       ? Number(row.overrideCustoUsd)
@@ -721,10 +742,28 @@ export function itemPrecoFromDemanda(row) {
     row.overrideDescontoUsd != null && row.overrideDescontoUsd !== ''
       ? Number(row.overrideDescontoUsd)
       : Number(row.product?.desconto_usd ?? 0)
+  const taxa =
+    taxaDolar != null && taxaDolar !== ''
+      ? Number(taxaDolar)
+      : row.overrideTaxa != null && row.overrideTaxa !== ''
+        ? Number(row.overrideTaxa)
+        : null
+  const valores =
+    Number.isFinite(taxa) && taxa > 0 && volumeKg != null
+      ? calcOcItemValores({
+          precoUsd: custo,
+          descontoUsd: desconto,
+          taxaDolar: taxa,
+          volumeKg,
+          unidade: unidade ?? 't',
+        })
+      : null
   return {
     preco_usd: Number.isFinite(custo) ? custo : null,
     desconto_usd: Number.isFinite(desconto) ? desconto : null,
     vencimento_lista:
       row.overrideVencimentoLista || row.product?.vencimento_lista || null,
+    unitario_brl: valores?.unitarioBrl ?? null,
+    total: valores?.total ?? null,
   }
 }

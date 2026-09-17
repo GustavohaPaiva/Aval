@@ -1,4 +1,6 @@
 import { formatQtyByUnit, formatUsd } from './comprasUnits'
+import { ocLiquidoUsd } from './comprasPrecos'
+import { plantaFromFilial } from '../constants/compras'
 
 function bold(value) {
   return `*${String(value ?? '—').trim() || '—'}*`
@@ -23,24 +25,19 @@ export function formatOcMensagem(compra, itens, fornecedorNome) {
     `Fornecedora: ${bold(fornecedorNome || '—')}`,
     `Data: ${formatDateBr(compra.data_documento)}`,
     `Condição: ${compra.condicao_pagamento || '—'}`,
-    `Planta: ${compra.planta || '—'}`,
+    `Planta: ${plantaFromFilial(compra.filial_site) || compra.planta || '—'}`,
     `Tipo de entrega: ${compra.tipo_entrega || '—'}`,
     `Cidade / retirada: ${compra.cidade_retirada || '—'}`,
   ]
 
   for (const item of itens ?? []) {
-    const liquido =
-      item.preco_usd != null
-        ? Number(item.preco_usd) - (Number(item.desconto_usd) || 0)
-        : null
+    const liquido = ocLiquidoUsd(item.preco_usd, item.desconto_usd)
     lines.push(
       '',
       `Produto: ${item.product?.displayNome || '—'}`,
       `Embalagem: ${item.embalagem || '—'}`,
       `Volume: ${formatQtyByUnit(item.volume_kg, item.unidade_exibicao || 't')}`,
-      `USD: ${formatUsd(item.preco_usd)} · Desc.: ${formatUsd(item.desconto_usd)} · Líquido: ${
-        liquido == null ? '—' : formatUsd(liquido)
-      }`,
+      `USD: ${formatUsd(liquido)}`,
     )
   }
 

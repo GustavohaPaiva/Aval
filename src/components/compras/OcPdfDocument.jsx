@@ -1,6 +1,7 @@
 import { SYAGRI_COMPANY } from '../../constants/company'
-import { filialById } from '../../constants/compras'
+import { filialById, plantaFromFilial } from '../../constants/compras'
 import { formatQtyByUnit, formatUsd } from '../../utils/comprasUnits'
+import { ocLiquidoUsd } from '../../utils/comprasPrecos'
 
 function formatDateBr(isoOrDate) {
   if (!isoOrDate) return '—'
@@ -17,13 +18,6 @@ function freightLabel(tipo) {
   if (tipo === 'CIF') return 'CIF'
   if (tipo === 'FOB') return 'FOB'
   return '—'
-}
-
-function liquidoUsd(item) {
-  const preco = Number(item.preco_usd)
-  const desc = Number(item.desconto_usd) || 0
-  if (!Number.isFinite(preco)) return null
-  return preco - desc
 }
 
 /**
@@ -174,7 +168,7 @@ export function OcPdfDocument({ compra, itens, fornecedorNome }) {
             {[
               { label: 'Data', value: formatDateBr(compra.data_documento) },
               { label: 'Condição', value: compra.condicao_pagamento || '—' },
-              { label: 'Planta', value: compra.planta || '—' },
+              { label: 'Planta', value: plantaFromFilial(compra.filial_site) || compra.planta || '—' },
               { label: 'Tipo de entrega', value: freightLabel(compra.tipo_entrega) },
               { label: 'Cidade / retirada', value: compra.cidade_retirada || '—' },
               { label: 'Itens', value: String(itens?.length ?? 0) },
@@ -221,26 +215,18 @@ export function OcPdfDocument({ compra, itens, fornecedorNome }) {
               <tr style={{ background: '#064e3b', color: '#fff' }}>
                 <Th w={28}>#</Th>
                 <Th>Produto</Th>
-                <Th w={72}>Embalagem</Th>
-                <Th align="right" w={70}>
+                <Th w={88}>Embalagem</Th>
+                <Th align="right" w={90}>
                   Volume
                 </Th>
-                <Th align="right" w={72}>
+                <Th align="right" w={92}>
                   USD
                 </Th>
-                <Th align="right" w={64}>
-                  Desc.
-                </Th>
-                <Th align="right" w={72}>
-                  Líquido
-                </Th>
-                <Th w={78}>Venc. lista</Th>
-                <Th w={78}>Pagamento</Th>
               </tr>
             </thead>
             <tbody>
               {(itens ?? []).map((item, index) => {
-                const liquido = liquidoUsd(item)
+                const liquido = ocLiquidoUsd(item.preco_usd, item.desconto_usd)
                 return (
                   <tr
                     key={item.id}
@@ -262,17 +248,9 @@ export function OcPdfDocument({ compra, itens, fornecedorNome }) {
                     <Td align="right" mono>
                       {formatQtyByUnit(item.volume_kg, item.unidade_exibicao || 't')}
                     </Td>
-                    <Td align="right" mono>
-                      {formatUsd(item.preco_usd)}
-                    </Td>
-                    <Td align="right" mono>
-                      {formatUsd(item.desconto_usd)}
-                    </Td>
                     <Td align="right" mono strong>
-                      {liquido == null ? '—' : formatUsd(liquido)}
+                      {formatUsd(liquido)}
                     </Td>
-                    <Td>{formatDateBr(item.vencimento_lista)}</Td>
-                    <Td>{formatDateBr(item.pagamento_syagri)}</Td>
                   </tr>
                 )
               })}

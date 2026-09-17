@@ -1,4 +1,4 @@
-import { createElement, useCallback, useState } from 'react'
+import { createElement, useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { ComprasSubnav } from '../../components/compras/ComprasSubnav'
 import { OcPdfDocument } from '../../components/compras/OcPdfDocument'
@@ -15,7 +15,6 @@ import { PdfPreviewModal } from '../../components/pdf/PdfPreviewModal'
 import { Select } from '../../components/ui/Select'
 import {
   EMBALAGEM_OPTIONS,
-  PLANTA_OPTIONS,
   TIPO_ENTREGA_OPTIONS,
   UNIDADE_OPTIONS,
   compraStatusBadgeClass,
@@ -31,6 +30,7 @@ import {
   deleteCompraItem,
   fetchCompraBundle,
   fetchProdutosPorFornecedor,
+  fetchTaxaUsdVigente,
   insertCompraItem,
   marcarPdfGerado,
   receberCompraItem,
@@ -43,6 +43,11 @@ import {
   formatUsd,
   parseQtyInput,
 } from '../../utils/comprasUnits'
+import {
+  calcOcItemValores,
+  inferTaxaDolar,
+  parseOcNumber,
+} from '../../utils/comprasPrecos'
 import { formatBRL } from '../../utils/money'
 
 export function ComprasOrdemDetalhePage() {
@@ -59,12 +64,12 @@ export function ComprasOrdemDetalhePage() {
   const [receiveItem, setReceiveItem] = useState(null)
 
   const [filial, setFilial] = useState('uberaba')
-  const [planta, setPlanta] = useState('')
   const [tipoEntrega, setTipoEntrega] = useState('')
   const [cidade, setCidade] = useState('Uberaba')
   const [condicao, setCondicao] = useState('FAT. ANTECIPADO')
   const [dataDoc, setDataDoc] = useState('')
   const [obs, setObs] = useState('')
+  const [taxaUsdVigente, setTaxaUsdVigente] = useState(null)
 
   useSyncPageLoading(loadState !== 'ready')
 
@@ -84,7 +89,6 @@ export function ComprasOrdemDetalhePage() {
       const c = res.data
       setBundle(c)
       setFilial(c.filial_site || 'uberaba')
-      setPlanta(c.planta || '')
       setTipoEntrega(c.tipo_entrega || '')
       setCidade(c.cidade_retirada || 'Uberaba')
       setCondicao(c.condicao_pagamento || 'FAT. ANTECIPADO')
@@ -94,6 +98,12 @@ export function ComprasOrdemDetalhePage() {
     },
     [compraId, reloadKey],
   )
+
+  useAbortableAsync(async (_s, isActive) => {
+    const res = await fetchTaxaUsdVigente()
+    if (!isActive()) return
+    if (res.ok) setTaxaUsdVigente(res.taxa)
+  }, [])
 
   const canEdit = bundle && bundle.status !== 'cancelado'
   const canReceive =
@@ -112,7 +122,6 @@ export function ComprasOrdemDetalhePage() {
     setError(null)
     const res = await updateCompraCabecalho(compraId, {
       filial_site: filial,
-      planta,
       tipo_entrega: tipoEntrega,
       cidade_retirada: cidade,
       condicao_pagamento: condicao,
@@ -240,13 +249,6 @@ export function ComprasOrdemDetalhePage() {
             disabled={!canEdit}
           />
           <Select
-            label="Planta"
-            value={planta}
-            onChange={(e) => setPlanta(e.target.value)}
-            options={PLANTA_OPTIONS}
-            disabled={!canEdit}
-          />
-          <Select
             label="Tipo de entrega"
             value={tipoEntrega}
             onChange={(e) => setTipoEntrega(e.target.value)}
@@ -306,6 +308,7 @@ export function ComprasOrdemDetalhePage() {
                 item={item}
                 canEdit={canEdit}
                 canReceive={canReceive}
+                taxaUsdVigente={taxaUsdVigente}
                 onSaved={() => setReloadKey((k) => k + 1)}
                 onDelete={() => void handleDeleteItem(item.id)}
                 onReceive={() => setReceiveItem(item)}
@@ -354,6 +357,7 @@ export function ComprasOrdemDetalhePage() {
       {addOpen ? (
         <ModalAddItem
           fornecedorId={bundle.fornecedor_id}
+          taxaUsdVigente={taxaUsdVigente}
           onClose={() => setAddOpen(false)}
           onSave={async (payload) => {
             const res = await insertCompraItem(compraId, payload)
@@ -390,23 +394,63 @@ export function ComprasOrdemDetalhePage() {
   )
 }
 
-function OcItemEditor({ item, canEdit, canReceive, onSaved, onDelete, onReceive }) {
+function OcItemEditor({ item, canEdit, canReceive, taxaUsdVigente, onSaved, onDelete, onReceive }) {
   const [preco, setPreco] = useState(item.preco_usd ?? '')
   const [desc, setDesc] = useState(item.desconto_usd ?? '')
-  const [unitario, setUnitario] = useState(item.unitario_brl ?? '')
+  const [dolar, setDolar] = useState(() => {
+    const inferred = inferTaxaDolar({
+      precoUsd: item.preco_usd,
+      descontoUsd: item.desconto_usd,
+      unitarioBrl: item.unitario_brl,
+      fallback: taxaUsdVigente,
+    })
+    return inferred == null ? '' : String(Number(inferred.toFixed(6)))
+  })
+  const [vencimento, setVencimento] = useState(
+    String(item.vencimento_lista ?? '').slice(0, 10),
+  )
+  const [pagamentoSyagri, setPagamentoSyagri] = useState(
+    String(item.pagamento_syagri ?? '').slice(0, 10),
+  )
   const [frete, setFrete] = useState(item.frete ?? '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   const restoKg = Number(item.volume_kg) - Number(item.volume_recebido_kg)
 
+  useEffect(() => {
+    if (dolar !== '') return
+    const inferred = inferTaxaDolar({
+      precoUsd: item.preco_usd,
+      descontoUsd: item.desconto_usd,
+      unitarioBrl: item.unitario_brl,
+      fallback: taxaUsdVigente,
+    })
+    if (inferred != null) setDolar(String(Number(inferred.toFixed(6))))
+  }, [dolar, item, taxaUsdVigente])
+
+  const valores = useMemo(
+    () =>
+      calcOcItemValores({
+        precoUsd: parseOcNumber(preco),
+        descontoUsd: parseOcNumber(desc) ?? 0,
+        taxaDolar: parseOcNumber(dolar),
+        volumeKg: item.volume_kg,
+        unidade: item.unidade_exibicao,
+      }),
+    [preco, desc, dolar, item.volume_kg, item.unidade_exibicao],
+  )
+
   async function saveInternal() {
     setSaving(true)
     setError(null)
     const res = await updateCompraItem(item.id, {
-      preco_usd: preco === '' ? null : Number(preco),
-      desconto_usd: desc === '' ? null : Number(desc),
-      unitario_brl: unitario === '' ? null : Number(unitario),
-      frete: frete === '' ? null : Number(frete),
+      preco_usd: parseOcNumber(preco),
+      desconto_usd: parseOcNumber(desc),
+      unitario_brl: valores.unitarioBrl,
+      total: valores.total,
+      frete: parseOcNumber(frete),
+      vencimento_lista: vencimento || null,
+      pagamento_syagri: pagamentoSyagri || null,
     })
     setSaving(false)
     if (!res.ok) {
@@ -442,19 +486,48 @@ function OcItemEditor({ item, canEdit, canReceive, onSaved, onDelete, onReceive 
         ) : null}
       </div>
       {error ? <AlertMessage className="mt-3">{error}</AlertMessage> : null}
-      <div className="mt-3 grid gap-3 sm:grid-cols-4">
+      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Input label="USD" value={preco} onChange={(e) => setPreco(e.target.value)} disabled={!canEdit} />
-        <Input label="Desconto USD" value={desc} onChange={(e) => setDesc(e.target.value)} disabled={!canEdit} />
         <Input
-          label="Unitário R$ (interno)"
-          value={unitario}
-          onChange={(e) => setUnitario(e.target.value)}
+          label="Desconto USD"
+          value={desc}
+          onChange={(e) => setDesc(e.target.value)}
           disabled={!canEdit}
         />
-        <Input label="Frete (interno)" value={frete} onChange={(e) => setFrete(e.target.value)} disabled={!canEdit} />
+        <Input
+          label="Dólar"
+          value={dolar}
+          onChange={(e) => setDolar(e.target.value)}
+          disabled={!canEdit}
+        />
+        <Input
+          label="Unitário R$"
+          value={valores.unitarioBrl == null ? '' : String(valores.unitarioBrl)}
+          disabled
+          readOnly
+        />
+        <Input
+          label="Total R$"
+          value={valores.total == null ? '' : String(valores.total)}
+          disabled
+          readOnly
+        />
+        <Input label="Frete" value={frete} onChange={(e) => setFrete(e.target.value)} disabled={!canEdit} />
+        <DatePicker
+          label="Vencimento da lista"
+          value={vencimento}
+          onChange={(e) => setVencimento(e.target.value)}
+          disabled={!canEdit}
+        />
+        <DatePicker
+          label="Pagamento Syagri"
+          value={pagamentoSyagri}
+          onChange={(e) => setPagamentoSyagri(e.target.value)}
+          disabled={!canEdit}
+        />
       </div>
       <p className="mt-2 text-xs text-slate-500">
-        PDF: USD {formatUsd(item.preco_usd)} · Interno: {formatBRL(Number(item.unitario_brl) || 0)} · saldo a receber{' '}
+        Pedido: USD {formatUsd(valores.liquidoUsd)} · Unitário {formatBRL(Number(valores.unitarioBrl) || 0)} · saldo a receber{' '}
         {formatQtyBoth(restoKg)}
       </p>
       {canEdit ? (
@@ -466,7 +539,7 @@ function OcItemEditor({ item, canEdit, canReceive, onSaved, onDelete, onReceive 
   )
 }
 
-function ModalAddItem({ fornecedorId, onClose, onSave }) {
+function ModalAddItem({ fornecedorId, taxaUsdVigente, onClose, onSave }) {
   const [produtos, setProdutos] = useState([])
   const [produtoId, setProdutoId] = useState('')
   const [embalagem, setEmbalagem] = useState('BIG BAG')
@@ -493,6 +566,13 @@ function ModalAddItem({ fornecedorId, onClose, onSave }) {
       return
     }
     const product = produtos.find((p) => p.id === produtoId)
+    const valores = calcOcItemValores({
+      precoUsd: product?.preco_original,
+      descontoUsd: product?.desconto_usd,
+      taxaDolar: taxaUsdVigente,
+      volumeKg: parsed.kg,
+      unidade,
+    })
     setSaving(true)
     const res = await onSave({
       produto_oficial_id: produtoId,
@@ -503,6 +583,8 @@ function ModalAddItem({ fornecedorId, onClose, onSave }) {
       preco_usd: product?.preco_original ?? null,
       desconto_usd: product?.desconto_usd ?? null,
       vencimento_lista: product?.vencimento_lista ?? null,
+      unitario_brl: valores.unitarioBrl,
+      total: valores.total,
     })
     setSaving(false)
     if (!res.ok) setError(res.error)
