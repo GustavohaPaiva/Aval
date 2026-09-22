@@ -1,22 +1,12 @@
 import { SYAGRI_COMPANY } from '../../constants/company'
 import { formatProdutoDisplayNome } from '../../constants/mapeamentoCampos'
 import { formatPrazoSemanaLabel } from '../../utils/calendarWeek'
+import { formatDateBr } from '../../utils/formatDateBr'
 
 function freightLabel(tipo) {
   if (tipo === 'CIF') return 'CIF — Posto Fazenda'
   if (tipo === 'FOB') return 'FOB — Cliente Retira'
   return '—'
-}
-
-function formatDateBr(isoOrDate) {
-  if (!isoOrDate) return '—'
-  const d = new Date(isoOrDate)
-  if (Number.isNaN(d.getTime())) return '—'
-  return d.toLocaleDateString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  })
 }
 
 function formatDocNumber(id) {

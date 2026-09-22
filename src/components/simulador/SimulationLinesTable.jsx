@@ -11,13 +11,7 @@ import {
 import { LineEstoqueAlert } from "./LineEstoqueAlert";
 import { formatBRL, formatComissaoPctValor, formatPercent } from "../../utils/money";
 import { formatProdutoDisplayNome } from "../../constants/mapeamentoCampos";
-
-function filterProductsByFornecedor(productOptions, fornecedorId) {
-  if (!fornecedorId) return productOptions;
-  return productOptions.filter(
-    (p) => String(p.fornecedorId ?? "") === String(fornecedorId),
-  );
-}
+import { productsForLineSelect } from "./productSelectOptions";
 
 function productOptionLabel(product, omitFornecedor) {
   const label = formatProdutoDisplayNome({
@@ -54,9 +48,15 @@ const SimulationLinesTableRow = memo(function SimulationLinesTableRow({
   const [overridesOpen, setOverridesOpen] = useState(false);
   const hasOverride = Boolean(row.overrides);
   const filteredProducts = useMemo(
-    () => filterProductsByFornecedor(productOptions, row.fornecedorId),
-    [productOptions, row.fornecedorId],
+    () =>
+      productsForLineSelect(productOptions, {
+        fornecedorId: row.fornecedorId,
+        productId: row.productId,
+        displayNome: row.displayNome,
+      }),
+    [productOptions, row.fornecedorId, row.productId, row.displayNome],
   );
+  const hasProduct = Boolean(String(row.productId ?? "").trim());
 
   return (
     <>
@@ -114,6 +114,7 @@ const SimulationLinesTableRow = memo(function SimulationLinesTableRow({
             value: p.id,
             label: productOptionLabel(p, Boolean(row.fornecedorId)),
           }))}
+          allowClear={!hasProduct}
           disabled={isReadOnly}
           editableHint
         />

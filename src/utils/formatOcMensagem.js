@@ -1,24 +1,15 @@
 import { formatQtyByUnit, formatUsd } from './comprasUnits'
-import { ocLiquidoUsd } from './comprasPrecos'
-import { plantaFromFilial } from '../constants/compras'
+import { ocUsdPedidoFornecedor } from './comprasPrecos'
+import { ocFaturamento, ocLista, plantaFromFilial } from '../constants/compras'
+import { formatDateBr } from './formatDateBr'
 
 function bold(value) {
   return `*${String(value ?? '—').trim() || '—'}*`
 }
 
-function formatDateBr(iso) {
-  if (!iso) return '—'
-  const raw = String(iso)
-  const dayOnly = raw.match(/^(\d{4})-(\d{2})-(\d{2})/)
-  const d = dayOnly
-    ? new Date(`${dayOnly[1]}-${dayOnly[2]}-${dayOnly[3]}T12:00:00`)
-    : new Date(iso)
-  if (Number.isNaN(d.getTime())) return '—'
-  return d.toLocaleDateString('pt-BR')
-}
-
 export function formatOcMensagem(compra, itens, fornecedorNome) {
   if (!compra) return ''
+  const faturamento = ocFaturamento(compra)
   const lines = [
     `Pedido de fertilizantes: ${bold(compra.numero)}`,
     '',
@@ -29,16 +20,25 @@ export function formatOcMensagem(compra, itens, fornecedorNome) {
     `Tipo de entrega: ${compra.tipo_entrega || '—'}`,
     `Cidade / retirada: ${compra.cidade_retirada || '—'}`,
   ]
+  if (faturamento) lines.push(`Faturamento: ${faturamento}`)
+  if (compra.entrega_retirada?.trim()) {
+    lines.push(`Entrega/retirada: ${compra.entrega_retirada.trim()}`)
+  }
+  if (compra.ctc?.trim()) lines.push(`CTC: ${compra.ctc.trim()}`)
 
   for (const item of itens ?? []) {
-    const liquido = ocLiquidoUsd(item.preco_usd, item.desconto_usd)
+    const usd = ocUsdPedidoFornecedor(item)
+    const lista = ocLista(item)
     lines.push(
       '',
       `Produto: ${item.product?.displayNome || '—'}`,
       `Embalagem: ${item.embalagem || '—'}`,
       `Volume: ${formatQtyByUnit(item.volume_kg, item.unidade_exibicao || 't')}`,
-      `USD: ${formatUsd(liquido)}`,
+      `USD: ${formatUsd(usd)}`,
     )
+    if (item.cultura) lines.push(`Cultura: ${item.cultura}`)
+    if (item.origem) lines.push(`Origem: ${item.origem}`)
+    if (lista) lines.push(`Lista: ${lista}`)
   }
 
   if (compra.observacoes?.trim()) {

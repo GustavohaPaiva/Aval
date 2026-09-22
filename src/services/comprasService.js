@@ -3,6 +3,7 @@ import { formatProdutoDisplayNome } from '../constants/mapeamentoCampos'
 import { formatSupabaseError } from '../utils/supabaseErrors'
 import { tonsToKg } from '../utils/comprasUnits'
 import { calcOcItemValores } from '../utils/comprasPrecos'
+import { DEFAULT_TAXA_JUROS } from '../utils/pricingCalculations'
 import {
   COMPRAS_EMBALAGEM_DEFAULT,
   COMPRAS_FILIAL_DEFAULT,
@@ -47,6 +48,7 @@ function mapProduto(row) {
     preco_original: row.preco_original,
     desconto_usd: row.desconto_usd,
     vencimento_lista: row.vencimento_lista,
+    taxaJuros: Number(row.taxa_juros ?? DEFAULT_TAXA_JUROS),
     displayNome: formatProdutoDisplayNome({
       nome: row.nome,
       referencia_complementar: row.referencia_complementar,
@@ -70,7 +72,7 @@ export async function fetchProdutosPorFornecedor(fornecedorId) {
   const { data, error } = await supabase
     .from('produtos_oficiais')
     .select(
-      'id, nome, referencia_complementar, fornecedor_id, estado, classe, quarter, preco_original, desconto_usd, vencimento_lista, ativo, fornecedores(nome)',
+      'id, nome, referencia_complementar, fornecedor_id, estado, classe, quarter, preco_original, desconto_usd, vencimento_lista, taxa_juros, ativo, fornecedores(nome)',
     )
     .eq('fornecedor_id', fornecedorId)
     .eq('ativo', true)
@@ -101,7 +103,7 @@ const DEMANDA_SIM_SELECT = `
     override_vencimento_lista,
     produtos_oficiais (
       id, nome, referencia_complementar, fornecedor_id, estado, classe, quarter,
-      preco_original, desconto_usd, vencimento_lista, fornecedores ( nome )
+      preco_original, desconto_usd, vencimento_lista, taxa_juros, fornecedores ( nome )
     )
   )
 `
@@ -310,16 +312,17 @@ export async function fetchCompraBundle(compraId) {
       `
       id, numero, status, fornecedor_id, filial_site, planta, tipo_entrega,
       cidade_retirada, condicao_pagamento, data_documento, observacoes,
+      faturamento, ctc, entrega_retirada,
       pdf_gerado_em, created_at, updated_at,
       fornecedores ( id, nome ),
       compra_itens (
         id, produto_oficial_id, embalagem, volume_kg, volume_recebido_kg,
-        unidade_exibicao, cultura, origem, preco_usd, desconto_usd,
+        unidade_exibicao, cultura, origem, lista, preco_usd, desconto_usd,
         vencimento_lista, pagamento_syagri, preco_corrigido, juros,
         unitario_brl, frete, total, ordem,
         produtos_oficiais (
           id, nome, referencia_complementar, fornecedor_id, estado, classe, quarter,
-          preco_original, desconto_usd, vencimento_lista, fornecedores ( nome )
+          preco_original, desconto_usd, vencimento_lista, taxa_juros, fornecedores ( nome )
         )
       )
     `,
@@ -680,6 +683,9 @@ export async function updateCompraCabecalho(compraId, fields) {
       condicao_pagamento: fields.condicao_pagamento,
       data_documento: fields.data_documento,
       observacoes: fields.observacoes || null,
+      faturamento: fields.faturamento || null,
+      ctc: fields.ctc || null,
+      entrega_retirada: fields.entrega_retirada || null,
     })
     .eq('id', compraId)
   if (error) return fail(error, 'Não foi possível salvar o cabeçalho.')
@@ -704,6 +710,7 @@ export async function insertCompraItem(compraId, item) {
       unidade_exibicao: item.unidade_exibicao ?? 't',
       cultura: item.cultura || null,
       origem: item.origem || null,
+      lista: item.lista || null,
       preco_usd: item.preco_usd ?? null,
       desconto_usd: item.desconto_usd ?? null,
       vencimento_lista: item.vencimento_lista || null,
@@ -748,22 +755,28 @@ export function itemPrecoFromDemanda(row, { volumeKg, unidade, taxaDolar } = {})
       : row.overrideTaxa != null && row.overrideTaxa !== ''
         ? Number(row.overrideTaxa)
         : null
-  const valores =
-    Number.isFinite(taxa) && taxa > 0 && volumeKg != null
-      ? calcOcItemValores({
-          precoUsd: custo,
-          descontoUsd: desconto,
-          taxaDolar: taxa,
-          volumeKg,
-          unidade: unidade ?? 't',
-        })
-      : null
+  const vencimento =
+    row.overrideVencimentoLista || row.product?.vencimento_lista || null
+  const valores = calcOcItemValores({
+    precoUsd: custo,
+    descontoUsd: desconto,
+    taxaDolar: Number.isFinite(taxa) && taxa > 0 ? taxa : 0,
+    volumeKg,
+    unidade: unidade ?? 't',
+    vencimentoLista: vencimento,
+    pagamentoSyagri: vencimento,
+    taxaJuros: row.product?.taxaJuros,
+  })
+  const temCambio = Number.isFinite(taxa) && taxa > 0 && volumeKg != null
   return {
     preco_usd: Number.isFinite(custo) ? custo : null,
     desconto_usd: Number.isFinite(desconto) ? desconto : null,
-    vencimento_lista:
-      row.overrideVencimentoLista || row.product?.vencimento_lista || null,
-    unitario_brl: valores?.unitarioBrl ?? null,
-    total: valores?.total ?? null,
+    vencimento_lista: vencimento,
+    pagamento_syagri: vencimento,
+    preco_corrigido: valores.precoCorrigido,
+    juros: valores.juros,
+    lista: row.product?.quarter || null,
+    unitario_brl: temCambio ? valores.unitarioBrl : null,
+    total: temCambio ? valores.total : null,
   }
 }

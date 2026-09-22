@@ -1,18 +1,8 @@
 import { SYAGRI_COMPANY } from '../../constants/company'
-import { filialById, plantaFromFilial } from '../../constants/compras'
+import { filialById, ocFaturamento, ocLista, plantaFromFilial } from '../../constants/compras'
 import { formatQtyByUnit, formatUsd } from '../../utils/comprasUnits'
-import { ocLiquidoUsd } from '../../utils/comprasPrecos'
-
-function formatDateBr(isoOrDate) {
-  if (!isoOrDate) return '—'
-  const raw = String(isoOrDate)
-  const dayOnly = raw.match(/^(\d{4})-(\d{2})-(\d{2})/)
-  const d = dayOnly
-    ? new Date(`${dayOnly[1]}-${dayOnly[2]}-${dayOnly[3]}T12:00:00`)
-    : new Date(isoOrDate)
-  if (Number.isNaN(d.getTime())) return '—'
-  return d.toLocaleDateString('pt-BR')
-}
+import { ocUsdPedidoFornecedor } from '../../utils/comprasPrecos'
+import { formatDateBr } from '../../utils/formatDateBr'
 
 function freightLabel(tipo) {
   if (tipo === 'CIF') return 'CIF'
@@ -20,12 +10,24 @@ function freightLabel(tipo) {
   return '—'
 }
 
+function itemMeta(item) {
+  const lista = ocLista(item)
+  const parts = [
+    item.cultura ? `Cultura: ${item.cultura}` : null,
+    item.origem ? `Origem: ${item.origem}` : null,
+    lista ? `Lista: ${lista}` : null,
+  ].filter(Boolean)
+  return parts
+}
+
 /**
  * PDF comercial da OC (colunas B). Visual alinhado ao pedido do cliente.
+ * USD enviado = preço corrigido com juros simples (planilha Yara col. I).
  */
 export function OcPdfDocument({ compra, itens, fornecedorNome }) {
   const site = filialById(compra.filial_site)
   const otherSites = SYAGRI_COMPANY.sites.filter((s) => s.id !== site?.id)
+  const faturamento = ocFaturamento(compra)
 
   return (
     <div
@@ -171,7 +173,9 @@ export function OcPdfDocument({ compra, itens, fornecedorNome }) {
               { label: 'Planta', value: plantaFromFilial(compra.filial_site) || compra.planta || '—' },
               { label: 'Tipo de entrega', value: freightLabel(compra.tipo_entrega) },
               { label: 'Cidade / retirada', value: compra.cidade_retirada || '—' },
-              { label: 'Itens', value: String(itens?.length ?? 0) },
+              { label: 'Faturamento', value: faturamento || '—' },
+              { label: 'Entrega / retirada', value: compra.entrega_retirada || '—' },
+              { label: 'CTC', value: compra.ctc || '—' },
             ].map((field) => (
               <div
                 key={field.label}
@@ -226,7 +230,8 @@ export function OcPdfDocument({ compra, itens, fornecedorNome }) {
             </thead>
             <tbody>
               {(itens ?? []).map((item, index) => {
-                const liquido = ocLiquidoUsd(item.preco_usd, item.desconto_usd)
+                const usd = ocUsdPedidoFornecedor(item)
+                const meta = itemMeta(item)
                 return (
                   <tr
                     key={item.id}
@@ -237,19 +242,21 @@ export function OcPdfDocument({ compra, itens, fornecedorNome }) {
                     </Td>
                     <Td strong>
                       {item.product?.displayNome || '—'}
-                      {item.cultura ? (
-                        <span style={{ display: 'block', fontWeight: 400, color: '#64748b', fontSize: 10 }}>
-                          Cultura: {item.cultura}
-                          {item.origem ? ` · Origem: ${item.origem}` : ''}
+                      {meta.map((line) => (
+                        <span
+                          key={line}
+                          style={{ display: 'block', fontWeight: 400, color: '#64748b', fontSize: 10 }}
+                        >
+                          {line}
                         </span>
-                      ) : null}
+                      ))}
                     </Td>
                     <Td>{item.embalagem || '—'}</Td>
                     <Td align="right" mono>
                       {formatQtyByUnit(item.volume_kg, item.unidade_exibicao || 't')}
                     </Td>
                     <Td align="right" mono strong>
-                      {formatUsd(liquido)}
+                      {formatUsd(usd)}
                     </Td>
                   </tr>
                 )

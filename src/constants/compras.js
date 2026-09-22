@@ -120,6 +120,26 @@ export function plantaFromFilial(filialId) {
   return city || site?.label || ''
 }
 
+/** Texto de faturamento da planilha Yara, derivado da filial do documento. */
+export function faturamentoFromFilial(filialId) {
+  const site = filialById(filialId)
+  const city = String(site?.city ?? '').trim()
+  if (!city) return ''
+  return `Faturar p/${city.replace('/', ' - ')}`
+}
+
+export function ocFaturamento(compra) {
+  const stored = String(compra?.faturamento ?? '').trim()
+  if (stored) return stored
+  return faturamentoFromFilial(compra?.filial_site)
+}
+
+export function ocLista(item) {
+  const stored = String(item?.lista ?? '').trim()
+  if (stored) return stored
+  return item?.product?.quarter || ''
+}
+
 export const COMPRAS_NAV = [
   { to: '/compras', label: 'Hub', end: true },
   { to: '/compras/demanda', label: 'Demanda' },

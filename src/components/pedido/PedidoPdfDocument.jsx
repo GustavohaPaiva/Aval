@@ -3,6 +3,7 @@ import { PEDIDO_CONDICOES_VENDA } from '../../constants/pedidoCondicoesVenda'
 import { formatProdutoDisplayNome } from '../../constants/mapeamentoCampos'
 import { displayCpfCnpj, displayPhone } from '../../utils/dataFormatters'
 import { formatPrazoSemanaLabel } from '../../utils/calendarWeek'
+import { formatDateBr } from '../../utils/formatDateBr'
 import { formatBRL } from '../../utils/money'
 import { roundMoney } from '../../utils/roundMoney'
 
@@ -10,17 +11,6 @@ function freightLabel(tipo) {
   if (tipo === 'CIF') return 'CIF — Posto Fazenda'
   if (tipo === 'FOB') return 'FOB — Cliente Retira'
   return '—'
-}
-
-function formatDateBr(isoOrDate) {
-  if (!isoOrDate) return '—'
-  const d = new Date(isoOrDate)
-  if (Number.isNaN(d.getTime())) return '—'
-  return d.toLocaleDateString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  })
 }
 
 function formatDocNumber(id) {

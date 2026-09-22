@@ -306,6 +306,15 @@ export const DatePicker = forwardRef(function DatePicker(
             aria-label="Selecionar data"
             style={dropdownStyle}
             className="w-[min(18rem,calc(100vw-1.5rem))] rounded-2xl border border-slate-200 bg-white p-3 shadow-lg"
+            onPointerDown={(event) => {
+              // Keep the click inside the portal (avoids wiping other open Selects).
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
           >
             <div className="mb-3 flex items-center justify-between gap-2">
               <button

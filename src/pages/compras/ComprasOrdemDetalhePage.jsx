@@ -19,6 +19,7 @@ import {
   UNIDADE_OPTIONS,
   compraStatusBadgeClass,
   compraStatusLabel,
+  faturamentoFromFilial,
   filialOptions,
 } from '../../constants/compras'
 import { useSyncPageLoading } from '../../contexts/PageLoadingContext'
@@ -41,6 +42,7 @@ import { formatOcMensagem } from '../../utils/formatOcMensagem'
 import {
   formatQtyBoth,
   formatUsd,
+  kgToTons,
   parseQtyInput,
 } from '../../utils/comprasUnits'
 import {
@@ -68,6 +70,9 @@ export function ComprasOrdemDetalhePage() {
   const [cidade, setCidade] = useState('Uberaba')
   const [condicao, setCondicao] = useState('FAT. ANTECIPADO')
   const [dataDoc, setDataDoc] = useState('')
+  const [faturamento, setFaturamento] = useState('')
+  const [entregaRetirada, setEntregaRetirada] = useState('')
+  const [ctc, setCtc] = useState('')
   const [obs, setObs] = useState('')
   const [taxaUsdVigente, setTaxaUsdVigente] = useState(null)
 
@@ -93,6 +98,9 @@ export function ComprasOrdemDetalhePage() {
       setCidade(c.cidade_retirada || 'Uberaba')
       setCondicao(c.condicao_pagamento || 'FAT. ANTECIPADO')
       setDataDoc(String(c.data_documento ?? '').slice(0, 10))
+      setFaturamento(c.faturamento || faturamentoFromFilial(c.filial_site))
+      setEntregaRetirada(c.entrega_retirada || '')
+      setCtc(c.ctc || '')
       setObs(c.observacoes || '')
       setLoadState('ready')
     },
@@ -115,7 +123,24 @@ export function ComprasOrdemDetalhePage() {
   const canCancel =
     Boolean(canEdit) &&
     (bundle.itens ?? []).every((item) => Number(item.volume_recebido_kg) <= 0)
-  const mensagem = bundle ? formatOcMensagem(bundle, bundle.itens, bundle.fornecedorNome) : ''
+  const mensagem = bundle
+    ? formatOcMensagem(
+        {
+          ...bundle,
+          filial_site: filial,
+          tipo_entrega: tipoEntrega,
+          cidade_retirada: cidade,
+          condicao_pagamento: condicao,
+          data_documento: dataDoc,
+          observacoes: obs,
+          faturamento,
+          entrega_retirada: entregaRetirada,
+          ctc,
+        },
+        bundle.itens,
+        bundle.fornecedorNome,
+      )
+    : ''
 
   async function handleSaveHeader() {
     setSaving(true)
@@ -127,6 +152,9 @@ export function ComprasOrdemDetalhePage() {
       condicao_pagamento: condicao,
       data_documento: dataDoc,
       observacoes: obs,
+      faturamento,
+      ctc,
+      entrega_retirada: entregaRetirada,
     })
     setSaving(false)
     if (!res.ok) {
@@ -139,7 +167,18 @@ export function ComprasOrdemDetalhePage() {
 
   const handlePdf = useCallback(async () => {
     if (!bundle) return
-    const snapshot = bundle
+    const snapshot = {
+      ...bundle,
+      filial_site: filial,
+      tipo_entrega: tipoEntrega,
+      cidade_retirada: cidade,
+      condicao_pagamento: condicao,
+      data_documento: dataDoc,
+      observacoes: obs,
+      faturamento,
+      entrega_retirada: entregaRetirada,
+      ctc,
+    }
     setPdfPreview({
       titulo: `Pedido ${bundle.numero}`,
       gerador: async () => {
@@ -155,7 +194,18 @@ export function ComprasOrdemDetalhePage() {
       },
       nomeFallback: `${bundle.numero}.pdf`,
     })
-  }, [bundle])
+  }, [
+    bundle,
+    filial,
+    tipoEntrega,
+    cidade,
+    condicao,
+    dataDoc,
+    obs,
+    faturamento,
+    entregaRetirada,
+    ctc,
+  ])
 
   async function handleCopy() {
     if (!mensagem) return
@@ -244,7 +294,15 @@ export function ComprasOrdemDetalhePage() {
           <Select
             label="Filial Syagri"
             value={filial}
-            onChange={(e) => setFilial(e.target.value)}
+            onChange={(e) => {
+              const next = e.target.value
+              setFilial(next)
+              setFaturamento((prev) => {
+                const previousDefault = faturamentoFromFilial(filial)
+                if (!prev || prev === previousDefault) return faturamentoFromFilial(next)
+                return prev
+              })
+            }}
             options={filialOptions()}
             disabled={!canEdit}
           />
@@ -271,6 +329,24 @@ export function ComprasOrdemDetalhePage() {
             label="Data do documento"
             value={dataDoc}
             onChange={(e) => setDataDoc(e.target.value)}
+            disabled={!canEdit}
+          />
+          <Input
+            label="Faturamento"
+            value={faturamento}
+            onChange={(e) => setFaturamento(e.target.value)}
+            disabled={!canEdit}
+          />
+          <Input
+            label="Entrega / retirada"
+            value={entregaRetirada}
+            onChange={(e) => setEntregaRetirada(e.target.value)}
+            disabled={!canEdit}
+          />
+          <Input
+            label="CTC"
+            value={ctc}
+            onChange={(e) => setCtc(e.target.value)}
             disabled={!canEdit}
           />
           <div className="sm:col-span-2">
@@ -403,6 +479,7 @@ function OcItemEditor({ item, canEdit, canReceive, taxaUsdVigente, onSaved, onDe
       descontoUsd: item.desconto_usd,
       unitarioBrl: item.unitario_brl,
       fallback: taxaUsdVigente,
+      precoCorrigido: item.preco_corrigido,
     })
     return inferred == null ? '' : String(Number(inferred.toFixed(6)))
   })
@@ -410,9 +487,19 @@ function OcItemEditor({ item, canEdit, canReceive, taxaUsdVigente, onSaved, onDe
     String(item.vencimento_lista ?? '').slice(0, 10),
   )
   const [pagamentoSyagri, setPagamentoSyagri] = useState(
-    String(item.pagamento_syagri ?? '').slice(0, 10),
+    String(item.pagamento_syagri ?? item.vencimento_lista ?? '').slice(0, 10),
   )
   const [frete, setFrete] = useState(item.frete ?? '')
+  const [cultura, setCultura] = useState(item.cultura ?? '')
+  const [origem, setOrigem] = useState(item.origem ?? '')
+  const [lista, setLista] = useState(item.lista || item.product?.quarter || '')
+  const [embalagem, setEmbalagem] = useState(item.embalagem || 'BIG BAG')
+  const [unidade, setUnidade] = useState(item.unidade_exibicao || 't')
+  const [qty, setQty] = useState(() =>
+    item.unidade_exibicao === 'kg'
+      ? String(Number(item.volume_kg) || '')
+      : String(kgToTons(item.volume_kg) || ''),
+  )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   const restoKg = Number(item.volume_kg) - Number(item.volume_recebido_kg)
@@ -424,9 +511,13 @@ function OcItemEditor({ item, canEdit, canReceive, taxaUsdVigente, onSaved, onDe
       descontoUsd: item.desconto_usd,
       unitarioBrl: item.unitario_brl,
       fallback: taxaUsdVigente,
+      precoCorrigido: item.preco_corrigido,
     })
     if (inferred != null) setDolar(String(Number(inferred.toFixed(6))))
   }, [dolar, item, taxaUsdVigente])
+
+  const parsedVolume = parseQtyInput(qty, unidade)
+  const volumeKg = parsedVolume.ok ? parsedVolume.kg : Number(item.volume_kg)
 
   const valores = useMemo(
     () =>
@@ -434,15 +525,39 @@ function OcItemEditor({ item, canEdit, canReceive, taxaUsdVigente, onSaved, onDe
         precoUsd: parseOcNumber(preco),
         descontoUsd: parseOcNumber(desc) ?? 0,
         taxaDolar: parseOcNumber(dolar),
-        volumeKg: item.volume_kg,
-        unidade: item.unidade_exibicao,
+        volumeKg,
+        unidade,
+        vencimentoLista: vencimento || null,
+        pagamentoSyagri: pagamentoSyagri || null,
+        taxaJuros: item.product?.taxaJuros,
+        frete: parseOcNumber(frete),
       }),
-    [preco, desc, dolar, item.volume_kg, item.unidade_exibicao],
+    [
+      preco,
+      desc,
+      dolar,
+      volumeKg,
+      unidade,
+      item.product?.taxaJuros,
+      vencimento,
+      pagamentoSyagri,
+      frete,
+    ],
   )
 
   async function saveInternal() {
     setSaving(true)
     setError(null)
+    if (!parsedVolume.ok) {
+      setSaving(false)
+      setError(parsedVolume.error)
+      return
+    }
+    if (parsedVolume.kg + 0.0001 < Number(item.volume_recebido_kg)) {
+      setSaving(false)
+      setError('Volume não pode ser menor do que o já recebido.')
+      return
+    }
     const res = await updateCompraItem(item.id, {
       preco_usd: parseOcNumber(preco),
       desconto_usd: parseOcNumber(desc),
@@ -451,6 +566,14 @@ function OcItemEditor({ item, canEdit, canReceive, taxaUsdVigente, onSaved, onDe
       frete: parseOcNumber(frete),
       vencimento_lista: vencimento || null,
       pagamento_syagri: pagamentoSyagri || null,
+      preco_corrigido: valores.precoCorrigido,
+      juros: valores.juros,
+      cultura: cultura.trim() || null,
+      origem: origem.trim() || null,
+      lista: lista.trim() || null,
+      embalagem,
+      unidade_exibicao: unidade,
+      volume_kg: parsedVolume.kg,
     })
     setSaving(false)
     if (!res.ok) {
@@ -466,8 +589,9 @@ function OcItemEditor({ item, canEdit, canReceive, taxaUsdVigente, onSaved, onDe
         <div>
           <p className="font-semibold text-slate-900">{item.product?.displayNome || '—'}</p>
           <p className="text-sm text-slate-500">
-            {item.embalagem} · pedido {formatQtyBoth(item.volume_kg)} · recebido{' '}
+            {embalagem} · pedido {formatQtyBoth(volumeKg)} · recebido{' '}
             {formatQtyBoth(item.volume_recebido_kg)}
+            {lista ? ` · Lista ${lista}` : ''}
           </p>
         </div>
         {canEdit ? (
@@ -487,7 +611,40 @@ function OcItemEditor({ item, canEdit, canReceive, taxaUsdVigente, onSaved, onDe
       </div>
       {error ? <AlertMessage className="mt-3">{error}</AlertMessage> : null}
       <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Input label="USD" value={preco} onChange={(e) => setPreco(e.target.value)} disabled={!canEdit} />
+        <Select
+          label="Embalagem"
+          value={embalagem}
+          onChange={(e) => setEmbalagem(e.target.value)}
+          options={EMBALAGEM_OPTIONS}
+          disabled={!canEdit}
+        />
+        <Select
+          label="Unidade"
+          value={unidade}
+          onChange={(e) => {
+            const next = e.target.value
+            const parsed = parseQtyInput(qty, unidade)
+            setUnidade(next)
+            if (parsed.ok) {
+              setQty(next === 'kg' ? String(parsed.kg) : String(kgToTons(parsed.kg)))
+            }
+          }}
+          options={UNIDADE_OPTIONS}
+          disabled={!canEdit}
+        />
+        <Input
+          label="Quantidade"
+          value={qty}
+          onChange={(e) => setQty(e.target.value)}
+          disabled={!canEdit}
+        />
+        <Input
+          label="Lista"
+          value={lista}
+          onChange={(e) => setLista(e.target.value)}
+          disabled={!canEdit}
+        />
+        <Input label="Preço USD" value={preco} onChange={(e) => setPreco(e.target.value)} disabled={!canEdit} />
         <Input
           label="Desconto USD"
           value={desc}
@@ -495,24 +652,17 @@ function OcItemEditor({ item, canEdit, canReceive, taxaUsdVigente, onSaved, onDe
           disabled={!canEdit}
         />
         <Input
+          label="Valor com desconto"
+          value={valores.liquidoUsd == null ? '' : String(valores.liquidoUsd)}
+          disabled
+          readOnly
+        />
+        <Input
           label="Dólar"
           value={dolar}
           onChange={(e) => setDolar(e.target.value)}
           disabled={!canEdit}
         />
-        <Input
-          label="Unitário R$"
-          value={valores.unitarioBrl == null ? '' : String(valores.unitarioBrl)}
-          disabled
-          readOnly
-        />
-        <Input
-          label="Total R$"
-          value={valores.total == null ? '' : String(valores.total)}
-          disabled
-          readOnly
-        />
-        <Input label="Frete" value={frete} onChange={(e) => setFrete(e.target.value)} disabled={!canEdit} />
         <DatePicker
           label="Vencimento da lista"
           value={vencimento}
@@ -525,10 +675,49 @@ function OcItemEditor({ item, canEdit, canReceive, taxaUsdVigente, onSaved, onDe
           onChange={(e) => setPagamentoSyagri(e.target.value)}
           disabled={!canEdit}
         />
+        <Input
+          label="Preço corrigido USD"
+          value={valores.precoCorrigido == null ? '' : String(valores.precoCorrigido)}
+          disabled
+          readOnly
+        />
+        <Input
+          label="Juros USD"
+          value={valores.juros == null ? '' : String(valores.juros)}
+          disabled
+          readOnly
+        />
+        <Input
+          label="Unitário R$"
+          value={valores.unitarioBrl == null ? '' : String(valores.unitarioBrl)}
+          disabled
+          readOnly
+        />
+        <Input label="Frete R$" value={frete} onChange={(e) => setFrete(e.target.value)} disabled={!canEdit} />
+        <Input
+          label="Total R$"
+          value={valores.total == null ? '' : String(valores.total)}
+          disabled
+          readOnly
+        />
+        <Input
+          label="Cultura"
+          value={cultura}
+          onChange={(e) => setCultura(e.target.value)}
+          disabled={!canEdit}
+        />
+        <Input
+          label="Origem"
+          value={origem}
+          onChange={(e) => setOrigem(e.target.value)}
+          disabled={!canEdit}
+        />
       </div>
       <p className="mt-2 text-xs text-slate-500">
-        Pedido: USD {formatUsd(valores.liquidoUsd)} · Unitário {formatBRL(Number(valores.unitarioBrl) || 0)} · saldo a receber{' '}
-        {formatQtyBoth(restoKg)}
+        Pedido ao fornecedor: USD {formatUsd(valores.precoCorrigido)}
+        {valores.dias > 0 ? ` · ${valores.dias} dia(s) de juros` : ''}
+        {' · '}
+        Unitário {formatBRL(Number(valores.unitarioBrl) || 0)} · saldo a receber {formatQtyBoth(restoKg)}
       </p>
       {canEdit ? (
         <Button type="button" variant="secondary" className="mt-3 w-full" loading={saving} onClick={() => void saveInternal()}>
@@ -546,6 +735,8 @@ function ModalAddItem({ fornecedorId, taxaUsdVigente, onClose, onSave }) {
   const [unidade, setUnidade] = useState('t')
   const [qty, setQty] = useState('')
   const [cultura, setCultura] = useState('')
+  const [origem, setOrigem] = useState('')
+  const [lista, setLista] = useState('')
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
 
@@ -555,6 +746,7 @@ function ModalAddItem({ fornecedorId, taxaUsdVigente, onClose, onSave }) {
     if (res.ok) {
       setProdutos(res.rows)
       setProdutoId(res.rows[0]?.id ?? '')
+      setLista(res.rows[0]?.quarter || '')
     }
   }, [fornecedorId])
 
@@ -566,12 +758,16 @@ function ModalAddItem({ fornecedorId, taxaUsdVigente, onClose, onSave }) {
       return
     }
     const product = produtos.find((p) => p.id === produtoId)
+    const vencimento = product?.vencimento_lista ?? null
     const valores = calcOcItemValores({
       precoUsd: product?.preco_original,
       descontoUsd: product?.desconto_usd,
       taxaDolar: taxaUsdVigente,
       volumeKg: parsed.kg,
       unidade,
+      vencimentoLista: vencimento,
+      pagamentoSyagri: vencimento,
+      taxaJuros: product?.taxaJuros,
     })
     setSaving(true)
     const res = await onSave({
@@ -580,9 +776,14 @@ function ModalAddItem({ fornecedorId, taxaUsdVigente, onClose, onSave }) {
       volume_kg: parsed.kg,
       unidade_exibicao: unidade,
       cultura,
+      origem: origem.trim() || null,
+      lista: lista.trim() || product?.quarter || null,
       preco_usd: product?.preco_original ?? null,
       desconto_usd: product?.desconto_usd ?? null,
-      vencimento_lista: product?.vencimento_lista ?? null,
+      vencimento_lista: vencimento,
+      pagamento_syagri: vencimento,
+      preco_corrigido: valores.precoCorrigido,
+      juros: valores.juros,
       unitario_brl: valores.unitarioBrl,
       total: valores.total,
     })
@@ -604,7 +805,12 @@ function ModalAddItem({ fornecedorId, taxaUsdVigente, onClose, onSave }) {
         <Select
           label="Produto"
           value={produtoId}
-          onChange={(e) => setProdutoId(e.target.value)}
+          onChange={(e) => {
+            const next = e.target.value
+            setProdutoId(next)
+            const product = produtos.find((p) => p.id === next)
+            setLista(product?.quarter || '')
+          }}
           options={produtos.map((p) => ({ value: p.id, label: p.displayNome }))}
         />
         <Select
@@ -623,6 +829,8 @@ function ModalAddItem({ fornecedorId, taxaUsdVigente, onClose, onSave }) {
           <Input label="Quantidade" value={qty} onChange={(e) => setQty(e.target.value)} required />
         </div>
         <Input label="Cultura" value={cultura} onChange={(e) => setCultura(e.target.value)} />
+        <Input label="Origem" value={origem} onChange={(e) => setOrigem(e.target.value)} />
+        <Input label="Lista" value={lista} onChange={(e) => setLista(e.target.value)} />
       </form>
     </Modal>
   )

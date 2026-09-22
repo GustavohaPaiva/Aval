@@ -36,13 +36,14 @@ function createSyntheticChangeEvent(value) {
   };
 }
 
-function resolveOptions(options, placeholder) {
+function resolveOptions(options, placeholder, allowClear) {
   const list = Array.isArray(options) ? options : [];
   const hasEmpty = list.some(
     (opt) => opt.value === "" || opt.value === null,
   );
 
-  if (placeholder && !hasEmpty) {
+  // Empty option only when clearing is allowed (avoids wiping a selected value).
+  if (placeholder && allowClear && !hasEmpty) {
     return [{ value: "", label: placeholder }, ...list];
   }
 
@@ -72,6 +73,8 @@ export const Select = forwardRef(function Select(
     emptyMessage = "Nenhum resultado encontrado",
     size = "default",
     editableHint = false,
+    /** When false, do not inject a clickable empty/placeholder option. */
+    allowClear = true,
     "aria-label": ariaLabel,
     required,
     autoOpen = false,
@@ -96,8 +99,8 @@ export const Select = forwardRef(function Select(
   useImperativeHandle(ref, () => triggerRef.current);
 
   const allOptions = useMemo(
-    () => resolveOptions(options, placeholder),
-    [options, placeholder],
+    () => resolveOptions(options, placeholder, allowClear),
+    [options, placeholder, allowClear],
   );
 
   const selectableOptions = useMemo(

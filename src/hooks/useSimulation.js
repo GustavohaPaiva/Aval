@@ -956,10 +956,10 @@ export function useSimulation(options = {}) {
   ])
 
   const clearOrphanProducts = useCallback(() => {
-    const ids = new Set(catalog.map((p) => p.id))
+    const ids = new Set(catalog.map((p) => String(p.id)))
     setLines((prev) =>
       prev.map((line) =>
-        line.productId && !ids.has(line.productId)
+        line.productId && !ids.has(String(line.productId))
           ? {
               ...line,
               productId: '',
