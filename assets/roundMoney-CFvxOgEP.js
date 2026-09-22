@@ -1,0 +1,1 @@
+function e(e){return Math.round(e*100)/100}export{e as t};
