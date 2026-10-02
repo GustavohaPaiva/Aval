@@ -1,18 +1,30 @@
 import { SYAGRI_COMPANY } from '../../constants/company'
-import { filialById, ocFaturamento, ocLista, plantaFromFilial } from '../../constants/compras'
+import {
+  cidadeRetiradaFromFilial,
+  filialById,
+  ocFaturamento,
+  ocFilialFaturamentoId,
+  ocItemVencimento,
+  ocLista,
+  ocVencimentoUnico,
+  plantaFromFilial,
+  tipoEntregaLabel,
+} from '../../constants/compras'
 import { formatQtyByUnit, formatUsd } from '../../utils/comprasUnits'
-import { ocUsdPedidoFornecedor } from '../../utils/comprasPrecos'
+import { ocItemValoresPedido, ocTotalBrl } from '../../utils/comprasPrecos'
 import { formatDateBr } from '../../utils/formatDateBr'
+import { formatBRL } from '../../utils/money'
 
-function freightLabel(tipo) {
-  if (tipo === 'CIF') return 'CIF'
-  if (tipo === 'FOB') return 'FOB'
-  return '—'
+function brlOrDash(value) {
+  return value == null ? '—' : formatBRL(value)
 }
 
-function itemMeta(item) {
+function itemMeta(item, showVencimento) {
   const lista = ocLista(item)
+  const vencimento = showVencimento ? ocItemVencimento(item) : null
   const parts = [
+    item.embalagem ? `Embalagem: ${item.embalagem}` : null,
+    vencimento ? `Vencimento: ${formatDateBr(vencimento)}` : null,
     item.cultura ? `Cultura: ${item.cultura}` : null,
     item.origem ? `Origem: ${item.origem}` : null,
     lista ? `Lista: ${lista}` : null,
@@ -25,9 +37,17 @@ function itemMeta(item) {
  * USD enviado = preço corrigido com juros simples (planilha Yara col. I).
  */
 export function OcPdfDocument({ compra, itens, fornecedorNome }) {
-  const site = filialById(compra.filial_site)
+  const site = filialById(ocFilialFaturamentoId(compra))
   const otherSites = SYAGRI_COMPANY.sites.filter((s) => s.id !== site?.id)
   const faturamento = ocFaturamento(compra)
+  const vencimentoUnico = ocVencimentoUnico(itens)
+  const temVencimento = (itens ?? []).some((item) => ocItemVencimento(item))
+  const vencimentoLabel = vencimentoUnico
+    ? formatDateBr(vencimentoUnico)
+    : temVencimento
+      ? 'Ver por produto'
+      : '—'
+  const totalOc = ocTotalBrl(itens)
 
   return (
     <div
@@ -168,11 +188,15 @@ export function OcPdfDocument({ compra, itens, fornecedorNome }) {
             }}
           >
             {[
-              { label: 'Data', value: formatDateBr(compra.data_documento) },
+              { label: 'Data do pedido', value: formatDateBr(compra.data_documento) },
+              { label: 'Data de vencimento', value: vencimentoLabel },
               { label: 'Condição', value: compra.condicao_pagamento || '—' },
               { label: 'Planta', value: plantaFromFilial(compra.filial_site) || compra.planta || '—' },
-              { label: 'Tipo de entrega', value: freightLabel(compra.tipo_entrega) },
-              { label: 'Cidade / retirada', value: compra.cidade_retirada || '—' },
+              { label: 'Tipo de entrega', value: tipoEntregaLabel(compra.tipo_entrega) },
+              {
+                label: 'Cidade / retirada',
+                value: cidadeRetiradaFromFilial(compra.filial_site) || compra.cidade_retirada || '—',
+              },
               { label: 'Faturamento', value: faturamento || '—' },
               { label: 'Entrega / retirada', value: compra.entrega_retirada || '—' },
               { label: 'CTC', value: compra.ctc || '—' },
@@ -217,21 +241,29 @@ export function OcPdfDocument({ compra, itens, fornecedorNome }) {
           >
             <thead>
               <tr style={{ background: '#064e3b', color: '#fff' }}>
-                <Th w={28}>#</Th>
+                <Th w={24}>#</Th>
                 <Th>Produto</Th>
-                <Th w={88}>Embalagem</Th>
-                <Th align="right" w={90}>
+                <Th align="right" w={70}>
                   Volume
                 </Th>
-                <Th align="right" w={92}>
-                  USD
+                <Th align="right" w={78}>
+                  Preço USD
+                </Th>
+                <Th align="right" w={82}>
+                  Preço R$
+                </Th>
+                <Th align="right" w={72}>
+                  Frete R$
+                </Th>
+                <Th align="right" w={96}>
+                  Total R$
                 </Th>
               </tr>
             </thead>
             <tbody>
               {(itens ?? []).map((item, index) => {
-                const usd = ocUsdPedidoFornecedor(item)
-                const meta = itemMeta(item)
+                const valores = ocItemValoresPedido(item)
+                const meta = itemMeta(item, !vencimentoUnico)
                 return (
                   <tr
                     key={item.id}
@@ -251,17 +283,58 @@ export function OcPdfDocument({ compra, itens, fornecedorNome }) {
                         </span>
                       ))}
                     </Td>
-                    <Td>{item.embalagem || '—'}</Td>
                     <Td align="right" mono>
                       {formatQtyByUnit(item.volume_kg, item.unidade_exibicao || 't')}
                     </Td>
+                    <Td align="right" mono>
+                      {formatUsd(valores.usd)}
+                    </Td>
+                    <Td align="right" mono>
+                      {brlOrDash(valores.unitarioBrl)}
+                    </Td>
+                    <Td align="right" mono>
+                      {formatBRL(valores.frete)}
+                    </Td>
                     <Td align="right" mono strong>
-                      {formatUsd(usd)}
+                      {brlOrDash(valores.total)}
                     </Td>
                   </tr>
                 )
               })}
             </tbody>
+            <tfoot>
+              <tr style={{ background: '#ecfdf5' }}>
+                <td
+                  colSpan={6}
+                  style={{
+                    padding: '10px 8px',
+                    textAlign: 'right',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    letterSpacing: '0.06em',
+                    textTransform: 'uppercase',
+                    color: '#047857',
+                    borderTop: '1px solid #d1fae5',
+                  }}
+                >
+                  Total da OC
+                </td>
+                <td
+                  style={{
+                    padding: '10px 8px',
+                    textAlign: 'right',
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: '#064e3b',
+                    borderTop: '1px solid #d1fae5',
+                    fontVariantNumeric: 'tabular-nums',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {brlOrDash(totalOc)}
+                </td>
+              </tr>
+            </tfoot>
           </table>
 
           {compra.observacoes ? (

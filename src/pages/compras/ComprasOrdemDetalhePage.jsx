@@ -17,10 +17,12 @@ import {
   EMBALAGEM_OPTIONS,
   TIPO_ENTREGA_OPTIONS,
   UNIDADE_OPTIONS,
+  cidadeRetiradaFromFilial,
   compraStatusBadgeClass,
   compraStatusLabel,
   faturamentoFromFilial,
   filialOptions,
+  ocFilialFaturamentoId,
 } from '../../constants/compras'
 import { useSyncPageLoading } from '../../contexts/PageLoadingContext'
 import { useAbortableAsync } from '../../hooks/useAbortableAsync'
@@ -28,8 +30,10 @@ import { buildPdfBlobFromReactNode } from '../../services/renderReactPdf'
 import {
   cancelarOrdemCompra,
   confirmarOrdemCompra,
+  criarCtc,
   deleteCompraItem,
   fetchCompraBundle,
+  fetchCtcsAtivos,
   fetchProdutosPorFornecedor,
   fetchTaxaUsdVigente,
   insertCompraItem,
@@ -66,15 +70,18 @@ export function ComprasOrdemDetalhePage() {
   const [receiveItem, setReceiveItem] = useState(null)
 
   const [filial, setFilial] = useState('uberaba')
+  const [filialFaturamento, setFilialFaturamento] = useState('uberaba')
   const [tipoEntrega, setTipoEntrega] = useState('')
-  const [cidade, setCidade] = useState('Uberaba')
   const [condicao, setCondicao] = useState('FAT. ANTECIPADO')
   const [dataDoc, setDataDoc] = useState('')
-  const [faturamento, setFaturamento] = useState('')
   const [entregaRetirada, setEntregaRetirada] = useState('')
   const [ctc, setCtc] = useState('')
+  const [ctcs, setCtcs] = useState([])
+  const [ctcModalOpen, setCtcModalOpen] = useState(false)
   const [obs, setObs] = useState('')
   const [taxaUsdVigente, setTaxaUsdVigente] = useState(null)
+  const cidade = cidadeRetiradaFromFilial(filial)
+  const faturamento = faturamentoFromFilial(filialFaturamento)
 
   useSyncPageLoading(loadState !== 'ready')
 
@@ -94,11 +101,10 @@ export function ComprasOrdemDetalhePage() {
       const c = res.data
       setBundle(c)
       setFilial(c.filial_site || 'uberaba')
+      setFilialFaturamento(ocFilialFaturamentoId(c))
       setTipoEntrega(c.tipo_entrega || '')
-      setCidade(c.cidade_retirada || 'Uberaba')
       setCondicao(c.condicao_pagamento || 'FAT. ANTECIPADO')
       setDataDoc(String(c.data_documento ?? '').slice(0, 10))
-      setFaturamento(c.faturamento || faturamentoFromFilial(c.filial_site))
       setEntregaRetirada(c.entrega_retirada || '')
       setCtc(c.ctc || '')
       setObs(c.observacoes || '')
@@ -112,6 +118,23 @@ export function ComprasOrdemDetalhePage() {
     if (!isActive()) return
     if (res.ok) setTaxaUsdVigente(res.taxa)
   }, [])
+
+  useAbortableAsync(async (_s, isActive) => {
+    const res = await fetchCtcsAtivos()
+    if (!isActive()) return
+    if (res.ok) setCtcs(res.rows)
+  }, [])
+
+  const ctcOptions = useMemo(() => {
+    const options = [{ value: '', label: 'Não informado' }]
+    const nomes = new Set()
+    for (const row of ctcs) {
+      nomes.add(row.nome)
+      options.push({ value: row.nome, label: row.nome })
+    }
+    if (ctc && !nomes.has(ctc)) options.push({ value: ctc, label: ctc })
+    return options
+  }, [ctcs, ctc])
 
   const canEdit = bundle && bundle.status !== 'cancelado'
   const canReceive =
@@ -128,6 +151,7 @@ export function ComprasOrdemDetalhePage() {
         {
           ...bundle,
           filial_site: filial,
+          filial_faturamento: filialFaturamento,
           tipo_entrega: tipoEntrega,
           cidade_retirada: cidade,
           condicao_pagamento: condicao,
@@ -147,12 +171,11 @@ export function ComprasOrdemDetalhePage() {
     setError(null)
     const res = await updateCompraCabecalho(compraId, {
       filial_site: filial,
+      filial_faturamento: filialFaturamento,
       tipo_entrega: tipoEntrega,
-      cidade_retirada: cidade,
       condicao_pagamento: condicao,
       data_documento: dataDoc,
       observacoes: obs,
-      faturamento,
       ctc,
       entrega_retirada: entregaRetirada,
     })
@@ -170,6 +193,7 @@ export function ComprasOrdemDetalhePage() {
     const snapshot = {
       ...bundle,
       filial_site: filial,
+      filial_faturamento: filialFaturamento,
       tipo_entrega: tipoEntrega,
       cidade_retirada: cidade,
       condicao_pagamento: condicao,
@@ -197,6 +221,7 @@ export function ComprasOrdemDetalhePage() {
   }, [
     bundle,
     filial,
+    filialFaturamento,
     tipoEntrega,
     cidade,
     condicao,
@@ -292,17 +317,16 @@ export function ComprasOrdemDetalhePage() {
         <h2 className="mb-4 text-sm font-semibold text-primary-800">Cabeçalho</h2>
         <div className="grid gap-4 sm:grid-cols-2">
           <Select
-            label="Filial Syagri"
+            label="Planta (filial Syagri)"
             value={filial}
-            onChange={(e) => {
-              const next = e.target.value
-              setFilial(next)
-              setFaturamento((prev) => {
-                const previousDefault = faturamentoFromFilial(filial)
-                if (!prev || prev === previousDefault) return faturamentoFromFilial(next)
-                return prev
-              })
-            }}
+            onChange={(e) => setFilial(e.target.value)}
+            options={filialOptions()}
+            disabled={!canEdit}
+          />
+          <Select
+            label="Filial de faturamento"
+            value={filialFaturamento}
+            onChange={(e) => setFilialFaturamento(e.target.value)}
             options={filialOptions()}
             disabled={!canEdit}
           />
@@ -313,12 +337,7 @@ export function ComprasOrdemDetalhePage() {
             options={TIPO_ENTREGA_OPTIONS}
             disabled={!canEdit}
           />
-          <Input
-            label="Cidade / retirada"
-            value={cidade}
-            onChange={(e) => setCidade(e.target.value)}
-            disabled={!canEdit}
-          />
+          <Input label="Cidade / retirada (planta)" value={cidade} disabled readOnly />
           <Input
             label="Condição de pagamento"
             value={condicao}
@@ -331,24 +350,29 @@ export function ComprasOrdemDetalhePage() {
             onChange={(e) => setDataDoc(e.target.value)}
             disabled={!canEdit}
           />
-          <Input
-            label="Faturamento"
-            value={faturamento}
-            onChange={(e) => setFaturamento(e.target.value)}
-            disabled={!canEdit}
-          />
+          <Input label="Faturamento" value={faturamento} disabled readOnly />
           <Input
             label="Entrega / retirada"
             value={entregaRetirada}
             onChange={(e) => setEntregaRetirada(e.target.value)}
             disabled={!canEdit}
           />
-          <Input
-            label="CTC"
-            value={ctc}
-            onChange={(e) => setCtc(e.target.value)}
-            disabled={!canEdit}
-          />
+          <div className="flex items-end gap-2">
+            <div className="min-w-0 flex-1">
+              <Select
+                label="CTC"
+                value={ctc}
+                onChange={(e) => setCtc(e.target.value)}
+                options={ctcOptions}
+                disabled={!canEdit}
+              />
+            </div>
+            {canEdit ? (
+              <Button type="button" variant="secondary" onClick={() => setCtcModalOpen(true)}>
+                Novo CTC
+              </Button>
+            ) : null}
+          </div>
           <div className="sm:col-span-2">
             <Input
               label="Observações"
@@ -429,6 +453,19 @@ export function ComprasOrdemDetalhePage() {
           </Button>
         </div>
       </Card>
+
+      {ctcModalOpen ? (
+        <ModalNovoCtc
+          onClose={() => setCtcModalOpen(false)}
+          onCreated={(row) => {
+            setCtcs((prev) =>
+              [...prev, row].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')),
+            )
+            setCtc(row.nome)
+            setCtcModalOpen(false)
+          }}
+        />
+      ) : null}
 
       {addOpen ? (
         <ModalAddItem
@@ -831,6 +868,41 @@ function ModalAddItem({ fornecedorId, taxaUsdVigente, onClose, onSave }) {
         <Input label="Cultura" value={cultura} onChange={(e) => setCultura(e.target.value)} />
         <Input label="Origem" value={origem} onChange={(e) => setOrigem(e.target.value)} />
         <Input label="Lista" value={lista} onChange={(e) => setLista(e.target.value)} />
+      </form>
+    </Modal>
+  )
+}
+
+function ModalNovoCtc({ onClose, onCreated }) {
+  const [nome, setNome] = useState('')
+  const [error, setError] = useState(null)
+  const [saving, setSaving] = useState(false)
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    setSaving(true)
+    setError(null)
+    const res = await criarCtc(nome)
+    setSaving(false)
+    if (!res.ok) {
+      setError(res.error)
+      return
+    }
+    onCreated(res.data)
+  }
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Novo CTC"
+      footer={
+        <ModalFormFooter formId="novo-ctc" submitLabel="Cadastrar" loading={saving} onCancel={onClose} />
+      }
+    >
+      {error ? <AlertMessage className="mb-4">{error}</AlertMessage> : null}
+      <form id="novo-ctc" className="grid gap-4" onSubmit={(e) => void handleSubmit(e)}>
+        <Input label="Nome" value={nome} onChange={(e) => setNome(e.target.value)} required />
       </form>
     </Modal>
   )

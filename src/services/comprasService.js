@@ -7,9 +7,12 @@ import { DEFAULT_TAXA_JUROS } from '../utils/pricingCalculations'
 import {
   COMPRAS_EMBALAGEM_DEFAULT,
   COMPRAS_FILIAL_DEFAULT,
+  cidadeRetiradaFromFilial,
+  faturamentoFromFilial,
   plantaFromFilial,
 } from '../constants/compras'
 import { agruparLinhasPorFornecedor } from '../utils/comprasOcAgrupamento'
+import { buildEnderecoEntregaCif } from '../utils/formatPedidoCotacaoMensagem'
 
 function rewriteComprasError(text) {
   if (!text) return text
@@ -88,10 +91,12 @@ const DEMANDA_SIM_SELECT = `
   fazenda,
   pedido_municipio,
   pedido_uf,
+  tipo_frete,
+  destino_frete,
   prazo_semana_inicio,
   observacoes,
   created_at,
-  clients ( id, nome, municipio, uf, telefone ),
+  clients ( id, nome, endereco, municipio, uf, telefone ),
   simulation_items (
     id,
     product_id,
@@ -150,6 +155,8 @@ function mapDemandaLinhas(sims, alocs) {
         fazenda: sim.fazenda ?? '',
         municipio: sim.pedido_municipio ?? '',
         uf: sim.pedido_uf ?? '',
+        tipoFrete: sim.tipo_frete ?? '',
+        entregaRetirada: buildEnderecoEntregaCif(sim, cliente),
         prazoSemanaInicio: sim.prazo_semana_inicio ?? null,
         observacoes: sim.observacoes ?? '',
         cultura: item.cultura ?? '',
@@ -310,7 +317,7 @@ export async function fetchCompraBundle(compraId) {
     .from('compras')
     .select(
       `
-      id, numero, status, fornecedor_id, filial_site, planta, tipo_entrega,
+      id, numero, status, fornecedor_id, filial_site, filial_faturamento, planta, tipo_entrega,
       cidade_retirada, condicao_pagamento, data_documento, observacoes,
       faturamento, ctc, entrega_retirada,
       pdf_gerado_em, created_at, updated_at,
@@ -551,7 +558,35 @@ export async function obterOuCriarOcRascunho(fornecedorId, simulationId) {
   }
 }
 
+/** Completa entrega/retirada e tipo de entrega da OC a partir do pedido de venda, sem sobrescrever edição. */
+async function preencherCabecalhoDaDemanda(compraId, row) {
+  const { data, error } = await supabase
+    .from('compras')
+    .select('tipo_entrega, entrega_retirada')
+    .eq('id', compraId)
+    .maybeSingle()
+  if (error) return fail(error, 'Não foi possível carregar a OC.')
+  if (!data) return { ok: true }
+
+  const patch = {}
+  const entrega = String(row.entregaRetirada ?? '').trim()
+  if (!String(data.entrega_retirada ?? '').trim() && entrega && entrega !== '—') {
+    patch.entrega_retirada = entrega
+  }
+  const tipo = String(row.tipoFrete ?? '').trim().toUpperCase()
+  if (!data.tipo_entrega && (tipo === 'CIF' || tipo === 'FOB')) {
+    patch.tipo_entrega = tipo
+  }
+  if (Object.keys(patch).length === 0) return { ok: true }
+
+  const { error: updateError } = await supabase.from('compras').update(patch).eq('id', compraId)
+  if (updateError) return fail(updateError, 'Não foi possível atualizar o cabeçalho da OC.')
+  return { ok: true }
+}
+
 export async function adicionarItemDemandaNaOc(compraId, row, quantidadeKg, unidade = 't') {
+  const cabecalho = await preencherCabecalhoDaDemanda(compraId, row)
+  if (!cabecalho.ok) return cabecalho
   const prices = itemPrecoFromDemanda(row, {
     volumeKg: quantidadeKg,
     unidade,
@@ -673,23 +708,50 @@ export async function fetchTaxaUsdVigente() {
 
 export async function updateCompraCabecalho(compraId, fields) {
   const filialSite = fields.filial_site ?? COMPRAS_FILIAL_DEFAULT
+  const filialFaturamento = fields.filial_faturamento ?? filialSite
   const { error } = await supabase
     .from('compras')
     .update({
       filial_site: filialSite,
+      filial_faturamento: filialFaturamento,
       planta: plantaFromFilial(filialSite),
       tipo_entrega: fields.tipo_entrega || null,
-      cidade_retirada: fields.cidade_retirada,
+      cidade_retirada: cidadeRetiradaFromFilial(filialSite),
       condicao_pagamento: fields.condicao_pagamento,
       data_documento: fields.data_documento,
       observacoes: fields.observacoes || null,
-      faturamento: fields.faturamento || null,
+      faturamento: faturamentoFromFilial(filialFaturamento),
       ctc: fields.ctc || null,
       entrega_retirada: fields.entrega_retirada || null,
     })
     .eq('id', compraId)
   if (error) return fail(error, 'Não foi possível salvar o cabeçalho.')
   return { ok: true }
+}
+
+export async function fetchCtcsAtivos() {
+  const { data, error } = await supabase
+    .from('ctcs')
+    .select('id, nome')
+    .eq('ativo', true)
+    .order('nome')
+  if (error) return fail(error, 'Não foi possível carregar os CTCs.')
+  return { ok: true, rows: data ?? [] }
+}
+
+export async function criarCtc(nome) {
+  const value = String(nome ?? '').trim()
+  if (!value) return { ok: false, error: 'Informe o nome do CTC.' }
+  const { data, error } = await supabase
+    .from('ctcs')
+    .insert({ nome: value })
+    .select('id, nome')
+    .single()
+  if (error) {
+    if (error.code === '23505') return { ok: false, error: 'Este CTC já está cadastrado.' }
+    return fail(error, 'Não foi possível cadastrar o CTC.')
+  }
+  return { ok: true, data }
 }
 
 export async function insertCompraItem(compraId, item) {

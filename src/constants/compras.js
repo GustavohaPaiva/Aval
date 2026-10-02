@@ -128,10 +128,33 @@ export function faturamentoFromFilial(filialId) {
   return `Faturar p/${city.replace('/', ' - ')}`
 }
 
+/** Filial faturada no pedido ao fornecedor; OCs antigas caem na filial da planta. */
+export function ocFilialFaturamentoId(compra) {
+  return compra?.filial_faturamento || compra?.filial_site || COMPRAS_FILIAL_DEFAULT
+}
+
 export function ocFaturamento(compra) {
-  const stored = String(compra?.faturamento ?? '').trim()
-  if (stored) return stored
-  return faturamentoFromFilial(compra?.filial_site)
+  return faturamentoFromFilial(ocFilialFaturamentoId(compra))
+}
+
+/** Cidade de retirada sempre igual à cidade da planta. */
+export function cidadeRetiradaFromFilial(filialId) {
+  return plantaFromFilial(filialId)
+}
+
+export function ocItemVencimento(item) {
+  return String(item?.pagamento_syagri ?? item?.vencimento_lista ?? '').slice(0, 10) || null
+}
+
+/** Vencimento único da OC (pagamento Syagri); null se os itens divergirem. */
+export function ocVencimentoUnico(itens) {
+  const datas = new Set((itens ?? []).map(ocItemVencimento).filter(Boolean))
+  return datas.size === 1 ? [...datas][0] : null
+}
+
+export function tipoEntregaLabel(tipo) {
+  const value = String(tipo ?? '').trim().toUpperCase()
+  return value || '—'
 }
 
 export function ocLista(item) {

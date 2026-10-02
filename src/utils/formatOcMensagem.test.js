@@ -64,16 +64,16 @@ describe('formatOcMensagem', () => {
     expect(msg).not.toContain('Pagamento Syagri')
   })
 
-  it('usa faturamento, CTC e lista editados', () => {
+  it('usa filial de faturamento, CTC e lista editados', () => {
     const msg = formatOcMensagem(
       {
         numero: 'OC-3',
         filial_site: 'uberaba',
+        filial_faturamento: 'nova-ponte',
         data_documento: '2026-07-31',
         condicao_pagamento: 'FAT. ANTECIPADO',
         tipo_entrega: 'FOB',
         cidade_retirada: 'Uberaba',
-        faturamento: 'Faturar p/Nova Ponte - MG',
         entrega_retirada: 'S1 Setembro',
         ctc: 'Eder',
       },
@@ -94,5 +94,67 @@ describe('formatOcMensagem', () => {
     expect(msg).toContain('Entrega/retirada: S1 Setembro')
     expect(msg).toContain('CTC: Eder')
     expect(msg).toContain('Lista: Q4')
+  })
+
+  it('cidade segue a planta e mostra vencimento, R$, frete zero e total da OC', () => {
+    const msg = formatOcMensagem(
+      {
+        numero: 'OC-4',
+        filial_site: 'ituverava',
+        filial_faturamento: 'ituverava',
+        data_documento: '2026-09-01',
+        condicao_pagamento: 'FAT. ANTECIPADO',
+        tipo_entrega: 'cif',
+        cidade_retirada: 'Uberaba',
+      },
+      [
+        {
+          product: { displayNome: 'MAP' },
+          embalagem: 'BIG BAG',
+          volume_kg: 2000,
+          unidade_exibicao: 't',
+          preco_usd: 100,
+          desconto_usd: 0,
+          pagamento_syagri: '2026-10-30',
+          unitario_brl: 550,
+          frete: null,
+          total: 1100,
+        },
+        {
+          product: { displayNome: 'KCL' },
+          embalagem: 'BIG BAG',
+          volume_kg: 1000,
+          unidade_exibicao: 't',
+          preco_usd: 200,
+          desconto_usd: 0,
+          pagamento_syagri: '2026-10-30',
+          unitario_brl: 1100,
+          frete: 50,
+          total: 1150,
+        },
+      ],
+      'YARA',
+    )
+    expect(msg).toContain('Cidade / retirada: Ituverava')
+    expect(msg).toContain('Faturamento: Faturar p/Ituverava - SP')
+    expect(msg).toContain('Tipo de entrega: CIF')
+    expect(msg).toContain('Data de vencimento: 30/10/2026')
+    expect(msg).toMatch(/Frete: R\$\s*0,00/)
+    expect(msg).toMatch(/R\$: R\$\s*550,00/)
+    expect(msg).toMatch(/Total da OC: \*R\$\s*2\.250,00\*/)
+  })
+
+  it('mostra vencimento por produto quando as datas divergem', () => {
+    const msg = formatOcMensagem(
+      { numero: 'OC-5', filial_site: 'uberaba', data_documento: '2026-09-01' },
+      [
+        { product: { displayNome: 'A' }, volume_kg: 1000, pagamento_syagri: '2026-10-30' },
+        { product: { displayNome: 'B' }, volume_kg: 1000, pagamento_syagri: '2026-11-30' },
+      ],
+      'YARA',
+    )
+    expect(msg).not.toContain('Data de vencimento')
+    expect(msg).toContain('Vencimento: 30/10/2026')
+    expect(msg).toContain('Vencimento: 30/11/2026')
   })
 })

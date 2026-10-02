@@ -44,6 +44,7 @@ import { notifyGestoresSimulationPending } from "../services/notificationService
 import { fetchComissaoFaixas } from "../services/comissaoService";
 import {
   fetchCatalogoSimulador,
+  fetchProdutosInativosDaSimulacao,
 } from "../services/produtoCatalogoService";
 import { fetchParametrosSistema } from "../services/parametrosService";
 import { fetchEstoqueDisponivelSimulador } from "../services/comprasService";
@@ -67,6 +68,12 @@ export function Simulador() {
   const [catalog, setCatalog] = useState([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogReady, setCatalogReady] = useState(false);
+  const [inactiveCatalog, setInactiveCatalog] = useState([]);
+  const [inactiveLoadedKey, setInactiveLoadedKey] = useState("");
+  const simCatalog = useMemo(
+    () => (inactiveCatalog.length ? [...catalog, ...inactiveCatalog] : catalog),
+    [catalog, inactiveCatalog],
+  );
   const [estoqueRows, setEstoqueRows] = useState([]);
   const [freteUnitario, setFreteUnitario] = useState(0);
   const [freteDestinos, setFreteDestinos] = useState([]);
@@ -82,7 +89,7 @@ export function Simulador() {
   const [comissaoFaixas, setComissaoFaixas] = useState([]);
   const sim = useSimulation({
     role,
-    catalog,
+    catalog: simCatalog,
     freteUnitario,
     icmsPercentual,
     pisCofinsPercentual,
@@ -219,13 +226,45 @@ export function Simulador() {
     [],
   );
 
+  const missingProductsKey = useMemo(() => {
+    if (!simulationId || !catalogReady || catalogLoading) return "";
+    const activeIds = new Set(catalog.map((p) => String(p.id)));
+    const missing = new Set();
+    for (const line of sim.lines) {
+      const id = line.productId ? String(line.productId) : "";
+      if (id && !activeIds.has(id)) missing.add(id);
+    }
+    return [...missing].sort().join(",");
+  }, [simulationId, catalogReady, catalogLoading, catalog, sim.lines]);
+
+  useAbortableAsync(
+    async (_signal, isActive) => {
+      if (!missingProductsKey) {
+        setInactiveCatalog([]);
+        setInactiveLoadedKey("");
+        return;
+      }
+      const res = await fetchProdutosInativosDaSimulacao({
+        ids: missingProductsKey.split(","),
+        quarter: sim.quarter,
+        estado: sim.estado,
+        icmsPercentual,
+      });
+      if (isActive && !isActive()) return;
+      setInactiveCatalog(res.ok ? res.rows : []);
+      setInactiveLoadedKey(missingProductsKey);
+    },
+    [missingProductsKey],
+  );
+
   useEffect(() => {
     // Avoid wiping selected products while the catalog is still empty/loading
     // (e.g. local draft restore before fetchCatalogoSimulador finishes).
     if (!catalogReady || catalogLoading) return;
+    if (missingProductsKey && inactiveLoadedKey !== missingProductsKey) return;
     sim.clearOrphanProducts();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: catalog-driven cleanup
-  }, [catalog, catalogReady, catalogLoading]);
+  }, [simCatalog, catalogReady, catalogLoading, missingProductsKey, inactiveLoadedKey]);
 
   useAbortableAsync(
     async (_signal, isActive) => {
@@ -876,7 +915,7 @@ export function Simulador() {
 
   const productsForSelect = useMemo(
     () =>
-      sim.catalog.map((p) => ({
+      sim.catalog.filter((p) => !p.inativo).map((p) => ({
         id: p.id,
         nome: p.nome ?? "",
         referenciaComplementar: p.referenciaComplementar ?? "",

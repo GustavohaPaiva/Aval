@@ -25,6 +25,15 @@ import {
 
 const PAGE_SIZE = 50
 
+function formatExclusaoResult(result) {
+  const inativados = Number(result?.produtos_inativados) || 0
+  const excluidos = Number(result?.produtos_excluidos) || 0
+  if (inativados === 0) {
+    return `Lista excluída. ${excluidos} produto(s) removido(s) do catálogo.`
+  }
+  return `Lista removida do site. ${inativados} produto(s) em uso foram inativados e seguem nas simulações e pedidos; ${excluidos} produto(s) removido(s) do catálogo.`
+}
+
 function parseStatusFilter(value) {
   if (value === 'true') return true
   if (value === 'false') return false
@@ -41,7 +50,9 @@ export function GerenciarListas() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(null)
   const [actionError, setActionError] = useState(null)
-  const [successMessage] = useState(location.state?.successMessage ?? null)
+  const [successMessage, setSuccessMessage] = useState(
+    location.state?.successMessage ?? null,
+  )
 
   const [filters, , patchFilters] = usePersistedFilters('filters:listas', {
     searchQuery: '',
@@ -169,12 +180,13 @@ export function GerenciarListas() {
 
   async function handleExcluir(lista) {
     setActionError(null)
+    setSuccessMessage(null)
     const label = [lista.fornecedor_nome, lista.quarter_calculado]
       .filter(Boolean)
       .join(' ')
     if (
       !window.confirm(
-        `Excluir a lista de produtos${label ? ` de ${label}` : ''} e todos os produtos do catálogo vinculados? Simulações e pedidos não são alterados; se algum produto estiver em uso, a exclusão será bloqueada. Esta ação não pode ser desfeita.`,
+        `Excluir a lista de produtos${label ? ` de ${label}` : ''}? Produtos usados em simulações, pedidos, compras ou estoque saem do site, mas continuam vinculados a esses registros. Os demais são removidos definitivamente.`,
       )
     ) {
       return
@@ -184,6 +196,7 @@ export function GerenciarListas() {
       setActionError(res.error)
       return
     }
+    setSuccessMessage(formatExclusaoResult(res.result))
     reload()
   }
 

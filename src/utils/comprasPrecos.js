@@ -114,6 +114,29 @@ export function calcOcItemValores({
   }
 }
 
+function numberOrNull(value) {
+  if (value == null || value === '') return null
+  const n = Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
+/** Valores por item impressos no pedido ao fornecedor (R$ salvos na OC; frete vazio = 0). */
+export function ocItemValoresPedido(item) {
+  return {
+    usd: ocUsdPedidoFornecedor(item),
+    unitarioBrl: numberOrNull(item?.unitario_brl),
+    frete: numberOrNull(item?.frete) ?? 0,
+    total: numberOrNull(item?.total),
+  }
+}
+
+/** Soma dos totais R$ dos itens; null se nenhum item tem total. */
+export function ocTotalBrl(itens) {
+  const totais = (itens ?? []).map((item) => numberOrNull(item?.total)).filter((n) => n != null)
+  if (totais.length === 0) return null
+  return roundMoney(totais.reduce((acc, n) => acc + n, 0))
+}
+
 /** USD que vai no PDF / WhatsApp ao fornecedor (preço já com juros simples). */
 export function ocUsdPedidoFornecedor(item) {
   if (!item) return null

@@ -10,6 +10,9 @@ import {
 } from '../utils/pricingCalculations'
 import { fetchParametrosSistema } from './parametrosService'
 
+const CATALOG_SELECT =
+  'id, nome, referencia_complementar, fornecedor_id, estado, classe, quarter, moeda_origem, preco_original, desconto_usd, preco_interno_calculado, custo_icms, vencimento_lista, taxa_antecipacao, taxa_juros, ativo, fornecedores(nome)'
+
 /**
  * Busca produtos oficiais ativos para o simulador.
  * Quarter é obrigatório; filtra também por estado quando informado.
@@ -21,9 +24,7 @@ export async function fetchCatalogoSimulador({ quarter, estado } = {}) {
 
   let query = supabase
     .from('produtos_oficiais')
-    .select(
-      'id, nome, referencia_complementar, fornecedor_id, estado, classe, quarter, moeda_origem, preco_original, desconto_usd, preco_interno_calculado, custo_icms, vencimento_lista, taxa_antecipacao, taxa_juros, ativo, fornecedores(nome), lotes_importacao!inner(id, ativo)',
-    )
+    .select(`${CATALOG_SELECT}, lotes_importacao!inner(id, ativo)`)
     .eq('ativo', true)
     .eq('lotes_importacao.ativo', true)
     .ilike('quarter', `${quarter}%`)
@@ -42,47 +43,83 @@ export async function fetchCatalogoSimulador({ quarter, estado } = {}) {
     ? Number(parametrosRes.row.icms_percentual ?? DEFAULT_ICMS_PERCENTUAL)
     : DEFAULT_ICMS_PERCENTUAL
 
-  const rows = (data ?? []).map((p) => {
-    const fornecedorNome = p.fornecedores?.nome ?? ''
-    const displayNome = formatProdutoDisplayNome({
-      nome: p.nome,
-      referencia_complementar: p.referencia_complementar,
-      fornecedor_nome: fornecedorNome,
-    })
-
-    const custoUsd = Number(p.preco_original ?? 0)
-    const descontoUsd = Number(p.desconto_usd ?? 0)
-    const custoBrl = Number(p.preco_interno_calculado ?? 0)
-    const liquidoUsd = custoUsd - descontoUsd
-    const taxa = liquidoUsd > 0 ? custoBrl / liquidoUsd : 0
-
-    return {
-      id: p.id,
-      nome: p.nome,
-      displayNome,
-      referenciaComplementar: p.referencia_complementar ?? '',
-      fornecedorId: p.fornecedor_id ? String(p.fornecedor_id) : '',
-      fornecedorNome,
-      estado: p.estado,
-      classe: p.classe,
-      quarter: p.quarter,
-      moedaOrigem: p.moeda_origem,
-      custoUsd,
-      descontoUsd,
-      taxa,
-      custoBrl,
-      custoIcms: Number(
-        p.custo_icms ?? calcCustoIcmsFromBrl(custoBrl, icmsPercentual),
-      ),
-      vencimentoLista: p.vencimento_lista ?? '',
-      taxaAntecipacao: Number(
-        p.taxa_antecipacao ?? DEFAULT_TAXA_ANTECIPACAO,
-      ),
-      taxaJuros: Number(p.taxa_juros ?? DEFAULT_TAXA_JUROS),
-    }
-  })
+  const rows = (data ?? []).map((p) => mapCatalogRow(p, icmsPercentual))
 
   return { ok: true, rows, icmsPercentual }
+}
+
+/**
+ * Produtos de uma simulação salva que saíram do catálogo ativo (produto ou
+ * lista inativos). Mantém as linhas existentes calculáveis sem oferecê-los
+ * para novas linhas.
+ */
+export async function fetchProdutosInativosDaSimulacao({
+  ids,
+  quarter,
+  estado,
+  icmsPercentual = DEFAULT_ICMS_PERCENTUAL,
+} = {}) {
+  const uniqueIds = [...new Set((ids ?? []).filter(Boolean).map(String))]
+  if (!quarter || uniqueIds.length === 0) return { ok: true, rows: [] }
+
+  let query = supabase
+    .from('produtos_oficiais')
+    .select(`${CATALOG_SELECT}, lotes_importacao(id, ativo)`)
+    .in('id', uniqueIds)
+    .ilike('quarter', `${quarter}%`)
+
+  if (estado) {
+    query = query.eq('estado', estado)
+  }
+
+  const { data, error } = await query
+  if (error) return { ok: false, error: error.message }
+
+  const rows = (data ?? [])
+    .filter((p) => p.ativo === false || p.lotes_importacao?.ativo === false)
+    .map((p) => ({ ...mapCatalogRow(p, icmsPercentual), inativo: true }))
+
+  return { ok: true, rows }
+}
+
+function mapCatalogRow(p, icmsPercentual) {
+  const fornecedorNome = p.fornecedores?.nome ?? ''
+  const displayNome = formatProdutoDisplayNome({
+    nome: p.nome,
+    referencia_complementar: p.referencia_complementar,
+    fornecedor_nome: fornecedorNome,
+  })
+
+  const custoUsd = Number(p.preco_original ?? 0)
+  const descontoUsd = Number(p.desconto_usd ?? 0)
+  const custoBrl = Number(p.preco_interno_calculado ?? 0)
+  const liquidoUsd = custoUsd - descontoUsd
+  const taxa = liquidoUsd > 0 ? custoBrl / liquidoUsd : 0
+
+  return {
+    id: p.id,
+    nome: p.nome,
+    displayNome,
+    referenciaComplementar: p.referencia_complementar ?? '',
+    fornecedorId: p.fornecedor_id ? String(p.fornecedor_id) : '',
+    fornecedorNome,
+    estado: p.estado,
+    classe: p.classe,
+    quarter: p.quarter,
+    moedaOrigem: p.moeda_origem,
+    custoUsd,
+    descontoUsd,
+    taxa,
+    custoBrl,
+    custoIcms: Number(
+      p.custo_icms ?? calcCustoIcmsFromBrl(custoBrl, icmsPercentual),
+    ),
+    vencimentoLista: p.vencimento_lista ?? '',
+    taxaAntecipacao: Number(
+      p.taxa_antecipacao ?? DEFAULT_TAXA_ANTECIPACAO,
+    ),
+    taxaJuros: Number(p.taxa_juros ?? DEFAULT_TAXA_JUROS),
+  }
 }
 
 /** Fallback para dev quando não há produtos lançados. */
