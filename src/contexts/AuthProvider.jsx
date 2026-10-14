@@ -1,6 +1,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { requireSupabase } from '../services/supabase'
+import { removeCurrentPushSubscription } from '../push/pushClient'
 import { AuthContext } from './auth-context'
 
 async function fetchProfile(userId) {
@@ -123,6 +124,11 @@ export function AuthProvider({ children }) {
   }, [applySession, clearAuth])
 
   const signOut = useCallback(async () => {
+    try {
+      await removeCurrentPushSubscription()
+    } catch {
+      // A saída da conta segue mesmo se a inscrição push não for removida.
+    }
     clearAuth()
     try {
       await requireSupabase().auth.signOut()

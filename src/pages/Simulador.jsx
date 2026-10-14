@@ -465,7 +465,11 @@ export function Simulador() {
       }
       sim.clearDraft();
       setRemoteStatus("draft");
-      sim.showActionBanner("Simulação salva com sucesso.");
+      sim.showActionBanner(
+        result.notifyWarning
+          ? "Simulação salva, mas a notificação ao gestor não foi enviada."
+          : "Simulação salva com sucesso.",
+      );
       if (!simulationId) {
         navigate(
           `/simulador?simulationId=${encodeURIComponent(result.simulationId)}`,
@@ -811,7 +815,9 @@ export function Simulador() {
           ? result.notified
             ? "Pedido atualizado. O consultor foi notificado. O status permanece convertido."
             : "Pedido atualizado. O status permanece convertido."
-          : "Revisão salva. O consultor foi notificado das alterações.",
+          : result.notified
+            ? "Revisão salva. O consultor foi notificado das alterações."
+            : "Revisão salva.",
       );
     } finally {
       setReviewSaving(false);

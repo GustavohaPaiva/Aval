@@ -1,5 +1,8 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { Link, Navigate, useParams } from 'react-router-dom'
+import { EntregaParcialIndicador } from '../../components/logistica/EntregaParcialIndicador'
+import { LogisticaStatusSelect } from '../../components/logistica/LogisticaStatusSelect'
+import { ModalProgramarEntrega } from '../../components/logistica/ModalProgramarEntrega'
 import { PdfPreviewModal } from '../../components/pdf/PdfPreviewModal'
 import {
   IconArrowLeft,
@@ -14,12 +17,27 @@ import { PageHeader } from '../../components/ui/PageHeader'
 import { useSyncPageLoading } from '../../contexts/PageLoadingContext'
 import { useAbortableAsync } from '../../hooks/useAbortableAsync'
 import {
+  formatItemLinha,
+  formatVolumeTon,
+  normalizeStatusLogistica,
+  statusLogisticaLabel,
+} from '../../constants/logisticaStatus'
+import {
+  itensComSaldo,
+  montarCartoesLogistica,
+  motivoBloqueioMovimento,
+  moverStatusLogistica,
+  opcoesStatusDoCard,
+} from '../../constants/logisticaProgramacao'
+import {
   statusBadgeClass,
   statusLabelPt,
 } from '../../constants/simulationStatus'
 import {
+  atualizarStatusLogistica,
   fetchPdfAssinadoLogistica,
   fetchPedidoLogistica,
+  programarEntregaLogistica,
 } from '../../services/logisticaService'
 import { formatPrazoSemanaLabel } from '../../utils/calendarWeek'
 import { formatShortDate } from '../../utils/formatShortDate'
@@ -53,6 +71,13 @@ export function LogisticaPedidoDetalhePage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [pdfOpen, setPdfOpen] = useState(false)
+  const [savingStatus, setSavingStatus] = useState(false)
+  const [statusError, setStatusError] = useState(null)
+  const [programacao, setProgramacao] = useState(null)
+  const statusLock = useRef(false)
+
+  const cards = useMemo(() => (row ? montarCartoesLogistica([row]) : []), [row])
+  const saldoItens = useMemo(() => (row ? itensComSaldo(row) : []), [row])
 
   useSyncPageLoading(loading)
 
@@ -94,6 +119,83 @@ export function LogisticaPedidoDetalhePage() {
     return { blob: res.blob, nomePadrao: nome }
   }, [row, simulationId])
 
+  async function recarregarPedido() {
+    const res = await fetchPedidoLogistica(simulationId)
+    if (res.ok) setRow(res.data)
+    return res
+  }
+
+  async function changeStatus(card, nextStatus) {
+    if (!row || !card || statusLock.current) return
+    const bloqueio = motivoBloqueioMovimento(card, nextStatus)
+    if (bloqueio === 'igual') return
+    if (bloqueio === 'programar') {
+      setStatusError(null)
+      setProgramacao(card)
+      return
+    }
+    if (bloqueio) {
+      setStatusError({ message: bloqueio })
+      return
+    }
+
+    const expected = normalizeStatusLogistica(card.statusLogistica)
+    const previous = row
+    const movido = moverStatusLogistica(row, { cardId: card.cardId, status: nextStatus })
+    if (!movido.ok) {
+      setStatusError({ message: movido.error || 'Não foi possível mover o pedido.' })
+      return
+    }
+
+    statusLock.current = true
+    setSavingStatus(true)
+    setStatusError(null)
+    setRow(movido.pedido)
+    const res = await atualizarStatusLogistica({
+      simulationId: row.simulationId,
+      status: nextStatus,
+      statusEsperado: expected,
+      entregaId: card.entregaId,
+    })
+    if (!res.ok) {
+      setRow(previous)
+      statusLock.current = false
+      setSavingStatus(false)
+      setStatusError({
+        message: res.error || 'Não foi possível salvar o status.',
+        card,
+        nextStatus,
+      })
+      return
+    }
+    await recarregarPedido()
+    statusLock.current = false
+    setSavingStatus(false)
+  }
+
+  async function confirmarProgramacao({ linhas, idempotencyKey }) {
+    if (!programacao || statusLock.current) {
+      return { ok: false, ignored: true }
+    }
+    statusLock.current = true
+    setSavingStatus(true)
+    const res = await programarEntregaLogistica({
+      simulationId: programacao.simulationId,
+      linhas,
+      idempotencyKey,
+    })
+    if (!res.ok) {
+      statusLock.current = false
+      setSavingStatus(false)
+      return res
+    }
+    setProgramacao(null)
+    await recarregarPedido()
+    statusLock.current = false
+    setSavingStatus(false)
+    return res
+  }
+
   if (!simulationId) {
     return <Navigate to="/logistica" replace />
   }
@@ -111,12 +213,29 @@ export function LogisticaPedidoDetalhePage() {
         <PageHeader
           eyebrow="Logística"
           title={row?.clientNome || 'Pedido'}
-          description="Resumo operacional do pedido e PDF assinado, quando disponível."
+          description="Dados do cliente, itens, entrega e PDF assinado, quando disponível."
           className="mb-0 flex-1"
         />
       </div>
 
       {error ? <AlertMessage>{error}</AlertMessage> : null}
+      {statusError ? (
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <AlertMessage className="flex-1">{statusError.message}</AlertMessage>
+          {statusError.card ? (
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={savingStatus || !row}
+              onClick={() => {
+                void changeStatus(statusError.card, statusError.nextStatus)
+              }}
+            >
+              Tentar novamente
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
 
       {loading ? (
         <section className="rounded-2xl border border-slate-200/90 bg-white p-8 text-center text-sm text-slate-500 shadow-sm">
@@ -148,6 +267,45 @@ export function LogisticaPedidoDetalhePage() {
               ) : null}
             </div>
 
+            <div className="space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                Status logístico
+              </p>
+              {cards.map((card) => (
+                <div
+                  key={card.cardId}
+                  className="max-w-lg space-y-2 rounded-2xl border border-slate-200 bg-slate-50/70 p-3"
+                >
+                  <p className="text-sm font-semibold text-slate-900">
+                    {card.entregaId ? 'Quantidade programada' : 'Saldo do pedido'}
+                    <span className="ml-2 font-medium text-slate-500">
+                      {statusLogisticaLabel(card.statusLogistica)}
+                      {card.statusLogisticaEm
+                        ? ` · ${formatShortDate(card.statusLogisticaEm)}`
+                        : ''}
+                    </span>
+                  </p>
+                  <EntregaParcialIndicador row={card} />
+                  <LogisticaStatusSelect
+                    value={normalizeStatusLogistica(card.statusLogistica)}
+                    options={opcoesStatusDoCard(card)}
+                    busy={savingStatus}
+                    ariaLabel={
+                      card.entregaId
+                        ? 'Status da quantidade programada'
+                        : 'Status do saldo do pedido'
+                    }
+                    onChange={(next) => {
+                      void changeStatus(card, next)
+                    }}
+                  />
+                  {savingStatus ? (
+                    <p className="text-xs text-slate-500">Salvando…</p>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+
             <dl className="space-y-3">
               <InfoRow label="Cliente" value={row.clientNome} />
               <InfoRow label="Fazenda" value={row.fazenda} />
@@ -162,6 +320,33 @@ export function LogisticaPedidoDetalhePage() {
               <InfoRow label="Frete" value={freteLabel(row)} />
               <InfoRow label="Observações" value={row.observacoes} />
             </dl>
+          </Card>
+
+          <Card className="space-y-3 p-5 sm:p-6">
+            <h2 className="text-sm font-semibold text-slate-900">Itens</h2>
+            {saldoItens.length ? (
+              <ul className="divide-y divide-slate-100">
+                {saldoItens.map((item) => (
+                  <li
+                    key={item.id ?? formatItemLinha(item)}
+                    className="flex items-start gap-2 py-2 text-sm text-slate-800"
+                  >
+                    <IconPackage className="mt-0.5 size-4 shrink-0 text-slate-400" />
+                    <span>
+                      {formatItemLinha({ ...item, volume: item.volumeOriginal })}
+                      {item.volumeProgramadoItem > 0 ? (
+                        <span className="mt-0.5 block text-xs text-slate-500">
+                          Programado {formatVolumeTon(item.volumeProgramadoItem)} · Pendente{' '}
+                          {formatVolumeTon(item.volumePendente)}
+                        </span>
+                      ) : null}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-slate-500">Nenhum item neste pedido.</p>
+            )}
           </Card>
 
           <Card className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
@@ -224,6 +409,16 @@ export function LogisticaPedidoDetalhePage() {
           </div>
         </>
       ) : null}
+
+      <ModalProgramarEntrega
+        open={Boolean(programacao)}
+        pedido={programacao}
+        saving={savingStatus}
+        onClose={() => {
+          if (!savingStatus) setProgramacao(null)
+        }}
+        onConfirm={confirmarProgramacao}
+      />
 
       <PdfPreviewModal
         open={pdfOpen}

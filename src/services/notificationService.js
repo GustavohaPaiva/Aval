@@ -220,7 +220,7 @@ export function notificationTypeLabel(type) {
     case 'approval_request':
       return 'Solicitação de aprovação'
     case 'simulation_saved':
-      return 'Simulação salva'
+      return 'Simulação alterada'
     case 'simulation_approved':
       return 'Simulação aprovada'
     case 'simulation_rejected':
@@ -240,7 +240,9 @@ export function notificationTypeLabel(type) {
     case 'exchange_rate_changed':
       return 'Alteração no valor do dólar'
     case 'price_list_changed':
-      return 'Nova lista de preços'
+      return 'Lista de produtos'
+    case 'push_test':
+      return 'Teste de push'
     default:
       return 'Notificação'
   }

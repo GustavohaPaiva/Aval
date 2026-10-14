@@ -1,6 +1,8 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { build as bundleServiceWorker } from 'esbuild'
+import { resolve } from 'node:path'
 
 /// <reference types="vitest/config" />
 
@@ -16,6 +18,46 @@ function normalizeBasePath(raw, mode) {
   if (!base.startsWith('/')) base = `/${base}`
   if (!base.endsWith('/')) base = `${base}/`
   return base === '//' ? '/' : base
+}
+
+function avalServiceWorker() {
+  return {
+    name: 'aval-service-worker',
+    configureServer(server) {
+      server.middlewares.use(async (req, res, next) => {
+        const pathname = req.url?.split('?')[0]
+        if (pathname !== '/sw.js') return next()
+        try {
+          const transformed = await server.transformRequest('/src/sw.js')
+          if (!transformed?.code) {
+            res.statusCode = 404
+            res.end('service worker não encontrado')
+            return
+          }
+          res.statusCode = 200
+          res.setHeader('Content-Type', 'application/javascript; charset=utf-8')
+          res.setHeader('Cache-Control', 'no-cache')
+          res.setHeader('Service-Worker-Allowed', '/')
+          res.end(transformed.code)
+        } catch (error) {
+          res.statusCode = 500
+          res.end(String(error?.message ?? error))
+        }
+      })
+    },
+    async closeBundle() {
+      await bundleServiceWorker({
+        absWorkingDir: process.cwd(),
+        entryPoints: [resolve('src/sw.js')],
+        outfile: resolve('dist/sw.js'),
+        bundle: true,
+        format: 'esm',
+        platform: 'browser',
+        target: 'es2022',
+        legalComments: 'none',
+      })
+    },
+  }
 }
 
 function normalizeAppUrl(raw) {
@@ -62,6 +104,7 @@ export default defineConfig(({ mode }) => {
       include: ['src/**/*.test.js'],
     },
     plugins: [
+      avalServiceWorker(),
       react(),
       tailwindcss(),
       {

@@ -7,6 +7,7 @@ import {
   Routes,
 } from "react-router-dom";
 import { AppConfigError } from "./components/AppConfigError";
+import { PushNavigationListener } from "./components/PushNavigationListener";
 import { RouteFallback } from "./components/layout/RouteFallback";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AlertDialogProvider } from "./contexts/AlertDialogProvider";
@@ -169,6 +170,7 @@ export default function App() {
 
   return (
     <BrowserRouter basename={routerBasename}>
+      <PushNavigationListener />
       <AuthProvider>
         <AlertDialogProvider>
           <Routes>

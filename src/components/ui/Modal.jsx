@@ -8,6 +8,7 @@ export function Modal({
   children,
   footer,
   size = 'lg',
+  sheet = false,
 }) {
   const titleId = useId()
   const panelRef = useRef(null)
@@ -64,7 +65,12 @@ export function Modal({
         }}
       >
         <div
-          className="flex min-h-full items-center justify-center p-4 py-8"
+          className={[
+            'flex min-h-full w-full justify-center',
+            sheet
+              ? 'items-end p-0 sm:items-center sm:p-4 sm:py-8'
+              : 'items-center p-4 py-8',
+          ].join(' ')}
           onMouseDown={(e) => {
             if (e.target === e.currentTarget) onClose()
           }}
@@ -75,7 +81,10 @@ export function Modal({
             aria-modal="true"
             aria-labelledby={titleId}
             className={[
-              'flex max-h-[min(90vh,calc(100vh-4rem))] w-full flex-col overflow-hidden rounded-3xl border border-slate-200/90 bg-white shadow-[0_20px_50px_-15px_rgba(15,23,42,0.15)]',
+              'flex w-full flex-col overflow-hidden border border-slate-200/90 bg-white shadow-[0_20px_50px_-15px_rgba(15,23,42,0.15)]',
+              sheet
+                ? 'max-h-[94vh] rounded-t-3xl rounded-b-none sm:max-h-[min(90vh,calc(100vh-4rem))] sm:rounded-3xl'
+                : 'max-h-[min(90vh,calc(100vh-4rem))] rounded-3xl',
               widthClass,
             ].join(' ')}
             onMouseDown={(e) => e.stopPropagation()}
@@ -112,7 +121,14 @@ export function Modal({
               {children}
             </div>
             {footer ? (
-              <div className="shrink-0 border-t border-slate-100 px-5 py-4">
+              <div
+                className={[
+                  'shrink-0 border-t border-slate-100 px-5 py-4',
+                  sheet
+                    ? 'pb-[max(1rem,env(safe-area-inset-bottom))]'
+                    : '',
+                ].join(' ')}
+              >
                 {footer}
               </div>
             ) : null}

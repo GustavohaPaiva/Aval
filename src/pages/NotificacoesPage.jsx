@@ -14,6 +14,8 @@ import { useAbortableAsync } from "../hooks/useAbortableAsync";
 import { useAuth } from "../hooks/useAuth";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { usePersistedFilters } from "../hooks/usePersistedFilters";
+import { PushNotificationsCard } from "../components/notificacoes/PushNotificationsCard";
+import { notificationTargetPath } from "../../supabase/functions/enviar-push-notificacao/pushLogic.js";
 import {
   fetchNotifications,
   markAllNotificationsRead,
@@ -36,6 +38,7 @@ const NOTIFICATION_TYPES = [
   "pedido_fields_updated",
   "exchange_rate_changed",
   "price_list_changed",
+  "push_test",
 ];
 
 const TYPE_OPTIONS = [
@@ -244,33 +247,13 @@ export function NotificacoesPage() {
         );
       }
       if (notification.simulation_id) {
-        if (notification.type === "order_approved") {
-          navigate(
-            `/pedido/${encodeURIComponent(notification.simulation_id)}`,
-          );
-        } else if (notification.type === "pedido_fields_updated") {
-          navigate(
-            `/pedido/${encodeURIComponent(notification.simulation_id)}`,
-          );
-        } else if (notification.type === "simulation_gestor_updated") {
-          navigate(
-            `/simulador?simulationId=${encodeURIComponent(notification.simulation_id)}`,
-          );
-        } else if (notificationOpensPedido(notification.type) && isGestor) {
-          navigate(
-            `/pedido/${encodeURIComponent(notification.simulation_id)}`,
-          );
-        } else if (notification.type === "order_conversion_request") {
-          navigate(
-            `/simulador?simulationId=${encodeURIComponent(notification.simulation_id)}`,
-          );
-        } else if (notification.type === "order_rejected") {
-          navigate("/pedidos");
-        } else {
-          navigate(
-            `/simulador?simulationId=${encodeURIComponent(notification.simulation_id)}`,
-          );
-        }
+        navigate(
+          notificationTargetPath({
+            type: notification.type,
+            simulationId: notification.simulation_id,
+            role,
+          }),
+        );
       }
     } finally {
       setOpeningId(null);
@@ -337,6 +320,10 @@ export function NotificacoesPage() {
             </Button>
           ) : null
         }
+      />
+
+      <PushNotificationsCard
+        onTestCreated={() => setReloadToken((n) => n + 1)}
       />
 
       <PageInfoBanner

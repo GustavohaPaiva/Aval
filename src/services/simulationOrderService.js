@@ -889,8 +889,8 @@ export async function saveDraftSimulation(input) {
     const clientLabel = (input.clientName ?? '').trim() || 'Cliente';
     const notifyResult = await notifyGestoresSimulationSaved({
         simulationId: result.simulationId,
-        title: `Simulação salva — ${clientLabel}`,
-        body: `Proposta de ${formatBRL(input.totalProposta)} salva pelo consultor.`,
+        title: `Simulação alterada — ${clientLabel}`,
+        body: `O consultor alterou a simulação. Proposta de ${formatBRL(input.totalProposta)}.`,
     });
     if (!notifyResult.ok) {
         return { ...result, notifyWarning: notifyResult.error };
@@ -1184,10 +1184,26 @@ export async function saveGestorReview(input) {
         simUpdate.client_id = clientResult.clientId;
     }
 
+    let ownerIsConsultor = true;
+    if (
+        simRow.user_id &&
+        String(simRow.user_id) !== String(auth.user.id)
+    ) {
+        const { data: ownerProfile, error: ownerError } = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', simRow.user_id)
+            .maybeSingle();
+        if (!ownerError) {
+            ownerIsConsultor = ownerProfile?.role === 'consultor';
+        }
+    }
+
     let shouldNotify =
         !input.skipNotify &&
+        ownerIsConsultor &&
         Boolean(simRow.user_id) &&
-        simRow.user_id !== auth.user.id;
+        String(simRow.user_id) !== String(auth.user.id);
 
     if (shouldNotify && editingConverted) {
         const { data: previousItems, error: previousError } = await supabase

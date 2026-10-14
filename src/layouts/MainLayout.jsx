@@ -24,6 +24,7 @@ import {
 import { ListViewProvider, useListView } from "../contexts/ListViewContext";
 import { useAuth } from "../hooks/useAuth";
 import { fetchUnreadNotificationCount, NOTIFICATIONS_CHANGED_EVENT } from "../services/notificationService";
+import { removeCurrentPushSubscription } from "../push/pushClient";
 import { supabase } from "../services/supabase";
 
 const COLLAPSE_STORAGE_KEY = "syagri:sidebar-collapsed";
@@ -348,6 +349,11 @@ export function MainLayout() {
 
   async function handleSignOut() {
     setProfileOpen(false);
+    try {
+      await removeCurrentPushSubscription();
+    } catch {
+      // A saída da conta segue mesmo se a inscrição push não for removida.
+    }
     try {
       await supabase.auth.signOut();
     } finally {
