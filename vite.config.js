@@ -51,7 +51,7 @@ function avalServiceWorker() {
         entryPoints: [resolve('src/sw.js')],
         outfile: resolve('dist/sw.js'),
         bundle: true,
-        format: 'esm',
+        format: 'iife',
         platform: 'browser',
         target: 'es2022',
         legalComments: 'none',

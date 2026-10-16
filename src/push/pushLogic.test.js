@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  absoluteAppUrl,
   buildPushPayload,
   canClaimDelivery,
   deliveryResultPatch,
@@ -85,6 +86,25 @@ describe('payload e duplicidade', () => {
     expect(payload.body).not.toContain('\n')
     expect(payload.notificationId).toBeNull()
     expect(payload.url).toBe('/notificacoes')
+    expect(payload.web_push).toBe(8030)
+    expect(payload.notification.navigate).toBe('https://aval-fertilizantes.online/notificacoes')
+    expect(payload.notification.title).toBe(payload.title)
+    expect(payload.notification.tag).toBeUndefined()
+  })
+
+  it('aponta o push declarativo para a origem configurada', () => {
+    const payload = buildPushPayload({
+      title: 'Pedido aprovado',
+      body: 'O gestor aprovou.',
+      notificationId: SIM,
+      url: `/pedido/${SIM}`,
+      appOrigin: 'https://app.exemplo.com.br/',
+    })
+    expect(payload.notification.navigate).toBe(`https://app.exemplo.com.br/pedido/${SIM}`)
+    expect(payload.notification.tag).toBe(`aval-${SIM}`)
+    expect(absoluteAppUrl('https://evil.example', 'https://app.exemplo.com.br')).toBe(
+      'https://app.exemplo.com.br/notificacoes',
+    )
   })
 
   it('o service worker revalida o payload', () => {
@@ -95,6 +115,18 @@ describe('payload e duplicidade', () => {
       url: '/pedido/1',
     })
     expect(display).toMatchObject({
+      title: 'Pedido aprovado',
+      notificationId: SIM,
+      url: '/pedido/1',
+    })
+    const declarative = pushDisplayFromPayload(buildPushPayload({
+      title: 'Pedido aprovado',
+      body: 'O gestor aprovou.',
+      notificationId: SIM,
+      url: '/pedido/1',
+      appOrigin: 'https://aval-fertilizantes.online',
+    }))
+    expect(declarative).toMatchObject({
       title: 'Pedido aprovado',
       notificationId: SIM,
       url: '/pedido/1',

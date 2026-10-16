@@ -22,20 +22,21 @@ self.addEventListener('push', (event) => {
         raw = { title: 'Aval', body: '' }
       }
       const display = pushDisplayFromPayload(raw)
-      const scope = self.registration.scope
-      await self.registration.showNotification(display.title, {
+      const options = {
         body: display.body,
         lang: 'pt-BR',
-        icon: new URL('apple-touch-icon.png', scope).href,
-        badge: new URL('favicon-32.png', scope).href,
         data: {
           url: display.url,
           notificationId: display.notificationId,
         },
-        tag: display.notificationId
-          ? `aval-${display.notificationId}`
-          : undefined,
-      })
+      }
+      if (display.notificationId) options.tag = `aval-${display.notificationId}`
+      const icon = new URL('apple-touch-icon.png', self.registration.scope).href
+      try {
+        await self.registration.showNotification(display.title, { ...options, icon })
+      } catch {
+        await self.registration.showNotification(display.title, options)
+      }
     })(),
   )
 })

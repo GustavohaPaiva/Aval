@@ -275,6 +275,9 @@ async function sendOne(admin, claimed) {
       simulationId: notification.simulation_id,
       role: profile?.role ?? null,
     }),
+    appOrigin: Deno.env.get("APP_ORIGIN")?.trim()
+      || Deno.env.get("VITE_APP_URL")?.trim()
+      || "",
   });
   const server = await getPushServer();
   let sent = 0;

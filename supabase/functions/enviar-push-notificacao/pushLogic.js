@@ -99,7 +99,9 @@ export function notificationTargetPath({ type, simulationId, role }) {
   return `/simulador?simulationId=${id}`
 }
 
-export function buildPushPayload({ title, body, notificationId, url }) {
+const DEFAULT_APP_ORIGIN = 'https://aval-fertilizantes.online'
+
+function displayFields({ title, body, notificationId, url }) {
   return {
     title: clip(title, 120) || 'Aval',
     body: clip(body, 240),
@@ -108,13 +110,74 @@ export function buildPushPayload({ title, body, notificationId, url }) {
   }
 }
 
+export function httpsOrigin(value) {
+  if (typeof value !== 'string' || !value.trim()) return null
+  try {
+    const url = new URL(value.trim())
+    if (url.protocol !== 'https:') return null
+    return url.origin
+  } catch {
+    return null
+  }
+}
+
+/** URL absoluta no mesmo site. O push declarativo do iOS exige isso em `navigate`. */
+export function absoluteAppUrl(path, appOrigin) {
+  const origin = httpsOrigin(appOrigin)
+  if (!origin) return null
+  const resolved = new URL(safeNotificationPath(path), `${origin}/`)
+  if (resolved.origin !== origin) return null
+  return resolved.href
+}
+
+function pathFromNavigate(value) {
+  if (typeof value !== 'string' || !value.trim()) return null
+  try {
+    const url = new URL(value.trim())
+    if (url.protocol !== 'https:') return null
+    return `${url.pathname}${url.search}${url.hash}`
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Formato declarativo (web_push 8030): o iOS/iPadOS mostra o aviso mesmo se o
+ * service worker não acordar. Os campos no topo mantêm o service worker antigo.
+ */
+export function buildPushPayload({ title, body, notificationId, url, appOrigin }) {
+  const display = displayFields({ title, body, notificationId, url })
+  const origin = httpsOrigin(appOrigin) || DEFAULT_APP_ORIGIN
+  const notification = {
+    title: display.title,
+    lang: 'pt-BR',
+    dir: 'ltr',
+    body: display.body,
+    navigate: absoluteAppUrl(display.url, origin),
+    data: {
+      url: display.url,
+      notificationId: display.notificationId,
+    },
+  }
+  if (display.notificationId) notification.tag = `aval-${display.notificationId}`
+  return {
+    web_push: 8030,
+    notification,
+    ...display,
+  }
+}
+
 export function pushDisplayFromPayload(raw) {
   const data = raw && typeof raw === 'object' ? raw : {}
-  return buildPushPayload({
-    title: data.title,
-    body: data.body,
-    notificationId: data.notificationId,
-    url: data.url,
+  const note = data.web_push === 8030 && data.notification && typeof data.notification === 'object'
+    ? data.notification
+    : null
+  const nested = note?.data && typeof note.data === 'object' ? note.data : {}
+  return displayFields({
+    title: note?.title ?? data.title,
+    body: note?.body ?? data.body,
+    notificationId: nested.notificationId ?? data.notificationId,
+    url: nested.url ?? data.url ?? pathFromNavigate(note?.navigate),
   })
 }
 

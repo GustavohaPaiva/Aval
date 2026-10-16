@@ -12,11 +12,14 @@ export function registerAppServiceWorker() {
   if (!window.isSecureContext) return Promise.resolve(null)
 
   const url = `${import.meta.env.BASE_URL}sw.js`
-  return navigator.serviceWorker.register(url, {
-    type: 'module',
+  const options = {
     scope: import.meta.env.BASE_URL,
     updateViaCache: 'none',
-  })
+  }
+  // Em dev o Vite serve o SW como módulo. Em produção ele é script clássico:
+  // no celular, worker de módulo às vezes não acorda quando o push chega.
+  if (import.meta.env.DEV) options.type = 'module'
+  return navigator.serviceWorker.register(url, options)
 }
 
 async function readBrowserSubscription() {
