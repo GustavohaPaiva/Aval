@@ -1,0 +1,1 @@
+import{t as e}from"./vendor-react-YvL5Yovn.js";import{y as t}from"./index-BQCM0bO6.js";var n=e();function r({cards:e,list:r,cardsClassName:i=``}){let{enabled:a}=t();return a?(0,n.jsxs)(n.Fragment,{children:[(0,n.jsx)(`div`,{className:[`lg:hidden`,i].filter(Boolean).join(` `),children:e}),r]}):e}export{r as t};
