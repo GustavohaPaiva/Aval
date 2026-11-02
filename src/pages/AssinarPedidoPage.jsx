@@ -192,13 +192,8 @@ export function AssinarPedidoPage() {
     <PublicShell>
       <div className="mb-4">
         <h1 className="text-xl font-semibold text-slate-900">
-          Assinatura do pedido
+          {payload.client_nome || 'Assinatura do pedido'}
         </h1>
-        <p className="mt-1 text-sm text-slate-600">
-          {payload.client_nome
-            ? `Documento para ${payload.client_nome}.`
-            : 'Revise o documento e assine abaixo.'}
-        </p>
       </div>
 
       {payload.pedido_snapshot?.simulation ? (
@@ -255,10 +250,6 @@ export function AssinarPedidoPage() {
         >
           {submitting ? 'Assinando…' : 'Confirmar assinatura'}
         </Button>
-        <p className="text-center text-xs text-slate-500">
-          Ao confirmar, seu nome e CPF serão aplicados ao documento junto com a
-          assinatura.
-        </p>
       </form>
     </PublicShell>
   )
@@ -272,9 +263,6 @@ function PublicShell({ children }) {
           <BrandLogoFull className="h-10 w-auto" />
         </header>
         <main className="flex-1">{children}</main>
-        <footer className="mt-8 text-center text-xs text-slate-400">
-          Ambiente exclusivo para assinatura do pedido · SYAGRI
-        </footer>
       </div>
     </div>
   )

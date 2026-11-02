@@ -60,6 +60,61 @@ export function normalizeSubscription(userId, json, deviceLabel) {
   }
 }
 
+export function applicationServerKeysMatch(existingKey, nextKey) {
+  if (!existingKey || !nextKey) return false
+  const left = existingKey instanceof Uint8Array ? existingKey : new Uint8Array(existingKey)
+  const right = nextKey instanceof Uint8Array ? nextKey : new Uint8Array(nextKey)
+  if (left.length === 0 || left.length !== right.length) return false
+  let diff = 0
+  for (let i = 0; i < left.length; i += 1) diff |= left[i] ^ right[i]
+  return diff === 0
+}
+
+/**
+ * Reutiliza a inscrição atual quando a chave VAPID é a mesma.
+ * Trocar sem necessidade deixa o endpoint antigo ativo e duplica o push.
+ */
+export function subscriptionReusePlan({ currentEndpoint, currentKey, nextKey }) {
+  if (!currentEndpoint) {
+    return { action: 'replace', previousEndpoint: null }
+  }
+  // Sem a chave exposta pelo navegador, reutiliza. Trocar a cada abertura
+  // invalidaria o endpoint e poderia duplicar o envio.
+  if (!currentKey || applicationServerKeysMatch(currentKey, nextKey)) {
+    return { action: 'reuse', previousEndpoint: null }
+  }
+  return {
+    action: 'replace',
+    previousEndpoint: currentEndpoint,
+  }
+}
+
+export function pushTestFeedback({ status, lastError }) {
+  if (status === 'sent') {
+    return 'Enviada para os dispositivos ativos desta conta. Confira a bandeja do sistema, também com o Aval fechado.'
+  }
+  if (
+    lastError === 'vapid_not_configured' ||
+    lastError === 'push_dispatch_not_configured'
+  ) {
+    return 'A notificação foi registrada, mas o servidor ainda não tem as chaves de envio.'
+  }
+  if (lastError === 'no_subscription') {
+    return 'Não há dispositivo ativo nesta conta. Ative as notificações e tente de novo.'
+  }
+  if (status === 'failed') {
+    return 'O envio falhou. Inscrições inválidas são descartadas nas próximas tentativas.'
+  }
+  if (status === 'skipped') return 'O envio foi ignorado para este evento.'
+  return 'A notificação foi registrada e segue na fila de envio.'
+}
+
+export function isPushConfigError(message) {
+  return /chave pública|não está configurada|não está publicado|vapid/i.test(
+    String(message ?? ''),
+  )
+}
+
 export function urlBase64ToUint8Array(base64String) {
   const value = String(base64String ?? '').trim()
   if (!value) throw new Error('Chave pública VAPID ausente.')
@@ -75,7 +130,7 @@ export function urlBase64ToUint8Array(base64String) {
 }
 
 /**
- * @returns {'checking'|'activating'|'unsupported'|'ios_install'|'denied'|'error'|'active'|'idle'}
+ * @returns {'checking'|'activating'|'unsupported'|'ios_install'|'denied'|'misconfigured'|'error'|'active'|'idle'}
  */
 export function resolvePushStatus(env) {
   if (env.activating) return 'activating'
@@ -86,6 +141,7 @@ export function resolvePushStatus(env) {
   if (env.ios && !env.standalone && !env.pushManager) return 'ios_install'
   if (!env.pushManager) return 'unsupported'
   if (env.permission === 'denied') return 'denied'
+  if (env.configError || isPushConfigError(env.error)) return 'misconfigured'
   if (env.error) return 'error'
   if (env.permission === 'granted' && env.browserSubscription && env.serverSubscription) {
     return 'active'

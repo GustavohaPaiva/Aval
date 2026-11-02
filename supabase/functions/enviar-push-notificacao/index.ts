@@ -1,6 +1,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { ApplicationServer, Urgency } from "jsr:@negrel/webpush@0.5.0";
 import {
+  appBadgeCount,
   buildPushPayload,
   canClaimDelivery,
   deliveryResultPatch,
@@ -37,8 +38,11 @@ function timingSafeEqual(a, b) {
 
 function isServiceRole(bearer) {
   const expected = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-  if (!bearer || !expected) return false;
-  return timingSafeEqual(bearer, expected);
+  const dispatch = Deno.env.get("PUSH_DISPATCH_KEY") ?? "";
+  if (!bearer) return false;
+  if (expected && timingSafeEqual(bearer, expected)) return true;
+  if (dispatch && timingSafeEqual(bearer, dispatch)) return true;
+  return false;
 }
 
 function adminClient() {
@@ -266,6 +270,12 @@ async function sendOne(admin, claimed) {
     .eq("id", notification.recipient_id)
     .maybeSingle();
 
+  const { count: unreadCount } = await admin
+    .from("notifications")
+    .select("id", { count: "exact", head: true })
+    .eq("recipient_id", notification.recipient_id)
+    .is("read_at", null);
+
   const payload = buildPushPayload({
     title: notification.title,
     body: notification.body,
@@ -278,6 +288,7 @@ async function sendOne(admin, claimed) {
     appOrigin: Deno.env.get("APP_ORIGIN")?.trim()
       || Deno.env.get("VITE_APP_URL")?.trim()
       || "",
+    badge: appBadgeCount(unreadCount) || 1,
   });
   const server = await getPushServer();
   let sent = 0;

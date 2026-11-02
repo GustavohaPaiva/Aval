@@ -32,10 +32,55 @@ self.addEventListener('push', (event) => {
       }
       if (display.notificationId) options.tag = `aval-${display.notificationId}`
       const icon = new URL('apple-touch-icon.png', self.registration.scope).href
+      const badge = applyAppBadge(display.badge)
       try {
         await self.registration.showNotification(display.title, { ...options, icon })
       } catch {
         await self.registration.showNotification(display.title, options)
+      }
+      await badge
+    })(),
+  )
+})
+
+async function applyAppBadge(badge) {
+  if (!Number.isInteger(badge)) return
+  const nav = self.navigator
+  try {
+    if (badge > 0 && typeof nav?.setAppBadge === 'function') {
+      await nav.setAppBadge(badge)
+      return
+    }
+    if (badge === 0 && typeof nav?.clearAppBadge === 'function') {
+      await nav.clearAppBadge()
+    }
+  } catch {
+    // A plataforma pode não mostrar a bolinha do ícone.
+  }
+}
+
+self.addEventListener('pushsubscriptionchange', (event) => {
+  event.waitUntil(
+    (async () => {
+      const key = event.oldSubscription?.options?.applicationServerKey
+      let next = event.newSubscription
+      if (!next && key) {
+        next = await self.registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: key,
+        })
+      }
+      if (!next) return
+      const windows = await self.clients.matchAll({
+        type: 'window',
+        includeUncontrolled: true,
+      })
+      const subscription = next.toJSON()
+      for (const client of windows) {
+        client.postMessage({
+          type: 'aval:push-subscription-changed',
+          subscription,
+        })
       }
     })(),
   )

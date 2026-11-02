@@ -2,8 +2,12 @@ import { requireSupabase } from '../services/supabase'
 import {
   deviceLabelFromUserAgent,
   normalizeSubscription,
+  subscriptionReusePlan,
   urlBase64ToUint8Array,
 } from './pushStatus'
+
+let cachedVapidPublicKey = ''
+let vapidKeyPromise = null
 
 export function registerAppServiceWorker() {
   if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
@@ -74,6 +78,9 @@ async function fetchVapidPublicKey() {
     body: JSON.stringify({ action: 'vapid-public-key' }),
   })
   const payload = await response.json().catch(() => ({}))
+  if (response.status === 404) {
+    throw new Error('O envio de push não está publicado no servidor.')
+  }
   if (!response.ok || typeof payload.publicKey !== 'string') {
     throw new Error(
       payload.error ||
@@ -83,42 +90,40 @@ async function fetchVapidPublicKey() {
   return payload.publicKey
 }
 
-export async function activatePushSubscription(userId) {
-  if (!('Notification' in window) || !('PushManager' in window)) {
-    throw new Error('Este navegador não suporta notificações push.')
+/** Busca a chave pública uma vez. A ativação no clique não pode esperar a rede. */
+export function warmVapidPublicKey() {
+  if (cachedVapidPublicKey) return Promise.resolve(cachedVapidPublicKey)
+  if (!vapidKeyPromise) {
+    vapidKeyPromise = fetchVapidPublicKey()
+      .then((key) => {
+        cachedVapidPublicKey = key
+        return key
+      })
+      .catch((error) => {
+        vapidKeyPromise = null
+        throw error
+      })
   }
-  const permission = await Notification.requestPermission()
-  if (permission !== 'granted') {
-    return { ok: false, permission }
-  }
+  return vapidKeyPromise
+}
 
-  const registration = await registerAppServiceWorker()
-  if (!registration) throw new Error('Não foi possível registrar o service worker.')
-  await navigator.serviceWorker.ready
-
-  const publicKey = await fetchVapidPublicKey()
-  const current = await registration.pushManager.getSubscription()
-  if (current) {
-    try {
-      await current.unsubscribe()
-    } catch {
-      // Uma inscrição antiga com outra chave não impede criar a nova.
-    }
-  }
-  const subscription = await registration.pushManager.subscribe({
-    userVisibleOnly: true,
-    applicationServerKey: urlBase64ToUint8Array(publicKey),
-  })
-
+async function persistSubscription(userId, subscription, previousEndpoint) {
   const row = normalizeSubscription(
     userId,
     subscription.toJSON(),
     deviceLabelFromUserAgent(navigator.userAgent),
   )
-  const { error } = await requireSupabase()
+  const supabase = requireSupabase()
+  if (previousEndpoint && previousEndpoint !== row.endpoint) {
+    const { error: deleteError } = await supabase
+      .from('push_subscriptions')
+      .delete()
+      .eq('endpoint', previousEndpoint)
+    if (deleteError) throw new Error(deleteError.message)
+  }
+  const { error } = await supabase
     .from('push_subscriptions')
     .upsert(row, { onConflict: 'endpoint' })
-
   if (error) {
     const message = error.message || 'Não foi possível salvar a inscrição.'
     if (/row-level security|push_subscriptions_endpoint/i.test(message)) {
@@ -128,8 +133,103 @@ export async function activatePushSubscription(userId) {
     }
     throw new Error(message)
   }
+}
 
+async function subscribeWithCachedKey(registration) {
+  const applicationServerKey = urlBase64ToUint8Array(cachedVapidPublicKey)
+  const current = await registration.pushManager.getSubscription()
+  const plan = subscriptionReusePlan({
+    currentEndpoint: current?.endpoint ?? null,
+    currentKey: current?.options?.applicationServerKey ?? null,
+    nextKey: applicationServerKey,
+  })
+  if (plan.action === 'reuse' && current) {
+    return { subscription: current, previousEndpoint: null }
+  }
+  if (current) {
+    try {
+      await current.unsubscribe()
+    } catch {
+      // A inscrição antiga pode já ter sido invalidada pelo navegador.
+    }
+  }
+  const subscription = await registration.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey,
+  })
+  return { subscription, previousEndpoint: plan.previousEndpoint }
+}
+
+export async function activatePushSubscription(userId) {
+  if (!('Notification' in window) || !('PushManager' in window)) {
+    throw new Error('Este navegador não suporta notificações push.')
+  }
+  if (!cachedVapidPublicKey) await warmVapidPublicKey()
+
+  const permission = await Notification.requestPermission()
+  if (permission !== 'granted') {
+    return { ok: false, permission }
+  }
+
+  const existing = await navigator.serviceWorker.getRegistration(import.meta.env.BASE_URL)
+  const registration = existing ?? (await registerAppServiceWorker())
+  if (!registration) throw new Error('Não foi possível registrar o service worker.')
+  await navigator.serviceWorker.ready
+  const { subscription, previousEndpoint } = await subscribeWithCachedKey(registration)
+  await persistSubscription(userId, subscription, previousEndpoint)
   return { ok: true, permission: 'granted' }
+}
+
+/**
+ * Renova a inscrição só quando a permissão já foi concedida.
+ * Não chama requestPermission.
+ */
+export async function syncPushSubscription(userId) {
+  if (!userId || typeof Notification === 'undefined') return { ok: false, skipped: true }
+  if (Notification.permission !== 'granted') return { ok: false, skipped: true }
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    return { ok: false, skipped: true }
+  }
+  if (!window.isSecureContext) return { ok: false, skipped: true }
+
+  await registerAppServiceWorker()
+  if (!cachedVapidPublicKey) await warmVapidPublicKey()
+  const registration = await navigator.serviceWorker.ready
+  try {
+    const subscribed = await subscribeWithCachedKey(registration)
+    const { subscription } = subscribed
+    const previousEndpoint = subscribed.previousEndpoint
+    if (!previousEndpoint) {
+      const { data, error } = await requireSupabase()
+        .from('push_subscriptions')
+        .select('id')
+        .eq('endpoint', subscription.endpoint)
+        .eq('active', true)
+        .maybeSingle()
+      if (error) throw new Error(error.message)
+      if (data?.id) return { ok: true, unchanged: true }
+    }
+    await persistSubscription(userId, subscription, previousEndpoint)
+    return { ok: true }
+  } catch (error) {
+    if (error?.name === 'NotAllowedError' || error?.name === 'InvalidStateError') {
+      return { ok: false, needsGesture: true }
+    }
+    throw error
+  }
+}
+
+export async function savePushSubscription(userId, json) {
+  if (!userId || !json) return
+  const row = normalizeSubscription(
+    userId,
+    json,
+    deviceLabelFromUserAgent(navigator.userAgent),
+  )
+  const { error } = await requireSupabase()
+    .from('push_subscriptions')
+    .upsert(row, { onConflict: 'endpoint' })
+  if (error) throw new Error(error.message)
 }
 
 export async function removeCurrentPushSubscription() {
@@ -158,4 +258,19 @@ export async function requestOwnPushTest() {
   const { data, error } = await requireSupabase().rpc('request_own_push_test')
   if (error) return { ok: false, error: error.message }
   return { ok: true, id: data }
+}
+
+export async function readOwnPushTestStatus(notificationId) {
+  const { data, error } = await requireSupabase().rpc('own_push_test_status', {
+    p_notification_id: notificationId,
+  })
+  if (error) return { ok: false, error: error.message }
+  const row = Array.isArray(data) ? data[0] : null
+  if (!row) return { ok: true, status: null, lastError: null, attempts: 0 }
+  return {
+    ok: true,
+    status: row.status ?? null,
+    lastError: row.last_error ?? null,
+    attempts: row.attempts ?? 0,
+  }
 }

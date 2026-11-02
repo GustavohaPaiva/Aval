@@ -141,11 +141,22 @@ function pathFromNavigate(value) {
   }
 }
 
+/** Número do ícone. 0 limpa a bolinha. Acima de 99 fica 99. */
+export function appBadgeCount(value) {
+  const count = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(count)) return null
+  const whole = Math.trunc(count)
+  if (whole < 0) return null
+  if (whole > 99) return 99
+  return whole
+}
+
 /**
  * Formato declarativo (web_push 8030): o iOS/iPadOS mostra o aviso mesmo se o
  * service worker não acordar. Os campos no topo mantêm o service worker antigo.
+ * `app_badge` é a bolinha do ícone no iPhone e no Mac.
  */
-export function buildPushPayload({ title, body, notificationId, url, appOrigin }) {
+export function buildPushPayload({ title, body, notificationId, url, appOrigin, badge }) {
   const display = displayFields({ title, body, notificationId, url })
   const origin = httpsOrigin(appOrigin) || DEFAULT_APP_ORIGIN
   const notification = {
@@ -159,6 +170,8 @@ export function buildPushPayload({ title, body, notificationId, url, appOrigin }
       notificationId: display.notificationId,
     },
   }
+  const badgeCount = appBadgeCount(badge)
+  if (badgeCount != null) notification.app_badge = badgeCount
   if (display.notificationId) notification.tag = `aval-${display.notificationId}`
   return {
     web_push: 8030,
@@ -173,12 +186,15 @@ export function pushDisplayFromPayload(raw) {
     ? data.notification
     : null
   const nested = note?.data && typeof note.data === 'object' ? note.data : {}
-  return displayFields({
+  const fields = displayFields({
     title: note?.title ?? data.title,
     body: note?.body ?? data.body,
     notificationId: nested.notificationId ?? data.notificationId,
     url: nested.url ?? data.url ?? pathFromNavigate(note?.navigate),
   })
+  const badge = appBadgeCount(note?.app_badge ?? data.app_badge)
+  if (badge == null) return fields
+  return { ...fields, badge }
 }
 
 export function canClaimDelivery(row, nowMs) {

@@ -185,13 +185,16 @@ export async function fetchPedidosLogistica(params = {}) {
   if (!entregasRes.ok) return entregasRes
 
   const itensPorPedido = groupItensPorPedido(itensRes.data)
+  const idsVisiveis = new Set(
+    itensRes.data.map((item) => item.simulationId).filter(Boolean),
+  )
 
   let rows = anexarEntregas(
     (pedidosRes.data ?? []).map((sim) =>
       mapPedido(sim, itensPorPedido.get(String(sim.id)) ?? []),
     ),
     entregasRes.data,
-  )
+  ).filter((row) => idsVisiveis.has(row.simulationId))
 
   if (search) {
     rows = rows.filter((row) => pedidoMatchesSearch(row, search))
@@ -225,6 +228,9 @@ export async function fetchPedidoLogistica(simulationId) {
   if (!pedidoRes.data) return { ok: false, error: 'Pedido não encontrado.' }
   if (!itensRes.ok) return itensRes
   if (!entregasRes.ok) return entregasRes
+  if (itensRes.data.length === 0) {
+    return { ok: false, error: 'Pedido não encontrado.' }
+  }
 
   const [pedido] = anexarEntregas(
     [mapPedido(pedidoRes.data, itensRes.data)],

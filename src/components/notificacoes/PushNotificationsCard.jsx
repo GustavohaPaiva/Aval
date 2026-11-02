@@ -6,40 +6,41 @@ import { emitNotificationsChanged } from '../../services/notificationService'
 const COPY = {
   checking: {
     title: 'Verificando este dispositivo',
-    detail: 'Consultando permissão e inscrição de push.',
+    detail: 'Consultando a permissão e o registro.',
   },
   activating: {
-    title: 'Ativação em andamento',
-    detail: 'Aguarde a permissão do navegador e o registro da inscrição.',
+    title: 'Ativando',
+    detail: 'Confirme a permissão no navegador.',
   },
   unsupported: {
-    title: 'Navegador ou contexto incompatível',
-    detail:
-      'Este dispositivo não oferece Web Push aqui. Use Chrome no Android ou um navegador atualizado em HTTPS. No computador, Chrome, Edge e Firefox também funcionam.',
+    title: 'Não disponíveis neste dispositivo',
+    detail: 'Este navegador não recebe push. No computador, use Chrome ou Edge. No Android, use o Chrome.',
   },
   ios_install: {
-    title: 'No iPhone e no iPad, instale o app na Tela de Início',
+    title: 'Não disponíveis nesta aba',
     detail:
-      'O push no iOS/iPadOS exige a versão 16.4 ou superior e o Aval aberto pelo ícone da Tela de Início, não pela aba do Safari. No Safari, toque em Compartilhar e em Adicionar à Tela de Início. Depois abra o Aval por esse ícone e ative as notificações aqui.',
+      'No iPhone e no iPad, o push exige iOS 16.4 ou superior e o Aval instalado na Tela de Início. No Safari, use Compartilhar e Adicionar à Tela de Início. Abra pelo ícone e toque em Ativar.',
   },
   denied: {
-    title: 'Permissão negada pelo navegador',
+    title: 'Bloqueadas pelo navegador',
     detail:
-      'O sistema não vai pedir de novo enquanto a permissão estiver bloqueada. No computador, abra o cadeado na barra de endereço, escolha Notificações e permita. No iPhone, vá em Ajustes, Notificações, Aval, e ative as notificações. Depois atualize esta página.',
+      'Libere as notificações nas configurações do site ou em Ajustes, Notificações, Aval. Depois atualize esta página.',
+  },
+  misconfigured: {
+    title: 'Falha de configuração',
+    detail: 'O servidor de push não está pronto. Os avisos continuam nesta tela.',
   },
   error: {
-    title: 'Erro ao registrar ou salvar a inscrição',
-    detail: 'A notificação interna não foi afetada. Tente ativar novamente.',
+    title: 'Falha ao registrar este dispositivo',
+    detail: 'Os avisos internos não foram afetados. Tente ativar de novo.',
   },
   active: {
-    title: 'Notificações ativadas neste dispositivo',
-    detail:
-      'A permissão do navegador está concedida e a inscrição push foi salva na sua conta. As notificações do Aval chegam pelo sistema do aparelho mesmo com a página fechada, quando houver conexão.',
+    title: 'Ativadas neste dispositivo',
+    detail: 'Os avisos chegam com o Aval aberto, em segundo plano ou fechado, quando houver conexão.',
   },
   idle: {
-    title: 'Ative as notificações neste dispositivo',
-    detail:
-      'As mensagens continuam nesta tela. Se você ativar, o mesmo aviso também pode aparecer no sistema do celular ou do computador. A permissão só é pedida quando você tocar no botão.',
+    title: 'Desativadas neste dispositivo',
+    detail: 'Toque em Ativar para receber os avisos aqui. A permissão só é pedida nesse momento.',
   },
 }
 
@@ -115,7 +116,7 @@ export function PushNotificationsCard({ onTestCreated }) {
               </Button>
             </>
           ) : null}
-          {displayStatus === 'idle' || displayStatus === 'error' || displayStatus === 'activating' ? (
+          {displayStatus === 'idle' || displayStatus === 'error' || displayStatus === 'misconfigured' || displayStatus === 'activating' ? (
             <Button
               type="button"
               variant="primary"

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   absoluteAppUrl,
+  appBadgeCount,
   buildPushPayload,
   canClaimDelivery,
   deliveryResultPatch,
@@ -10,10 +11,14 @@ import {
   urlWithinAppScope,
 } from '../../supabase/functions/enviar-push-notificacao/pushLogic.js'
 import {
+  applicationServerKeysMatch,
   deviceLabelFromUserAgent,
   isIosUserAgent,
+  isPushConfigError,
   normalizeSubscription,
+  pushTestFeedback,
   resolvePushStatus,
+  subscriptionReusePlan,
   urlBase64ToUint8Array,
 } from './pushStatus'
 
@@ -102,9 +107,30 @@ describe('payload e duplicidade', () => {
     })
     expect(payload.notification.navigate).toBe(`https://app.exemplo.com.br/pedido/${SIM}`)
     expect(payload.notification.tag).toBe(`aval-${SIM}`)
+    expect(payload.notification.app_badge).toBeUndefined()
     expect(absoluteAppUrl('https://evil.example', 'https://app.exemplo.com.br')).toBe(
       'https://app.exemplo.com.br/notificacoes',
     )
+  })
+
+  it('coloca a bolinha do ícone e limita em 99', () => {
+    const payload = buildPushPayload({
+      title: 'Pedido',
+      body: 'Novo',
+      notificationId: SIM,
+      url: '/notificacoes',
+      badge: 4,
+    })
+    expect(payload.notification.app_badge).toBe(4)
+    expect(pushDisplayFromPayload(payload).badge).toBe(4)
+    expect(appBadgeCount(150)).toBe(99)
+    expect(appBadgeCount(0)).toBe(0)
+    expect(appBadgeCount(-1)).toBeNull()
+    expect(buildPushPayload({
+      title: 'Pedido',
+      body: 'Novo',
+      badge: 0,
+    }).notification.app_badge).toBe(0)
   })
 
   it('o service worker revalida o payload', () => {
@@ -253,5 +279,63 @@ describe('inscrição e compatibilidade', () => {
 
   it('rejeita chave pública VAPID que não é ponto P-256', () => {
     expect(() => urlBase64ToUint8Array('AAAA')).toThrow(/inválida/)
+  })
+
+  it('reutiliza a inscrição da mesma chave e descarta o endpoint antigo ao trocar', () => {
+    const key = new Uint8Array(65)
+    key[0] = 4
+    expect(applicationServerKeysMatch(key, key.slice())).toBe(true)
+    expect(subscriptionReusePlan({
+      currentEndpoint: 'https://push.example/antiga',
+      currentKey: key,
+      nextKey: key,
+    })).toEqual({ action: 'reuse', previousEndpoint: null })
+
+    const other = key.slice()
+    other[1] = 9
+    expect(subscriptionReusePlan({
+      currentEndpoint: 'https://push.example/antiga',
+      currentKey: key,
+      nextKey: other,
+    })).toEqual({
+      action: 'replace',
+      previousEndpoint: 'https://push.example/antiga',
+    })
+    expect(subscriptionReusePlan({
+      currentEndpoint: 'https://push.example/antiga',
+      currentKey: null,
+      nextKey: other,
+    })).toEqual({ action: 'reuse', previousEndpoint: null })
+  })
+
+  it('separa falha de configuração de permissão e de inscrição', () => {
+    expect(isPushConfigError('A chave pública de push não está configurada no servidor.')).toBe(true)
+    expect(isPushConfigError('O envio de push não está publicado no servidor.')).toBe(true)
+    expect(resolvePushStatus({
+      secureContext: true,
+      serviceWorker: true,
+      notification: true,
+      pushManager: true,
+      permission: 'default',
+      configError: true,
+    })).toBe('misconfigured')
+    expect(resolvePushStatus({
+      secureContext: true,
+      serviceWorker: true,
+      notification: true,
+      pushManager: true,
+      permission: 'denied',
+      configError: true,
+    })).toBe('denied')
+  })
+
+  it('explica o resultado do teste sem tratar permissão como entrega', () => {
+    expect(pushTestFeedback({ status: 'sent', lastError: null })).toMatch(/Enviada/)
+    expect(pushTestFeedback({ status: 'pending', lastError: 'no_subscription' })).toMatch(/Não há dispositivo/)
+    expect(pushTestFeedback({
+      status: 'pending',
+      lastError: 'push_dispatch_not_configured',
+    })).toMatch(/chaves de envio/)
+    expect(pushTestFeedback({ status: 'failed', lastError: 'push_failed:1' })).toMatch(/falhou/)
   })
 })

@@ -13,4 +13,6 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.enviar-push-notificacao]
-verify_jwt = true
+# A função autentica sozinha: JWT do usuário na chave pública e
+# PUSH_DISPATCH_KEY no disparo do banco. O gateway rejeitaria essa chave.
+verify_jwt = false

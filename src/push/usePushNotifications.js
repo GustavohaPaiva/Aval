@@ -5,9 +5,18 @@ import {
   readPushSnapshot,
   registerAppServiceWorker,
   removeCurrentPushSubscription,
+  readOwnPushTestStatus,
   requestOwnPushTest,
+  savePushSubscription,
+  syncPushSubscription,
+  warmVapidPublicKey,
 } from './pushClient'
-import { isIosUserAgent, resolvePushStatus } from './pushStatus'
+import {
+  isIosUserAgent,
+  isPushConfigError,
+  pushTestFeedback,
+  resolvePushStatus,
+} from './pushStatus'
 
 function readEnvironment() {
   if (typeof window === 'undefined') {
@@ -45,6 +54,7 @@ export function usePushNotifications() {
   const [busyAction, setBusyAction] = useState(null)
   const [testing, setTesting] = useState(false)
   const [error, setError] = useState(null)
+  const [configError, setConfigError] = useState(null)
   const [testMessage, setTestMessage] = useState(null)
   const [snapshot, setSnapshot] = useState({
     permission: 'default',
@@ -67,9 +77,33 @@ export function usePushNotifications() {
     }
     try {
       await registerAppServiceWorker()
+      let nextError = null
+      let configured = true
+      try {
+        await warmVapidPublicKey()
+        setConfigError(null)
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Falha de configuração do push.'
+        configured = false
+        if (isPushConfigError(message)) setConfigError(message)
+        else nextError = message
+      }
+      if (
+        configured &&
+        typeof Notification !== 'undefined' &&
+        Notification.permission === 'granted'
+      ) {
+        try {
+          await syncPushSubscription(userId)
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Falha ao renovar a inscrição.'
+          if (isPushConfigError(message)) setConfigError(message)
+          else nextError = message
+        }
+      }
       const next = await readPushSnapshot(userId)
       setSnapshot(next)
-      setError(null)
+      setError(nextError)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao consultar a inscrição.')
     } finally {
@@ -86,12 +120,24 @@ export function usePushNotifications() {
     function onVisible() {
       if (document.visibilityState === 'visible') void refresh()
     }
+    function onSubscriptionChanged(event) {
+      if (cancelled || !userId) return
+      if (event.origin && event.origin !== window.location.origin) return
+      if (event.data?.type !== 'aval:push-subscription-changed') return
+      void savePushSubscription(userId, event.data.subscription)
+        .then(() => refresh())
+        .catch((err) => {
+          setError(err instanceof Error ? err.message : 'Falha ao atualizar a inscrição.')
+        })
+    }
     document.addEventListener('visibilitychange', onVisible)
+    navigator.serviceWorker?.addEventListener('message', onSubscriptionChanged)
     return () => {
       cancelled = true
       document.removeEventListener('visibilitychange', onVisible)
+      navigator.serviceWorker?.removeEventListener('message', onSubscriptionChanged)
     }
-  }, [refresh])
+  }, [refresh, userId])
 
   async function activate() {
     if (!userId) return
@@ -139,9 +185,32 @@ export function usePushNotifications() {
         setError(result.error || 'Não foi possível criar a notificação de teste.')
         return { ok: false }
       }
-      setTestMessage(
-        'A notificação de teste foi criada e continua nesta tela. Se o servidor de push estiver configurado, ela também chega neste dispositivo, mesmo com o Aval fechado.',
-      )
+      let feedback = pushTestFeedback({})
+      for (let attempt = 0; attempt < 6; attempt += 1) {
+        await new Promise((resolve) => {
+          window.setTimeout(resolve, 1500)
+        })
+        const delivery = await readOwnPushTestStatus(result.id)
+        if (!delivery.ok) {
+          feedback = 'A notificação de teste foi criada. O status do envio ainda não pôde ser consultado.'
+          break
+        }
+        feedback = pushTestFeedback({
+          status: delivery.status,
+          lastError: delivery.lastError,
+        })
+        if (delivery.status === 'sent' || delivery.status === 'skipped' || delivery.status === 'failed') {
+          break
+        }
+        if (
+          delivery.lastError === 'vapid_not_configured' ||
+          delivery.lastError === 'push_dispatch_not_configured' ||
+          delivery.lastError === 'no_subscription'
+        ) {
+          break
+        }
+      }
+      setTestMessage(feedback)
       return { ok: true }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao enviar o teste.')
@@ -156,6 +225,7 @@ export function usePushNotifications() {
     ...env,
     checking,
     error,
+    configError: Boolean(configError),
     permission: snapshot.permission,
     browserSubscription: snapshot.browserSubscription,
     serverSubscription: snapshot.serverSubscription,
@@ -163,7 +233,7 @@ export function usePushNotifications() {
 
   return {
     status,
-    error,
+    error: error || configError,
     testMessage,
     testing,
     permission: snapshot.permission,

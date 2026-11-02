@@ -157,10 +157,7 @@ export const SignaturePad = forwardRef(function SignaturePad(
           onTouchEnd={endDraw}
         />
       </div>
-      <div className="mt-2 flex items-center justify-between gap-2">
-        <p className="text-xs text-slate-500">
-          Assine com o dedo ou o mouse na área acima.
-        </p>
+      <div className="mt-2 flex items-center justify-end gap-2">
         <Button
           type="button"
           variant="secondary"

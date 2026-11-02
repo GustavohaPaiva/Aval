@@ -255,18 +255,6 @@ export function PedidoPdfDocument({
           ))}
         </div>
 
-        <p
-          style={{
-            margin: '0 0 16px',
-            fontSize: 11,
-            lineHeight: 1.45,
-            color: '#475569',
-          }}
-        >
-          O Comprador e o Vendedor firmam a presente proposta comercial nos termos
-          abaixo, com preços e condições indicados para a operação simulada.
-        </p>
-
         {/* Cliente */}
         <section
           style={{
@@ -330,11 +318,6 @@ export function PedidoPdfDocument({
             >
               Descrição dos produtos
             </p>
-            {simulation.quarter ? (
-              <p style={{ margin: 0, fontSize: 11, color: '#64748b' }}>
-                Lista / Quarter: <strong style={{ color: '#0f172a' }}>{simulation.quarter}</strong>
-              </p>
-            ) : null}
           </div>
 
           <table
@@ -432,10 +415,7 @@ export function PedidoPdfDocument({
               Endereço para entrega
             </p>
             <p style={{ margin: 0, fontSize: 12, lineHeight: 1.45, color: '#0f172a' }}>
-              {pedidoLocal ||
-                (simulation.destino_frete
-                  ? `Destino: ${simulation.destino_frete}`
-                  : 'A definir com o cliente.')}
+              {pedidoLocal || simulation.destino_frete || '—'}
             </p>
             {simulation.destino_frete && pedidoLocal ? (
               <p style={{ margin: '6px 0 0', fontSize: 11, color: '#64748b' }}>
@@ -486,40 +466,40 @@ export function PedidoPdfDocument({
           </div>
         </div>
 
-        {/* Observações */}
-        <section
-          style={{
-            borderRadius: 14,
-            border: '1px solid #e2e8f0',
-            padding: '12px 14px',
-            marginBottom: 16,
-            minHeight: 72,
-          }}
-        >
-          <p
+        {simulation.observacoes?.trim() ? (
+          <section
             style={{
-              margin: '0 0 6px',
-              fontSize: 9,
-              fontWeight: 700,
-              letterSpacing: '0.08em',
-              textTransform: 'uppercase',
-              color: '#64748b',
+              borderRadius: 14,
+              border: '1px solid #e2e8f0',
+              padding: '12px 14px',
+              marginBottom: 16,
             }}
           >
-            Observações
-          </p>
-          <p
-            style={{
-              margin: 0,
-              fontSize: 12,
-              lineHeight: 1.5,
-              color: simulation.observacoes ? '#0f172a' : '#94a3b8',
-              whiteSpace: 'pre-wrap',
-            }}
-          >
-            {simulation.observacoes?.trim() || 'Sem observações adicionais.'}
-          </p>
-        </section>
+            <p
+              style={{
+                margin: '0 0 6px',
+                fontSize: 9,
+                fontWeight: 700,
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                color: '#64748b',
+              }}
+            >
+              Observações
+            </p>
+            <p
+              style={{
+                margin: 0,
+                fontSize: 12,
+                lineHeight: 1.5,
+                color: '#0f172a',
+                whiteSpace: 'pre-wrap',
+              }}
+            >
+              {simulation.observacoes.trim()}
+            </p>
+          </section>
+        ) : null}
 
         {/* Assinaturas */}
         <div
@@ -550,8 +530,7 @@ export function PedidoPdfDocument({
             letterSpacing: '0.02em',
           }}
         >
-          Documento gerado pela SYAGRI · Proposta nº {docNo} ·{' '}
-          {formatDateBr(new Date().toISOString())}
+          Proposta nº {docNo} · {formatDateBr(new Date().toISOString())}
         </p>
       </div>
       </div>

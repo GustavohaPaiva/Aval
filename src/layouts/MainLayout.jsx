@@ -24,6 +24,7 @@ import {
 import { ListViewProvider, useListView } from "../contexts/ListViewContext";
 import { useAuth } from "../hooks/useAuth";
 import { fetchUnreadNotificationCount, NOTIFICATIONS_CHANGED_EVENT } from "../services/notificationService";
+import { syncAppBadge } from "../push/appBadge";
 import { removeCurrentPushSubscription } from "../push/pushClient";
 import { supabase } from "../services/supabase";
 
@@ -138,6 +139,7 @@ function navSectionsForRole(role) {
             icon: IconClipboardList,
           },
           { to: "/pedidos", label: "Pedidos", icon: IconPackage },
+          { to: "/logistica", label: "Logística", icon: IconTruck },
           { to: "/compras", label: "Compras", icon: IconWarehouse },
         ],
       },
@@ -321,7 +323,10 @@ export function MainLayout() {
 
     async function loadCount() {
       const result = await fetchUnreadNotificationCount();
-      if (!cancelled && result.ok) setUnreadNotifications(result.count);
+      if (!cancelled && result.ok) {
+        setUnreadNotifications(result.count);
+        void syncAppBadge(result.count);
+      }
     }
 
     void loadCount();
@@ -349,6 +354,7 @@ export function MainLayout() {
 
   async function handleSignOut() {
     setProfileOpen(false);
+    void syncAppBadge(0);
     try {
       await removeCurrentPushSubscription();
     } catch {

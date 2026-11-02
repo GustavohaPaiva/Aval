@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import {
   BrowserRouter,
   Navigate,
@@ -10,11 +10,17 @@ import { AppConfigError } from "./components/AppConfigError";
 import { PushNavigationListener } from "./components/PushNavigationListener";
 import { RouteFallback } from "./components/layout/RouteFallback";
 import { ProtectedRoute } from "./components/ProtectedRoute";
+import { useAuth } from "./hooks/useAuth";
+import {
+  savePushSubscription,
+  syncPushSubscription,
+} from "./push/pushClient";
 import { AlertDialogProvider } from "./contexts/AlertDialogProvider";
 import { AuthProvider } from "./contexts/AuthProvider";
 import { MainLayout } from "./layouts/MainLayout";
 import { Login } from "./pages/Login";
 import { supabaseConfigError } from "./services/supabase";
+import { ROLES_OPERACAO_LOGISTICA } from "./utils/roleAccess";
 
 const AdminPage = lazy(() =>
   import("./pages/AdminPage").then((m) => ({ default: m.AdminPage })),
@@ -157,10 +163,35 @@ const routerBasename = import.meta.env.BASE_URL.replace(/\/$/, "") || undefined;
 
 const ROLES_COMERCIAL = ["gestor", "consultor"];
 const ROLES_GESTOR = ["gestor"];
-const ROLES_LOGISTICA = ["logistica"];
 
 function LazyPage({ children }) {
   return <Suspense fallback={<RouteFallback />}>{children}</Suspense>;
+}
+
+function PushSubscriptionSync() {
+  const { user } = useAuth();
+  const userId = user?.id ?? null;
+
+  useEffect(() => {
+    if (!userId || !("serviceWorker" in navigator)) return undefined;
+    let cancelled = false;
+    void syncPushSubscription(userId).catch(() => {});
+
+    function onMessage(event) {
+      if (cancelled) return;
+      if (event.origin && event.origin !== window.location.origin) return;
+      if (event.data?.type !== "aval:push-subscription-changed") return;
+      void savePushSubscription(userId, event.data.subscription).catch(() => {});
+    }
+
+    navigator.serviceWorker.addEventListener("message", onMessage);
+    return () => {
+      cancelled = true;
+      navigator.serviceWorker.removeEventListener("message", onMessage);
+    };
+  }, [userId]);
+
+  return null;
 }
 
 export default function App() {
@@ -172,6 +203,7 @@ export default function App() {
     <BrowserRouter basename={routerBasename}>
       <PushNavigationListener />
       <AuthProvider>
+        <PushSubscriptionSync />
         <AlertDialogProvider>
           <Routes>
             <Route path="/login" element={<Login />} />
@@ -289,7 +321,7 @@ export default function App() {
               <Route
                 path="logistica"
                 element={
-                  <ProtectedRoute roles={ROLES_LOGISTICA}>
+                  <ProtectedRoute roles={ROLES_OPERACAO_LOGISTICA}>
                     <LazyPage>
                       <LogisticaPedidosPage />
                     </LazyPage>
@@ -299,7 +331,7 @@ export default function App() {
               <Route
                 path="logistica/:simulationId"
                 element={
-                  <ProtectedRoute roles={ROLES_LOGISTICA}>
+                  <ProtectedRoute roles={ROLES_OPERACAO_LOGISTICA}>
                     <LazyPage>
                       <LogisticaPedidoDetalhePage />
                     </LazyPage>
