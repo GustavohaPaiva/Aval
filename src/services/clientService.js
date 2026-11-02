@@ -164,6 +164,48 @@ export async function setClientAtivo(id, ativo) {
   return { ok: true, client: data }
 }
 
+export async function fetchClientFazendas(clientId) {
+  const { data, error } = await supabase
+    .from('client_fazendas')
+    .select('id, nome, municipio')
+    .eq('client_id', clientId)
+    .order('nome', { ascending: true })
+
+  if (error) return { ok: false, error: error.message }
+  return { ok: true, rows: data ?? [] }
+}
+
+export async function createClientFazenda({ clientId, nome, municipio }) {
+  const cleanNome = String(nome ?? '').trim()
+  const cleanMunicipio = String(municipio ?? '').trim()
+
+  if (!clientId) {
+    return { ok: false, error: 'Cliente do pedido não encontrado.' }
+  }
+  if (!cleanNome) {
+    return { ok: false, error: 'Informe o nome da fazenda.' }
+  }
+
+  const { data, error } = await supabase
+    .from('client_fazendas')
+    .insert({
+      client_id: clientId,
+      nome: cleanNome,
+      municipio: cleanMunicipio || null,
+    })
+    .select('id, nome, municipio')
+    .single()
+
+  if (error) {
+    if (error.code === '23505') {
+      return { ok: false, error: 'Essa fazenda já está cadastrada para o cliente.' }
+    }
+    return { ok: false, error: error.message }
+  }
+
+  return { ok: true, fazenda: data }
+}
+
 export async function deleteClient(id) {
   const { error } = await supabase.from('clients').delete().eq('id', id)
 

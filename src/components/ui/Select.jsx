@@ -10,7 +10,10 @@ import {
 } from "react";
 import { IconChevronDown, IconSearch } from "../icons";
 import { useDropdownPosition } from "../../hooks/useDropdownPosition";
-import { filterSelectOptions } from "../../utils/selectUtils";
+import {
+  filterSelectOptions,
+  normalizeSelectSearch,
+} from "../../utils/selectUtils";
 import { DropdownPortal } from "./DropdownPortal";
 import {
   editableHintControlClass,
@@ -18,6 +21,19 @@ import {
 } from "./editableFieldHint";
 
 const SEARCH_AUTO_THRESHOLD = 8;
+const CREATE_OPTION_VALUE = "__create_option__";
+
+function isExactOptionMatch(options, query) {
+  const normalizedQuery = normalizeSelectSearch(query);
+  if (!normalizedQuery) return false;
+
+  return options.some((option) => {
+    if (option.value === "" || option.value == null) return false;
+    return [option.label, option.createKey].some(
+      (key) => key && normalizeSelectSearch(key) === normalizedQuery,
+    );
+  });
+}
 
 const TRIGGER_DEFAULT =
   "h-11 w-full rounded-2xl border border-gray-200 bg-white px-3 pr-9 text-left text-sm text-slate-900 shadow-sm transition-[border-color,box-shadow] focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500";
@@ -73,6 +89,9 @@ export const Select = forwardRef(function Select(
     emptyMessage = "Nenhum resultado encontrado",
     size = "default",
     editableHint = false,
+    /** Quando informado, um texto sem correspondência exata vira uma opção de cadastro. */
+    onCreateOption,
+    createOptionLabel,
     /** When false, do not inject a clickable empty/placeholder option. */
     allowClear = true,
     "aria-label": ariaLabel,
@@ -111,22 +130,50 @@ export const Select = forwardRef(function Select(
   const placeholderOption = allOptions.find((opt) => opt.value === "");
 
   const isSearchable =
-    searchable ?? selectableOptions.length > SEARCH_AUTO_THRESHOLD;
+    Boolean(onCreateOption) ||
+    (searchable ?? selectableOptions.length > SEARCH_AUTO_THRESHOLD);
+
+  const trimmedQuery = query.trim();
+  const showCreateOption =
+    Boolean(onCreateOption) &&
+    trimmedQuery.length > 0 &&
+    !isExactOptionMatch(selectableOptions, trimmedQuery);
 
   const filteredOptions = useMemo(() => {
     const base =
-      !isSearchable || !query.trim()
+      !isSearchable || !trimmedQuery
         ? selectableOptions
-        : filterSelectOptions(selectableOptions, query);
+        : filterSelectOptions(selectableOptions, trimmedQuery);
 
-    if (!placeholderOption) return base;
+    const withPlaceholder = (() => {
+      if (!placeholderOption) return base;
 
-    const matchesPlaceholder =
-      !query.trim() ||
-      filterSelectOptions([placeholderOption], query).length > 0;
+      const matchesPlaceholder =
+        !trimmedQuery ||
+        filterSelectOptions([placeholderOption], trimmedQuery).length > 0;
 
-    return matchesPlaceholder ? [placeholderOption, ...base] : base;
-  }, [isSearchable, placeholderOption, query, selectableOptions]);
+      return matchesPlaceholder ? [placeholderOption, ...base] : base;
+    })();
+
+    if (!showCreateOption) return withPlaceholder;
+
+    return [
+      ...withPlaceholder,
+      {
+        value: CREATE_OPTION_VALUE,
+        label: createOptionLabel
+          ? createOptionLabel(trimmedQuery)
+          : `Adicionar "${trimmedQuery}"`,
+      },
+    ];
+  }, [
+    createOptionLabel,
+    isSearchable,
+    placeholderOption,
+    selectableOptions,
+    showCreateOption,
+    trimmedQuery,
+  ]);
 
   const dropdownStyle = useDropdownPosition(isOpen, triggerRef);
 
@@ -157,11 +204,16 @@ export const Select = forwardRef(function Select(
 
   const selectValue = useCallback(
     (nextValue) => {
-      onChange?.(createSyntheticChangeEvent(String(nextValue)));
+      if (nextValue === CREATE_OPTION_VALUE) {
+        const nextLabel = query.trim();
+        if (nextLabel) onCreateOption?.(nextLabel);
+      } else {
+        onChange?.(createSyntheticChangeEvent(String(nextValue)));
+      }
       close();
       triggerRef.current?.focus();
     },
-    [close, onChange],
+    [close, onChange, onCreateOption, query],
   );
 
   useEffect(() => {
@@ -391,8 +443,9 @@ export const Select = forwardRef(function Select(
                     </li>
                   ) : (
                     filteredOptions.map((option, index) => {
+                      const isCreate = option.value === CREATE_OPTION_VALUE;
                       const isSelected =
-                        String(option.value) === String(value);
+                        !isCreate && String(option.value) === String(value);
                       const isHighlighted = index === activeHighlightIndex;
 
                       return (
@@ -406,9 +459,12 @@ export const Select = forwardRef(function Select(
                             className={joinClasses(
                               "flex w-full cursor-pointer items-center rounded-xl px-3 py-2 text-left text-sm transition-colors",
                               size === "compact" && "text-[13px]",
+                              isCreate && "font-medium",
                               isHighlighted || isSelected
                                 ? "bg-primary-50 text-primary-800"
-                                : "text-slate-800 hover:bg-slate-50",
+                                : isCreate
+                                  ? "text-primary-800 hover:bg-primary-50"
+                                  : "text-slate-800 hover:bg-slate-50",
                             )}
                           >
                             <span className="wrap-break-word whitespace-normal">

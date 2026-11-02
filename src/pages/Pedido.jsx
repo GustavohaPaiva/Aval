@@ -29,6 +29,10 @@ import {
 import { useAuth } from '../hooks/useAuth'
 import { useSyncPageLoading } from '../contexts/PageLoadingContext'
 import { useAbortableAsync } from '../hooks/useAbortableAsync'
+import {
+  createClientFazenda,
+  fetchClientFazendas,
+} from '../services/clientService'
 import { fetchMunicipiosBrasil } from '../services/ibgeLocalidades'
 import { buildPdfBlobFromReactNode } from '../services/renderReactPdf'
 import {
@@ -37,6 +41,7 @@ import {
   fetchSimulationOrderBundle,
   updatePedidoFields,
 } from '../services/simulationOrderService'
+import { normalizeSelectSearch } from '../utils/selectUtils'
 import {
   formatPrazoSemanaLabel,
   isPrazoSemanaAllowed,
@@ -56,6 +61,9 @@ export function Pedido({ simulationId }) {
   useSyncPageLoading(loadState === 'loading' || loadState === 'idle')
 
   const [fazenda, setFazenda] = useState('')
+  const [fazendas, setFazendas] = useState([])
+  const [fazendasLoading, setFazendasLoading] = useState(false)
+  const [savingFazenda, setSavingFazenda] = useState(false)
   const [pedidoMunicipio, setPedidoMunicipio] = useState('')
   const [pedidoUf, setPedidoUf] = useState('')
   const [prazoSemanaInicio, setPrazoSemanaInicio] = useState('')
@@ -177,6 +185,120 @@ export function Pedido({ simulationId }) {
     pedidoMunicipio,
     pedidoUf,
   ])
+
+  const clientId = bundle?.simulation.client_id ?? null
+
+  useAbortableAsync(
+    async (_signal, isActive) => {
+      if (!clientId) {
+        if (isActive()) setFazendas([])
+        return
+      }
+      setFazendasLoading(true)
+      const res = await fetchClientFazendas(clientId)
+      if (!isActive()) return
+      setFazendasLoading(false)
+      if (!res.ok) {
+        setFazendas([])
+        setActionError(res.error)
+        return
+      }
+      setFazendas(res.rows)
+    },
+    [clientId],
+  )
+
+  function applyFazenda(farm) {
+    setFazenda(farm.nome)
+    clearFieldError('fazenda')
+    const municipio = String(farm.municipio ?? '').trim()
+    if (!municipio) return
+
+    setPedidoMunicipio(municipio)
+    clearFieldError('pedidoMunicipio')
+    const matches = municipioOptions.filter(
+      (option) =>
+        normalizeSelectSearch(option.nome) === normalizeSelectSearch(municipio),
+    )
+    const ufs = [...new Set(matches.map((option) => option.uf).filter(Boolean))]
+    if (ufs.length === 1) {
+      setPedidoUf(ufs[0])
+      clearFieldError('pedidoUf')
+    }
+  }
+
+  const fazendaOptions = useMemo(() => {
+    const options = fazendas.map((farm) => ({
+      value: farm.id,
+      label: farm.municipio?.trim()
+        ? `${farm.nome} — ${farm.municipio.trim()}`
+        : farm.nome,
+      createKey: farm.nome,
+    }))
+    const current = fazenda.trim()
+    if (
+      current &&
+      !fazendas.some(
+        (farm) =>
+          normalizeSelectSearch(farm.nome) === normalizeSelectSearch(current),
+      )
+    ) {
+      options.unshift({
+        value: `texto:${current}`,
+        label: current,
+        createKey: current,
+      })
+    }
+    return options
+  }, [fazenda, fazendas])
+
+  const fazendaSelectValue = useMemo(() => {
+    const current = fazenda.trim()
+    if (!current) return ''
+    const matches = fazendas.filter(
+      (farm) =>
+        normalizeSelectSearch(farm.nome) === normalizeSelectSearch(current),
+    )
+    if (matches.length === 0) return `texto:${current}`
+    const byCity = matches.find(
+      (farm) =>
+        normalizeSelectSearch(farm.municipio) ===
+        normalizeSelectSearch(pedidoMunicipio),
+    )
+    return (byCity ?? matches[0]).id
+  }, [fazenda, fazendas, pedidoMunicipio])
+
+  async function handleCreateFazenda(nome) {
+    if (!clientId || savingFazenda) return
+    const existing = fazendas.find(
+      (farm) =>
+        normalizeSelectSearch(farm.nome) === normalizeSelectSearch(nome),
+    )
+    if (existing) {
+      applyFazenda(existing)
+      return
+    }
+
+    setSavingFazenda(true)
+    setActionError(null)
+    const res = await createClientFazenda({
+      clientId,
+      nome,
+      municipio: pedidoMunicipio,
+    })
+    setSavingFazenda(false)
+    if (!res.ok) {
+      setFieldErrors((prev) => ({ ...prev, fazenda: res.error }))
+      return
+    }
+
+    setFazendas((prev) =>
+      [...prev, res.fazenda].sort((a, b) =>
+        a.nome.localeCompare(b.nome, 'pt-BR'),
+      ),
+    )
+    applyFazenda(res.fazenda)
+  }
 
   const prazoMinDate = useMemo(() => {
     if (isGestor || !bundle?.simulation?.created_at) return ''
@@ -595,17 +717,30 @@ export function Pedido({ simulationId }) {
           Dados do pedido
         </h2>
         <div className="grid gap-6 sm:grid-cols-2">
-          <Input
+          <Select
             label="Fazenda"
-            placeholder="Nome da fazenda"
-            value={fazenda}
+            placeholder={
+              fazendasLoading
+                ? 'Carregando fazendas…'
+                : 'Buscar fazenda…'
+            }
+            searchPlaceholder="Digite o nome da fazenda…"
+            emptyMessage="Nenhuma fazenda cadastrada para este cliente."
+            value={fazendaSelectValue}
+            options={fazendaOptions}
+            searchable
+            allowClear={false}
             onChange={(e) => {
-              setFazenda(e.target.value)
-              clearFieldError('fazenda')
+              const raw = e.target.value
+              if (!raw || raw.startsWith('texto:')) return
+              const farm = fazendas.find((item) => item.id === raw)
+              if (farm) applyFazenda(farm)
             }}
+            onCreateOption={canEditPedido ? handleCreateFazenda : undefined}
+            createOptionLabel={(nome) => `Adicionar fazenda “${nome}”`}
             error={fieldErrors.fazenda}
             required
-            disabled={!canEditPedido}
+            disabled={!canEditPedido || fazendasLoading || savingFazenda}
           />
           <Select
             label="Estado"
