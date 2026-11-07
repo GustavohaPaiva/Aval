@@ -1,0 +1,26 @@
+{
+  "id": "/",
+  "name": "Aval",
+  "short_name": "Aval",
+  "description": "Aval — Fechamento e fertilizantes. Gestão comercial, simulações e pedidos.",
+  "lang": "pt-BR",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#059669",
+  "icons": [
+    {
+      "src": "favicon-32.png",
+      "sizes": "32x32",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
