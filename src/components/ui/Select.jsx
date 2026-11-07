@@ -94,6 +94,7 @@ export const Select = forwardRef(function Select(
     createOptionLabel,
     /** When false, do not inject a clickable empty/placeholder option. */
     allowClear = true,
+    multiple = false,
     "aria-label": ariaLabel,
     required,
     autoOpen = false,
@@ -118,9 +119,15 @@ export const Select = forwardRef(function Select(
   useImperativeHandle(ref, () => triggerRef.current);
 
   const allOptions = useMemo(
-    () => resolveOptions(options, placeholder, allowClear),
-    [options, placeholder, allowClear],
+    () => resolveOptions(options, placeholder, multiple ? false : allowClear),
+    [options, placeholder, allowClear, multiple],
   );
+
+  const selectedValues = useMemo(() => {
+    if (!multiple) return null;
+    const list = Array.isArray(value) ? value : value ? [value] : [];
+    return new Set(list.map((item) => String(item)));
+  }, [multiple, value]);
 
   const selectableOptions = useMemo(
     () => getSelectableOptions(allOptions),
@@ -181,13 +188,26 @@ export const Select = forwardRef(function Select(
     (opt) => String(opt.value) === String(value),
   );
 
-  const displayLabel =
-    selectedOption?.label ||
-    placeholderOption?.label ||
-    placeholder ||
-    "Selecione…";
+  const selectedLabels = multiple
+    ? selectableOptions
+        .filter((option) => selectedValues.has(String(option.value)))
+        .map((option) => option.label)
+    : [];
 
-  const isPlaceholder = !selectedOption || selectedOption.value === "";
+  const displayLabel = multiple
+    ? selectedLabels.length === 0
+      ? placeholder || "Selecione…"
+      : selectedLabels.length === 1
+        ? selectedLabels[0]
+        : `${selectedLabels.length} selecionados`
+    : selectedOption?.label ||
+      placeholderOption?.label ||
+      placeholder ||
+      "Selecione…";
+
+  const isPlaceholder = multiple
+    ? selectedLabels.length === 0
+    : !selectedOption || selectedOption.value === "";
 
   const close = useCallback(() => {
     setIsOpen(false);
@@ -207,13 +227,23 @@ export const Select = forwardRef(function Select(
       if (nextValue === CREATE_OPTION_VALUE) {
         const nextLabel = query.trim();
         if (nextLabel) onCreateOption?.(nextLabel);
-      } else {
-        onChange?.(createSyntheticChangeEvent(String(nextValue)));
+        close();
+        triggerRef.current?.focus();
+        return;
       }
+      if (multiple) {
+        const next = new Set(selectedValues);
+        const key = String(nextValue);
+        if (next.has(key)) next.delete(key);
+        else next.add(key);
+        onChange?.(createSyntheticChangeEvent([...next]));
+        return;
+      }
+      onChange?.(createSyntheticChangeEvent(String(nextValue)));
       close();
       triggerRef.current?.focus();
     },
-    [close, onChange, onCreateOption, query],
+    [close, multiple, onChange, onCreateOption, query, selectedValues],
   );
 
   useEffect(() => {
@@ -363,7 +393,7 @@ export const Select = forwardRef(function Select(
             type="text"
             tabIndex={-1}
             aria-hidden
-            value={value ?? ""}
+            value={multiple ? selectedLabels.join(", ") : value ?? ""}
             required
             onChange={() => {}}
             className="pointer-events-none absolute h-0 w-0 opacity-0"
@@ -412,6 +442,7 @@ export const Select = forwardRef(function Select(
                 ref={listRef}
                 id={listboxId}
                 role="listbox"
+                aria-multiselectable={multiple || undefined}
                 tabIndex={-1}
                 onKeyDown={handleListKeyDown}
                 className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-lg ring-1 ring-slate-900/5"
@@ -445,7 +476,10 @@ export const Select = forwardRef(function Select(
                     filteredOptions.map((option, index) => {
                       const isCreate = option.value === CREATE_OPTION_VALUE;
                       const isSelected =
-                        !isCreate && String(option.value) === String(value);
+                        !isCreate &&
+                        (multiple
+                          ? selectedValues.has(String(option.value))
+                          : String(option.value) === String(value));
                       const isHighlighted = index === activeHighlightIndex;
 
                       return (

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { PageTransition } from "../components/layout/PageTransition";
 import { SidebarUserMenu } from "../components/layout/SidebarUserMenu";
@@ -21,6 +21,7 @@ import {
   IconUser,
   IconUsers,
 } from "../components/icons";
+import { DashboardShellProvider } from "../contexts/DashboardShellContext";
 import { ListViewProvider, useListView } from "../contexts/ListViewContext";
 import { useAuth } from "../hooks/useAuth";
 import { fetchUnreadNotificationCount, NOTIFICATIONS_CHANGED_EVENT } from "../services/notificationService";
@@ -202,6 +203,8 @@ function SidebarNavLink({
   indented = false,
   unreadCount = 0,
   onNavigate,
+  onTip,
+  onTipEnd,
 }) {
   const Icon = item.icon;
 
@@ -210,15 +213,23 @@ function SidebarNavLink({
       to={item.to}
       end={item.to === "/dashboard"}
       onClick={onNavigate}
-      title={collapsed ? item.label : undefined}
+      onMouseEnter={(event) => onTip?.(event, item.label)}
+      onFocus={(event) => onTip?.(event, item.label)}
+      onMouseLeave={onTipEnd}
+      onBlur={onTipEnd}
       className={({ isActive }) =>
         [
           "group relative flex notranslate items-center rounded-2xl text-sm font-medium transition-colors duration-200",
           collapsed
-            ? "justify-center px-0 py-2"
+            ? "py-2 max-lg:gap-2.5 max-lg:pr-2.5 lg:justify-center lg:px-0"
+            : "gap-2.5 py-2 pr-2.5",
+          collapsed
+            ? indented
+              ? "max-lg:pl-8"
+              : "max-lg:pl-2.5"
             : indented
-              ? "gap-2.5 py-2 pl-8 pr-2.5"
-              : "gap-2.5 px-2.5 py-2",
+              ? "pl-8"
+              : "pl-2.5",
           isActive
             ? "bg-primary-50 text-primary-700"
             : "text-slate-600 hover:bg-slate-50 hover:text-slate-900",
@@ -227,7 +238,7 @@ function SidebarNavLink({
     >
       {({ isActive }) => (
         <>
-          {isActive && !collapsed ? (
+          {isActive ? (
             <span
               className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-r-full bg-primary-600"
               aria-hidden
@@ -243,12 +254,7 @@ function SidebarNavLink({
                   : "text-slate-400 group-hover:text-slate-600",
             ].join(" ")}
           />
-          <span
-            className={[
-              "sidebar-reveal truncate",
-              collapsed ? "is-collapsed" : "is-expanded",
-            ].join(" ")}
-          >
+          <span className="sidebar-reveal truncate">
             {item.label}
           </span>
           {item.to === "/notificacoes" && unreadCount > 0 ? (
@@ -256,11 +262,13 @@ function SidebarNavLink({
               className={[
                 "inline-flex min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 text-[0.65rem] font-bold text-white",
                 collapsed
-                  ? "absolute -right-0.5 -top-0.5 size-2.5 min-w-0 animate-pulse p-0 ring-2 ring-white"
+                  ? "ml-auto lg:absolute lg:-right-0.5 lg:-top-0.5 lg:ml-0 lg:size-2.5 lg:min-w-0 lg:animate-pulse lg:p-0 lg:ring-2 lg:ring-white"
                   : "ml-auto",
               ].join(" ")}
             >
-              {collapsed ? null : unreadCount > 9 ? "9+" : unreadCount}
+              <span className={collapsed ? "lg:sr-only" : ""}>
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </span>
             </span>
           ) : null}
         </>
@@ -275,12 +283,17 @@ export function MainLayout() {
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(() => {
+  const [prefCollapsed, setPrefCollapsed] = useState(() => {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem(COLLAPSE_STORAGE_KEY) === "1";
   });
+  const isDashboard = location.pathname === "/dashboard";
+  const [shellRoute, setShellRoute] = useState(isDashboard ? "dashboard" : "app");
+  const [dashNavCollapsed, setDashNavCollapsed] = useState(true);
+  const [filtersOpen, setFiltersOpen] = useState(isDashboard);
   const [openSectionId, setOpenSectionId] = useState(null);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [navTip, setNavTip] = useState(null);
   const [sectionSynced, setSectionSynced] = useState(false);
 
   const pathKey = `${location.pathname}${location.search}`;
@@ -310,9 +323,68 @@ export function MainLayout() {
     setOpenSectionId(activeGroupId);
   }
 
+  if (isDashboard && shellRoute !== "dashboard") {
+    setShellRoute("dashboard");
+    setDashNavCollapsed(true);
+    setFiltersOpen(true);
+    if (mobileOpen) setMobileOpen(false);
+  }
+
+  if (!isDashboard && shellRoute !== "app") {
+    setShellRoute("app");
+    setFiltersOpen(false);
+  }
+
+  const navCollapsed = isDashboard ? dashNavCollapsed : prefCollapsed;
+
+  function openMobileNav() {
+    setMobileOpen(true);
+    if (isDashboard) setFiltersOpen(false);
+  }
+
+  const openFilters = useCallback(() => {
+    setFiltersOpen(true);
+    setDashNavCollapsed(true);
+    setMobileOpen(false);
+  }, []);
+
+  const closeFilters = useCallback(() => {
+    setFiltersOpen(false);
+  }, []);
+
+  function showNavTip(event, label, always = false) {
+    if (!window.matchMedia("(min-width: 1024px)").matches) return;
+    if (!always && !navCollapsed) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    setNavTip({
+      label,
+      top: rect.top + rect.height / 2,
+      left: rect.right + 10,
+    });
+  }
+
+  function hideNavTip() {
+    setNavTip(null);
+  }
+
+  function toggleDesktopNav() {
+    setNavTip(null);
+    if (!isDashboard) {
+      setPrefCollapsed((value) => !value);
+      return;
+    }
+    if (dashNavCollapsed) {
+      setDashNavCollapsed(false);
+      setFiltersOpen(false);
+      return;
+    }
+    setDashNavCollapsed(true);
+  }
+
   useEffect(() => {
-    window.localStorage.setItem(COLLAPSE_STORAGE_KEY, collapsed ? "1" : "0");
-  }, [collapsed]);
+    if (isDashboard) return;
+    window.localStorage.setItem(COLLAPSE_STORAGE_KEY, prefCollapsed ? "1" : "0");
+  }, [prefCollapsed, isDashboard]);
 
   useEffect(() => {
     if (!user?.id || !role || role === "logistica") {
@@ -382,8 +454,14 @@ export function MainLayout() {
   const effectiveUnreadNotifications =
     user?.id && role ? unreadNotifications : 0;
 
+  const shell = useMemo(
+    () => ({ isDashboard, filtersOpen, openFilters, closeFilters }),
+    [isDashboard, filtersOpen, openFilters, closeFilters],
+  );
+
   return (
     <ListViewProvider>
+    <DashboardShellProvider value={shell}>
     <div className="h-svh overflow-hidden bg-slate-50">
       {mobileOpen ? (
         <button
@@ -397,9 +475,9 @@ export function MainLayout() {
       <div className="flex h-full">
         <aside
           className={[
-            "sidebar-shell fixed inset-y-0 left-0 z-40 flex h-full w-64 shrink-0 flex-col border-r border-slate-200 bg-white",
+            "sidebar-shell fixed inset-y-0 left-0 z-40 flex h-full w-64 shrink-0 flex-col overflow-x-hidden border-r border-slate-200 bg-white",
             "lg:sticky lg:top-0 lg:z-auto lg:translate-x-0",
-            collapsed ? "lg:w-[3.625rem]" : "lg:w-60",
+            navCollapsed ? "is-collapsed lg:w-[3.625rem]" : "lg:w-60",
             mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
           ].join(" ")}
         >
@@ -407,27 +485,22 @@ export function MainLayout() {
 
           <div
             className={[
-              "flex shrink-0 border-b border-slate-100 px-2.5 py-3",
-              collapsed
-                ? "flex-col items-center gap-2"
-                : "items-center justify-between gap-2 px-3",
+              "flex shrink-0 items-center border-b border-slate-100 px-3 py-3",
+              navCollapsed
+                ? "justify-between gap-2 lg:flex-col lg:justify-center lg:gap-2 lg:px-2.5"
+                : "justify-between gap-2",
             ].join(" ")}
           >
             <div
               className={[
-                "flex min-w-0 items-center",
-                collapsed ? "justify-center" : "gap-2.5",
+                "flex min-w-0 items-center gap-2.5",
+                navCollapsed ? "lg:justify-center lg:gap-0" : "",
               ].join(" ")}
             >
               <span className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-slate-950 ring-1 ring-slate-200">
                 <BrandMark className="size-6" />
               </span>
-              <span
-                className={[
-                  "sidebar-reveal min-w-0",
-                  collapsed ? "is-collapsed" : "is-expanded",
-                ].join(" ")}
-              >
+              <span className="sidebar-reveal min-w-0">
                 <span className="block text-sm font-semibold leading-tight text-slate-900">
                   Aval
                 </span>
@@ -440,12 +513,19 @@ export function MainLayout() {
             <button
               type="button"
               className="hidden size-8 items-center justify-center rounded-2xl text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 lg:inline-flex"
-              aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
-              aria-pressed={collapsed}
-              title={collapsed ? "Expandir menu" : "Recolher menu"}
-              onClick={() => setCollapsed((v) => !v)}
+              aria-label={navCollapsed ? "Expandir menu" : "Recolher menu"}
+              aria-pressed={navCollapsed}
+              onMouseEnter={(event) =>
+                showNavTip(event, navCollapsed ? "Expandir menu" : "Recolher menu", true)
+              }
+              onFocus={(event) =>
+                showNavTip(event, navCollapsed ? "Expandir menu" : "Recolher menu", true)
+              }
+              onMouseLeave={hideNavTip}
+              onBlur={hideNavTip}
+              onClick={toggleDesktopNav}
             >
-              {collapsed ? (
+              {navCollapsed ? (
                 <IconPanelLeft className="size-4" />
               ) : (
                 <IconChevronsLeft className="size-4" />
@@ -466,7 +546,7 @@ export function MainLayout() {
             id="main-sidebar-nav"
             className={[
               "flex min-h-0 flex-1 flex-col overflow-y-auto py-3",
-              collapsed ? "gap-0.5 px-1.5" : "gap-1 px-2.5",
+              navCollapsed ? "gap-1 px-2.5 lg:gap-0.5 lg:px-1.5" : "gap-1 px-2.5",
             ].join(" ")}
           >
             {sections.map((section, sectionIndex) => {
@@ -486,13 +566,16 @@ export function MainLayout() {
                       <button
                         type="button"
                         aria-expanded={isOpen}
-                        title={collapsed ? section.label : undefined}
                         onClick={() => toggleSection(section.id)}
+                        onMouseEnter={(event) => showNavTip(event, section.label)}
+                        onFocus={(event) => showNavTip(event, section.label)}
+                        onMouseLeave={hideNavTip}
+                        onBlur={hideNavTip}
                         className={[
-                          "group relative flex w-full items-center rounded-2xl text-sm font-medium transition-colors duration-200",
-                          collapsed
-                            ? "justify-center px-0 py-2"
-                            : "gap-2.5 px-2.5 py-2",
+                          "group relative flex w-full items-center rounded-2xl py-2 text-sm font-medium transition-colors duration-200",
+                          navCollapsed
+                            ? "gap-2.5 px-2.5 lg:justify-center lg:gap-0 lg:px-0"
+                            : "gap-2.5 px-2.5",
                           groupActive
                             ? "bg-slate-100 text-slate-900"
                             : "text-slate-600 hover:bg-slate-50 hover:text-slate-900",
@@ -508,18 +591,13 @@ export function MainLayout() {
                             ].join(" ")}
                           />
                         ) : null}
-                        <span
-                          className={[
-                            "sidebar-reveal truncate",
-                            collapsed ? "is-collapsed" : "is-expanded",
-                          ].join(" ")}
-                        >
+                        <span className="sidebar-reveal truncate">
                           {section.label}
                         </span>
                         <IconChevronDown
                           className={[
                             "ml-auto size-4 shrink-0 text-slate-400 transition-transform duration-200",
-                            collapsed ? "hidden" : "",
+                            navCollapsed ? "lg:hidden" : "",
                             isOpen ? "rotate-180" : "",
                           ].join(" ")}
                         />
@@ -529,10 +607,12 @@ export function MainLayout() {
                             <SidebarNavLink
                               key={item.to}
                               item={item}
-                              collapsed={collapsed}
-                              indented={!collapsed}
+                              collapsed={navCollapsed}
+                              indented
                               unreadCount={effectiveUnreadNotifications}
                               onNavigate={() => setMobileOpen(false)}
+                              onTip={showNavTip}
+                              onTipEnd={hideNavTip}
                             />
                           ))
                         : null}
@@ -542,9 +622,11 @@ export function MainLayout() {
                       <SidebarNavLink
                         key={item.to}
                         item={item}
-                        collapsed={collapsed}
+                        collapsed={navCollapsed}
                         unreadCount={effectiveUnreadNotifications}
                         onNavigate={() => setMobileOpen(false)}
+                        onTip={showNavTip}
+                        onTipEnd={hideNavTip}
                       />
                     ))
                   )}
@@ -556,15 +638,17 @@ export function MainLayout() {
           <div
             className={[
               "shrink-0 border-t border-slate-100",
-              collapsed ? "p-1.5" : "p-2.5",
+              navCollapsed ? "p-2.5 lg:p-1.5" : "p-2.5",
             ].join(" ")}
           >
             <SidebarUserMenu
               displayName={displayName}
               roleLabel={roleLabel}
               avatarUrl={avatarUrl}
-              collapsed={collapsed}
+              collapsed={navCollapsed}
               onOpenProfile={() => setProfileOpen(true)}
+              onTip={showNavTip}
+              onTipEnd={hideNavTip}
             />
           </div>
         </aside>
@@ -584,7 +668,7 @@ export function MainLayout() {
               className="flex size-9 items-center justify-center rounded-2xl text-slate-700 hover:bg-slate-100"
               aria-label="Abrir menu"
               aria-controls="main-sidebar-nav"
-              onClick={() => setMobileOpen(true)}
+              onClick={openMobileNav}
             >
               <MenuIcon />
             </button>
@@ -610,11 +694,27 @@ export function MainLayout() {
             </NavLink>
           </header>
 
-          <main className="relative z-10 min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-4 lg:px-[5%] lg:py-6">
+          <main
+            className={
+              location.pathname === "/dashboard"
+                ? "relative z-10 min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4 lg:px-5 lg:py-4"
+                : "relative z-10 min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-4 lg:px-[5%] lg:py-6"
+            }
+          >
             <PageTransition />
           </main>
         </div>
       </div>
+
+      {navTip ? (
+        <div
+          role="tooltip"
+          style={{ top: navTip.top, left: navTip.left }}
+          className="pointer-events-none fixed z-50 -translate-y-1/2 whitespace-nowrap rounded-xl bg-slate-900 px-2.5 py-1 text-xs font-medium text-white shadow-lg"
+        >
+          {navTip.label}
+        </div>
+      ) : null}
 
       <ProfileModalConnected
         open={profileOpen}
@@ -627,6 +727,7 @@ export function MainLayout() {
         onSignOut={() => void handleSignOut()}
       />
     </div>
+    </DashboardShellProvider>
     </ListViewProvider>
   );
 }

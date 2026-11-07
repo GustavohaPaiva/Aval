@@ -1,0 +1,11 @@
+---
+description: Preferir respostas curtas; longas só quando necessário
+alwaysApply: true
+---
+
+# Comunicação
+
+- Respostas curtas e diretas por padrão.
+- Respostas longas só quando o usuário pedir, ou quando a tarefa realmente exigir detalhe (ex.: análise técnica com decisões abertas, debugging complexo).
+- Não repetir contexto já discutido; ir ao ponto.
+- Evitar seções longas, preâmbulos e “resumos do resumo”.

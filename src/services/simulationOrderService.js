@@ -12,6 +12,7 @@ import { resolvePropostaTravadaEm } from '../utils/simulationPropostaLock';
 import { parseCpfCnpjInput } from '../utils/dataFormatters';
 import { formatBRL } from '../utils/money';
 import { ilikeOrClause } from '../utils/postgrestSearch';
+import { invalidateSalesDashboardCache } from './salesDashboardCache';
 import {
     draftExpiryCutoffIso,
     isHiddenDraft,
@@ -105,6 +106,34 @@ function buildSimulationFields(input, status) {
     return fields;
 }
 
+let saleFieldSupport = null
+let itemCostSupport = null
+
+async function supportsSaleFields() {
+    if (saleFieldSupport === true) return true
+    const { error } = await supabase.from('simulations').select('data_negociacao').limit(1)
+    saleFieldSupport = !error
+    return saleFieldSupport
+}
+
+async function supportsItemCosts() {
+    if (itemCostSupport === true) return true
+    const { error } = await supabase.from('simulation_items').select('custo_brl_unitario').limit(1)
+    itemCostSupport = !error
+    return itemCostSupport
+}
+
+function appendSaleFields(fields, input) {
+    fields.data_negociacao = input.dataNegociacao || null
+    fields.filial_venda = input.filialVenda?.trim() || null
+    fields.tipo_venda = input.tipoVenda === 'barter' || input.tipoVenda === 'reais' ? input.tipoVenda : null
+    fields.safra = input.safra?.trim() || null
+    if (input.statusLancamento === 'lancado' || input.statusLancamento === 'nao_lancado') {
+        fields.status_lancamento = input.statusLancamento
+    }
+    return fields
+}
+
 function overrideVencimentoLista(value) {
     if (value == null || value === '') return null
     const match = String(value).trim().match(/^(\d{4}-\d{2}-\d{2})/)
@@ -170,8 +199,10 @@ function inactiveSimulationError() {
     }
 }
 
-function mapLinesToItemsPayload(simulationId, lines, statusLinha, userId) {
-    return lines.map((line) => ({
+async function mapLinesToItemsPayload(simulationId, lines, statusLinha, userId) {
+    const costs = await supportsItemCosts()
+    return lines.map((line) => {
+        const row = {
         simulation_id: simulationId,
         product_id: line.productId,
         volume: line.volume,
@@ -191,7 +222,13 @@ function mapLinesToItemsPayload(simulationId, lines, statusLinha, userId) {
         financeiro_unitario:
             line.financeiro != null ? roundMoney(line.financeiro) : null,
         ...buildOverrideFields(line.overrides, userId),
-    }));
+        }
+        if (costs) {
+            row.custo_brl_unitario = line.custoBrlUnitario != null ? roundMoney(line.custoBrlUnitario) : null
+            row.custo_icms_unitario = line.custoIcmsUnitario != null ? roundMoney(line.custoIcmsUnitario) : null
+        }
+        return row
+    });
 }
 
 async function syncComissaoForSimulation(simulationId, consultorId, status, lines) {
@@ -253,7 +290,7 @@ async function insertSimulationItems(simulationId, lines, statusLinha, userId) {
             error: 'Selecione produtos do catálogo oficial (quarter e estado) antes de lançar.',
         };
     }
-    const itemsPayload = mapLinesToItemsPayload(
+    const itemsPayload = await mapLinesToItemsPayload(
         simulationId,
         lines,
         statusLinha,
@@ -301,7 +338,7 @@ async function replaceSimulationItems(simulationId, lines, statusLinha, userId) 
         return { ok: false, error: deleteError.message };
     }
 
-    const itemsPayload = mapLinesToItemsPayload(
+    const itemsPayload = await mapLinesToItemsPayload(
         simulationId,
         lines,
         statusLinha,
@@ -417,12 +454,12 @@ async function syncConvertedSimulationItems(
     }
 
     for (const line of toUpdate) {
-        const payload = mapLinesToItemsPayload(
+        const payload = (await mapLinesToItemsPayload(
             simulationId,
             [line],
             statusLinha,
             userId,
-        )[0];
+        ))[0];
         const { error: updateError } = await supabase
             .from('simulation_items')
             .update(payload)
@@ -500,6 +537,7 @@ async function upsertSimulationWithItems(input, status, userId) {
         client_id: clientResult.clientId,
         ...buildSimulationFields(input, status),
     };
+    if (await supportsSaleFields()) appendSaleFields(simulationFields, input)
 
     let simulationId = input.simulationId ?? null;
 
@@ -564,6 +602,7 @@ async function upsertSimulationWithItems(input, status, userId) {
             input.lines,
         );
         if (!comissaoResult.ok) return comissaoResult;
+        invalidateSalesDashboardCache();
         return { ok: true, simulationId };
     }
 
@@ -611,6 +650,7 @@ async function upsertSimulationWithItems(input, status, userId) {
         await deleteSimulationById(simulationId);
         return comissaoResult;
     }
+    invalidateSalesDashboardCache();
     return { ok: true, simulationId };
 }
 function parseBundle(data) {
@@ -699,6 +739,12 @@ function parseBundle(data) {
             origem_frete: row.origem_frete != null ? String(row.origem_frete) : null,
             destino_frete: row.destino_frete != null ? String(row.destino_frete) : null,
             data_pagamento: row.data_pagamento != null ? String(row.data_pagamento) : null,
+            data_negociacao: row.data_negociacao != null ? String(row.data_negociacao).slice(0, 10) : null,
+            filial_venda: row.filial_venda != null ? String(row.filial_venda) : null,
+            tipo_venda: row.tipo_venda != null ? String(row.tipo_venda) : null,
+            safra: row.safra != null ? String(row.safra) : null,
+            status_lancamento: row.status_lancamento != null ? String(row.status_lancamento) : null,
+            sale_fields_ready: Object.prototype.hasOwnProperty.call(row, 'data_negociacao'),
             quarter: row.quarter != null ? String(row.quarter) : null,
             observacoes: row.observacoes != null ? String(row.observacoes) : null,
             fazenda: row.fazenda != null ? String(row.fazenda) : null,
@@ -741,6 +787,8 @@ function parseBundle(data) {
 }
 export async function fetchSimulationOrderBundle(simulationId) {
     await expireStaleDrafts()
+    const saleFields = await supportsSaleFields()
+    const itemCosts = await supportsItemCosts()
     const { data, error } = await supabase
         .from('simulations')
         .select(`
@@ -755,6 +803,7 @@ export async function fetchSimulationOrderBundle(simulationId) {
       origem_frete,
       destino_frete,
       data_pagamento,
+      ${saleFields ? 'data_negociacao, filial_venda, tipo_venda, safra, status_lancamento,' : ''}
       quarter,
       observacoes,
       fazenda,
@@ -792,6 +841,7 @@ export async function fetchSimulationOrderBundle(simulationId) {
         comissao_valor,
         produto_classe,
         financeiro_unitario,
+        ${itemCosts ? 'custo_brl_unitario, custo_icms_unitario,' : ''}
         override_custo_usd,
         override_desconto_usd,
         override_taxa,
@@ -1174,6 +1224,7 @@ export async function saveGestorReview(input) {
     if (input.quarter !== undefined) {
         simUpdate.quarter = input.quarter ?? null;
     }
+    if (await supportsSaleFields()) appendSaleFields(simUpdate, input)
     if (editingConverted) {
         simUpdate.valores_congelados_em = new Date().toISOString();
         simUpdate.status = 'converted';
@@ -1371,6 +1422,7 @@ export async function updateSimulationStatus(simulationId, status, options = {})
         );
         if (!comissaoResult.ok) return comissaoResult;
     }
+    invalidateSalesDashboardCache();
     return { ok: true, status };
 }
 
@@ -1651,6 +1703,7 @@ export async function inactivateSimulation(simulationId) {
         .eq('simulation_id', simulationId);
     if (comissaoError) return { ok: false, error: comissaoError.message };
 
+    invalidateSalesDashboardCache();
     return { ok: true, status: payload.status ?? existing.status };
 }
 
@@ -1696,6 +1749,7 @@ export async function deleteSimulation(simulationId) {
         }
         return { ok: false, error: error.message };
     }
+    invalidateSalesDashboardCache();
     return { ok: true };
 }
 
@@ -1813,7 +1867,6 @@ export async function fetchSimulationsList(params) {
 }
 
 export async function fetchGestorDashboardStats() {
-    await expireStaleDrafts()
     const [pendingRes, approvedRes, clientsRes, consultoresRes] = await Promise.all([
         applyActiveStatsFilter(
             supabase.from('simulations').select('id', { count: 'exact', head: true }),

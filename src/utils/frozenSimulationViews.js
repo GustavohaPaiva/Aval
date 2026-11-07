@@ -97,6 +97,14 @@ export function buildFrozenLineView(item, displayNome, taxParams = {}) {
     isLineBelowFloor: false,
     overrides: item.overrides ?? null,
     custoBreakdown: null,
+    custoBrlUnitario:
+      item.custo_brl_unitario != null && item.custo_brl_unitario !== ''
+        ? Number(item.custo_brl_unitario)
+        : null,
+    custoIcmsUnitario:
+      item.custo_icms_unitario != null && item.custo_icms_unitario !== ''
+        ? Number(item.custo_icms_unitario)
+        : null,
     displayNome: displayNome || item.displayNome || '—',
     frozen: true,
   }

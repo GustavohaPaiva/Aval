@@ -1,6 +1,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { requireSupabase } from '../services/supabase'
+import { invalidateSalesDashboardCache } from '../services/salesDashboardCache'
 import { removeCurrentPushSubscription } from '../push/pushClient'
 import { AuthContext } from './auth-context'
 
@@ -108,6 +109,7 @@ export function AuthProvider({ children }) {
       if (cancelled) return
 
       if (event === 'SIGNED_OUT' || !nextSession) {
+        invalidateSalesDashboardCache()
         clearAuth()
         return
       }
@@ -129,6 +131,7 @@ export function AuthProvider({ children }) {
     } catch {
       // A saída da conta segue mesmo se a inscrição push não for removida.
     }
+    invalidateSalesDashboardCache()
     clearAuth()
     try {
       await requireSupabase().auth.signOut()

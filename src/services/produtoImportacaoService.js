@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { invalidateSalesDashboardCache } from './salesDashboardCache'
 import { IGNORE_COLUMN_VALUE } from '../constants/mapeamentoCampos'
 import { ESTADO_UF_VALUES } from '../constants/simulator'
 import { parsePrecoValue } from '../utils/spreadsheetAnalyzer'
@@ -160,6 +161,7 @@ export async function criarFornecedor(nome) {
     return { ok: false, error: message }
   }
 
+  invalidateSalesDashboardCache()
   return { ok: true, row: data }
 }
 
@@ -245,6 +247,7 @@ export async function deleteFornecedor(id) {
     }
   }
 
+  invalidateSalesDashboardCache()
   return { ok: true }
 }
 
@@ -1139,6 +1142,7 @@ export async function promoverLote(loteId) {
   })
 
   if (error) return { ok: false, error: error.message }
+  invalidateSalesDashboardCache()
   return { ok: true, result: data }
 }
 
@@ -1409,6 +1413,7 @@ export async function upsertProdutoOficialManual({
       criado_por: session.user.id,
     })
 
+    invalidateSalesDashboardCache()
     return { ok: true, row: data }
   }
 
@@ -1436,6 +1441,7 @@ export async function upsertProdutoOficialManual({
     criado_por: session.user.id,
   })
 
+  invalidateSalesDashboardCache()
   return { ok: true, row: data }
 }
 
@@ -1541,6 +1547,7 @@ export async function criarCotacao({ moeda_origem, taxa_conversao }) {
     .single()
 
   if (error) return { ok: false, error: error.message }
+  invalidateSalesDashboardCache()
   return { ok: true, row: data }
 }
 

@@ -9,6 +9,8 @@ export function SidebarUserMenu({
   avatarUrl,
   collapsed = false,
   onOpenProfile,
+  onTip,
+  onTipEnd,
 }) {
   const Avatar = avatarUrl ? (
     <img
@@ -35,20 +37,18 @@ export function SidebarUserMenu({
     <button
       type="button"
       onClick={onOpenProfile}
-      title={collapsed ? `${displayName} · ${roleLabel}` : "Minha conta"}
+      onMouseEnter={(event) => onTip?.(event, `${displayName} · ${roleLabel}`)}
+      onFocus={(event) => onTip?.(event, `${displayName} · ${roleLabel}`)}
+      onMouseLeave={onTipEnd}
+      onBlur={onTipEnd}
       className={[
         "group flex w-full items-center rounded-2xl text-left transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30",
-        collapsed ? "justify-center p-1.5" : "gap-2.5 p-2",
+        collapsed ? "gap-2.5 p-2 lg:justify-center lg:gap-0 lg:p-1.5" : "gap-2.5 p-2",
       ].join(" ")}
       aria-label="Minha conta"
     >
       {Avatar}
-      <span
-        className={[
-          "sidebar-reveal min-w-0 flex-1",
-          collapsed ? "is-collapsed" : "is-expanded",
-        ].join(" ")}
-      >
+      <span className="sidebar-reveal min-w-0 flex-1">
         <span
           className="block truncate text-sm font-semibold text-slate-900"
           title={displayName}

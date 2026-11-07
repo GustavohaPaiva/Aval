@@ -22,6 +22,8 @@ import { PageBackLink } from "../components/ui/PageBackLink";
 import { PageHeader } from "../components/ui/PageHeader";
 import { PageInfoBanner } from "../components/ui/InfoStatCard";
 import { Select } from "../components/ui/Select";
+import { Input } from "../components/ui/Input";
+import { filialOptions } from "../constants/compras";
 import { FREIGHT_TYPES, QUARTERS, STATES } from "../constants/simulator";
 import { FRETE_ORIGENS, resolveOrigemFreteByEstado } from "../constants/fretes";
 import { isGestorEditableConverted, isPedidoStatus } from "../constants/simulationStatus";
@@ -628,6 +630,11 @@ export function Simulador() {
       origemFrete: sim.origemFrete,
       destinoFrete: sim.destinoFrete,
       dataPagamento: sim.dataPagamento || null,
+      dataNegociacao: sim.dataNegociacao || null,
+      filialVenda: sim.filialVenda || null,
+      tipoVenda: sim.tipoVenda || null,
+      safra: sim.safra || null,
+      statusLancamento: sim.isGestor ? sim.statusLancamento : 'nao_lancado',
       quarter: sim.quarter,
       lines: sim.lines.map((l) => ({
         productId: l.productId,
@@ -641,6 +648,8 @@ export function Simulador() {
         comissaoPercentual: l.comissaoPercentual,
         comissaoValor: l.comissaoValor,
         comissaoBaseCalculo: l.comissaoBaseCalculo,
+        custoBrlUnitario: l.custoBrlUnitario,
+        custoIcmsUnitario: l.custoIcmsUnitario,
       })),
       totalValor: sim.totalValor,
       totalProposta: sim.totalProposta,
@@ -724,6 +733,8 @@ export function Simulador() {
         comissaoPercentual: l.comissaoPercentual,
         comissaoValor: l.comissaoValor,
         comissaoBaseCalculo: l.comissaoBaseCalculo,
+        custoBrlUnitario: l.custoBrlUnitario,
+        custoIcmsUnitario: l.custoIcmsUnitario,
       })),
       resumoAlteracao: isGestorEditableConverted(remoteStatus, {
         ativo: remoteAtivo,
@@ -1147,6 +1158,13 @@ export function Simulador() {
               disabled={sim.isReadOnly}
               editableHint
             />
+            <DatePicker
+              label="Data da negociação"
+              value={sim.dataNegociacao ?? ""}
+              onChange={(e) => sim.setDataNegociacao(e.target.value)}
+              disabled={sim.isReadOnly}
+              editableHint
+            />
             <Select
               label="Tipo de frete"
               placeholder="Selecione…"
@@ -1166,6 +1184,54 @@ export function Simulador() {
               editableHint
             />
           </div>
+          <div className="mt-4 grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
+            <Select
+              label="Filial da venda"
+              placeholder="Selecione…"
+              value={sim.filialVenda ?? ""}
+              onChange={(e) => sim.setFilialVenda(e.target.value)}
+              options={filialOptions()}
+              disabled={sim.isReadOnly}
+              editableHint
+            />
+            <Select
+              label="Tipo de venda"
+              placeholder="Selecione…"
+              value={sim.tipoVenda ?? ""}
+              onChange={(e) => sim.setTipoVenda(e.target.value)}
+              options={[
+                { value: "reais", label: "Reais" },
+                { value: "barter", label: "Barter" },
+              ]}
+              disabled={sim.isReadOnly}
+              editableHint
+            />
+            <Input
+              label="Safra"
+              placeholder="26/27"
+              value={sim.safra ?? ""}
+              onChange={(e) => sim.setSafra(e.target.value)}
+              disabled={sim.isReadOnly}
+              editableHint
+            />
+            <Select
+              label="Lançamento"
+              value={sim.statusLancamento ?? "nao_lancado"}
+              onChange={(e) => sim.setStatusLancamento(e.target.value)}
+              options={[
+                { value: "nao_lancado", label: "Não lançado" },
+                { value: "lancado", label: "Lançado" },
+              ]}
+              disabled={sim.isReadOnly || !sim.isGestor}
+              allowClear={false}
+              editableHint
+            />
+          </div>
+          {sim.saleFieldsReady === false ? (
+            <p className="mt-3 text-sm text-amber-900">
+              Data da negociação, filial, safra, tipo de venda e lançamento aparecem aqui, mas ainda não há colunas para gravá-los. A migration do dashboard precisa ser aplicada em desenvolvimento.
+            </p>
+          ) : null}
           {sim.showFreteRotas ? (
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <Select

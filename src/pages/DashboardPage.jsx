@@ -1,9 +1,10 @@
 import { useState } from 'react'
+import { SalesDashboard } from '../components/dashboard/SalesDashboard'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
-import { IconClipboardList, IconLayoutDashboard, IconUser, IconUsers } from '../components/icons'
+import { IconClipboardList, IconUser, IconUsers } from '../components/icons'
 import { AlertMessage } from '../components/ui/AlertMessage'
 import { Button } from '../components/ui/Button'
-import { InfoStatCard, PageInfoBanner } from '../components/ui/InfoStatCard'
+import { InfoStatCard } from '../components/ui/InfoStatCard'
 import { PageHeader } from '../components/ui/PageHeader'
 import { useSyncPageLoading } from '../contexts/PageLoadingContext'
 import { useAbortableAsync } from '../hooks/useAbortableAsync'
@@ -22,7 +23,7 @@ export function DashboardPage() {
   const [gestorStats, setGestorStats] = useState(null)
   const [consultorStats, setConsultorStats] = useState(null)
 
-  useSyncPageLoading(loading || initializing)
+  useSyncPageLoading(initializing)
 
   useAbortableAsync(
     async (_signal, isActive) => {
@@ -145,50 +146,52 @@ export function DashboardPage() {
 
   const cards = isGestor ? gestorCards : consultorCards
 
+  if (isGestor) {
+    return (
+      <div className="w-full min-w-0">
+        {error ? <AlertMessage>{error}</AlertMessage> : null}
+        <SalesDashboard
+          role={role}
+          operations={gestorCards}
+          operationsLoading={loading || initializing}
+          onNew={() => navigate('/simulador')}
+          onPending={() => navigate('/simulacoes?status=pending')}
+        />
+      </div>
+    )
+  }
+
   return (
-    <div className="w-full min-w-0 space-y-4 sm:space-y-6">
-      <div className="relative overflow-hidden rounded-2xl border border-primary-100/80 bg-gradient-to-br from-primary-50/80 via-white to-emerald-50/40 p-4 shadow-sm sm:rounded-[2rem] sm:p-6 lg:p-8">
-        <PageHeader
-          eyebrow="Visão geral"
-          title="Dashboard"
-          description={
-            isGestor
-              ? 'Acompanhe revisões pendentes e lance novas simulações quando necessário.'
-              : 'Resumo das suas simulações e atalho para novas propostas.'
-          }
-          actions={
-            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+    <div className="w-full min-w-0 space-y-4">
+      <PageHeader
+        title="Dashboard"
+        actions={
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+            <Button
+              type="button"
+              className="w-full sm:w-auto"
+              onClick={() => navigate('/simulador')}
+            >
+              Nova simulação
+            </Button>
+            {isGestor ? (
               <Button
                 type="button"
+                variant="secondary"
                 className="w-full sm:w-auto"
-                onClick={() => navigate('/simulador')}
+                onClick={() => navigate('/simulacoes?status=pending')}
               >
-                Nova simulação
+                Ver pendentes
               </Button>
-              {isGestor ? (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className="w-full sm:w-auto"
-                  onClick={() => navigate('/simulacoes?status=pending')}
-                >
-                  Ver pendentes
-                </Button>
-              ) : null}
-            </div>
-          }
-          className="relative mb-0"
-        />
-        <PageInfoBanner icon={IconLayoutDashboard}>
-          {loading || initializing
-            ? 'Carregando indicadores…'
-            : 'Indicadores atualizados com base nas simulações e cadastros.'}
-        </PageInfoBanner>
-      </div>
+            ) : null}
+          </div>
+        }
+        className="mb-0"
+      />
 
       {error ? <AlertMessage>{error}</AlertMessage> : null}
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {loading || initializing
           ? Array.from({ length: 4 }).map((_, i) => (
               <InfoStatCard

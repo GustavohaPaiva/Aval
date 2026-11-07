@@ -1,0 +1,6 @@
+---
+description: Carregar o contexto compartilhado do Aval
+alwaysApply: true
+---
+
+Leia AGENTS.md na raiz e os documentos docs/PROJECT_CONTEXT.md, docs/CURRENT_STATUS.md e docs/DECISIONS.md antes de trabalhar. Use esses arquivos como fonte compartilhada com o Codex e atualize-os após mudanças relevantes. Confira o código e o Git antes de assumir que o registro ainda está atual. Preserve as demais regras existentes.

@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { invalidateSalesDashboardCache } from './salesDashboardCache'
 import { formatProdutoDisplayNome } from '../constants/mapeamentoCampos'
 import { formatSupabaseError } from '../utils/supabaseErrors'
 import { tonsToKg } from '../utils/comprasUnits'
@@ -726,6 +727,7 @@ export async function updateCompraCabecalho(compraId, fields) {
     })
     .eq('id', compraId)
   if (error) return fail(error, 'Não foi possível salvar o cabeçalho.')
+  invalidateSalesDashboardCache()
   return { ok: true }
 }
 
@@ -787,18 +789,21 @@ export async function insertCompraItem(compraId, item) {
     .select('id')
     .single()
   if (error) return fail(error, 'Não foi possível adicionar o item.')
+  invalidateSalesDashboardCache()
   return { ok: true, id: data.id }
 }
 
 export async function updateCompraItem(itemId, fields) {
   const { error } = await supabase.from('compra_itens').update(fields).eq('id', itemId)
   if (error) return fail(error, 'Não foi possível atualizar o item.')
+  invalidateSalesDashboardCache()
   return { ok: true }
 }
 
 export async function deleteCompraItem(itemId) {
   const { error } = await supabase.from('compra_itens').delete().eq('id', itemId)
   if (error) return fail(error, 'Não foi possível remover o item.')
+  invalidateSalesDashboardCache()
   return { ok: true }
 }
 

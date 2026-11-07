@@ -214,6 +214,8 @@ function buildLineView(
           comissao_percentual: line.snapshot.comissaoPercentual,
           comissao_valor: line.snapshot.comissaoValor,
           produto_classe: line.snapshot.produtoClasse,
+          custo_brl_unitario: line.custoBrlUnitario,
+          custo_icms_unitario: line.custoIcmsUnitario,
           overrides: line.overrides,
         },
         displayNome,
@@ -299,6 +301,8 @@ function buildLineView(
     isLineBelowFloor,
     overrides: overrides ?? null,
     custoBreakdown: breakdown,
+    custoBrlUnitario: breakdown?.custoBrl ?? null,
+    custoIcmsUnitario: breakdown?.custoIcms ?? null,
     displayNome: product?.displayNome ?? product?.nome ?? '—',
   }
 }
@@ -350,6 +354,11 @@ export function useSimulation(options = {}) {
     () => initialDraft?.dataPagamento ?? '',
   )
   const [dataNegociacao, setDataNegociacao] = useState(() => todayDateOnly())
+  const [filialVenda, setFilialVenda] = useState('')
+  const [tipoVenda, setTipoVenda] = useState('')
+  const [safra, setSafra] = useState('')
+  const [statusLancamento, setStatusLancamento] = useState('nao_lancado')
+  const [saleFieldsReady, setSaleFieldsReady] = useState(null)
   const [tipoFrete, setTipoFreteState] = useState(
     () => initialDraft?.tipoFrete ?? null,
   )
@@ -921,6 +930,7 @@ export function useSimulation(options = {}) {
     if (!quarter) return 'Selecione o quarter antes de lançar.'
     if (!tipoFrete) return 'Selecione o tipo de frete.'
     if (!dataPagamento) return 'Informe a data de pagamento.'
+    if (saleFieldsReady && !dataNegociacao) return 'Informe a data da negociação.'
     if (tipoFrete === 'CIF') {
       if (!origemFrete?.trim()) return 'Origem do frete indisponível para o estado.'
       if (!destinoFrete?.trim()) return 'Selecione o destino do frete.'
@@ -945,6 +955,8 @@ export function useSimulation(options = {}) {
   }, [
     canOverrideFloor,
     dataPagamento,
+    dataNegociacao,
+    saleFieldsReady,
     destinoFrete,
     estado,
     globalStatus,
@@ -992,10 +1004,15 @@ export function useSimulation(options = {}) {
       setEstadoState(nextEstado)
       setDataPagamentoState(bundle.simulation.data_pagamento ?? '')
       setDataNegociacao(
-        simulation.created_at
-          ? String(simulation.created_at).slice(0, 10)
-          : todayDateOnly(),
+        bundle.simulation.sale_fields_ready
+          ? bundle.simulation.data_negociacao ?? ''
+          : '',
       )
+      setFilialVenda(bundle.simulation.filial_venda ?? '')
+      setTipoVenda(bundle.simulation.tipo_venda ?? '')
+      setSafra(bundle.simulation.safra ?? '')
+      setStatusLancamento(bundle.simulation.status_lancamento ?? 'nao_lancado')
+      setSaleFieldsReady(Boolean(bundle.simulation.sale_fields_ready))
       const nextTipoFrete = bundle.simulation.tipo_frete ?? null
       setTipoFreteState(nextTipoFrete)
       const origemSalva = bundle.simulation.origem_frete ?? ''
@@ -1047,6 +1064,8 @@ export function useSimulation(options = {}) {
               taxaJuros: it.override_taxa_juros ?? undefined,
               vencimentoLista: it.override_vencimento_lista ?? undefined,
             }),
+            custoBrlUnitario: it.custo_brl_unitario != null ? Number(it.custo_brl_unitario) : null,
+            custoIcmsUnitario: it.custo_icms_unitario != null ? Number(it.custo_icms_unitario) : null,
           }
           if (!frozen) return base
           return {
@@ -1109,6 +1128,11 @@ export function useSimulation(options = {}) {
     setEstadoState(null)
     setDataPagamentoState('')
     setDataNegociacao(todayDateOnly())
+    setFilialVenda('')
+    setTipoVenda('')
+    setSafra('')
+    setStatusLancamento('nao_lancado')
+    setSaleFieldsReady(null)
     setTipoFreteState(null)
     setOrigemFreteState('')
     setDestinoFreteState('')
@@ -1202,6 +1226,16 @@ export function useSimulation(options = {}) {
     dataPagamento,
     setDataPagamento,
     dataNegociacao,
+    setDataNegociacao,
+    filialVenda,
+    setFilialVenda,
+    tipoVenda,
+    setTipoVenda,
+    safra,
+    setSafra,
+    statusLancamento,
+    setStatusLancamento,
+    saleFieldsReady,
     prazoDias,
     tipoFrete,
     setTipoFrete,

@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { invalidateSalesDashboardCache } from './salesDashboardCache'
 import {
   digitsOnly,
   parseCpfCnpjInput,
@@ -120,6 +121,7 @@ export async function createClient(payload) {
     .single()
 
   if (error) return { ok: false, error: parseClientDbError(error) }
+  invalidateSalesDashboardCache()
   return { ok: true, client: data }
 }
 
@@ -149,6 +151,7 @@ export async function updateClient(id, payload) {
     .single()
 
   if (error) return { ok: false, error: parseClientDbError(error) }
+  invalidateSalesDashboardCache()
   return { ok: true, client: data }
 }
 
@@ -161,6 +164,7 @@ export async function setClientAtivo(id, ativo) {
     .single()
 
   if (error) return { ok: false, error: parseClientDbError(error) }
+  invalidateSalesDashboardCache()
   return { ok: true, client: data }
 }
 
@@ -210,5 +214,6 @@ export async function deleteClient(id) {
   const { error } = await supabase.from('clients').delete().eq('id', id)
 
   if (error) return { ok: false, error: parseClientDbError(error) }
+  invalidateSalesDashboardCache()
   return { ok: true }
 }

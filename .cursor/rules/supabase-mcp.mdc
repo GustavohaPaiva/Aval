@@ -1,0 +1,13 @@
+---
+description: Usar o MCP do Supabase no projeto Aval com segurança
+alwaysApply: true
+---
+
+# Supabase
+
+- Use o MCP `supabase-syagri-test` para consultar e modificar banco, migrations, logs e Edge Functions.
+- O MCP está limitado ao projeto de desenvolvimento `Syagri-Test` (`uszbvqmquniuorxkqyat`).
+- Nunca altere o projeto de produção `Syagri` (`dnmjjgeqaigrvdsflqrs`) sem autorização explícita do usuário.
+- Antes de executar migrations ou operações destrutivas, mostre a alteração e solicite confirmação.
+- Nunca grave access tokens, service-role keys ou outros segredos no repositório ou em variáveis com prefixo `VITE_`.
+- Prefira migrations versionadas e mantenha o código, os tipos e a documentação sincronizados com o schema.

@@ -98,3 +98,8 @@ Planilhas de Fornecedores/
 
 # --- Local tool venvs ---
 .venv*/
+
+# Referências privadas do cliente e configuração local de agentes
+/Referencias dashboard/
+/.cursor/mcp.json
+/.codex/config.toml

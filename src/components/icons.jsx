@@ -202,6 +202,22 @@ export function IconChevronDown({ className }) {
   )
 }
 
+export function IconChevronLeft({ className }) {
+  return (
+    <svg {...iconProps(className)}>
+      <path d="m15 18-6-6 6-6" />
+    </svg>
+  )
+}
+
+export function IconChevronRight({ className }) {
+  return (
+    <svg {...iconProps(className)}>
+      <path d="m9 18 6-6-6-6" />
+    </svg>
+  )
+}
+
 export function IconLeaf({ className }) {
   return (
     <svg {...iconProps(className)}>
