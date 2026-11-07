@@ -20,9 +20,11 @@ Gestor: visão geral, semana, fluxo de caixa, comparativo anual, consultores e m
 Pedidos nativos ficam fora da base enquanto `data_negociacao` e o lastro da compra (`pagamento_syagri` e `unitario_brl`) estiverem vazios. Não há lançamento linha a linha de 2024. O histórico não tem id de cliente, fornecedor, consultor ou produto. Juros, frete, comissões, preços unitários e margens brutas da planilha não têm coluna. Não há meta cadastrada. A animação dos filtros, a reabertura em 60 segundos, o botão Atualizar e a troca de abas ainda dependem de uma sessão de gestor.
 
 ## Publicação
-O destino existente é o push da `main`, que dispara o GitHub Pages em https://aval-fertilizantes.online. Não há aplicativo Heroku configurado e nenhum foi criado. A migration não foi aplicada em produção e a carga de teste não foi copiada.
+Commit `8860449` na `main`: https://github.com/GustavohaPaiva/Aval/commit/8860449. O push disparou o workflow Deploy GitHub Pages, run `42326837777`, com build e publicação concluídos. Endereço: https://aval-fertilizantes.online. O workflow usa Node 20. Não há aplicativo Heroku configurado e nenhum foi criado.
 
-Alterações locais de logística ficaram de fora deste commit.
+O bundle publicado aponta para o projeto Syagri de produção e não contém chave administrativa. `/dashboard` sem sessão abre o aplicativo e segue para `/login`, também ao recarregar. O login publicado não registrou falha de recurso. Não havia sessão de gestor, então o painel autenticado não foi percorrido em produção.
+
+A migration não foi aplicada em produção e a carga de teste não foi copiada. Alterações locais de logística ficaram de fora do commit.
 
 ## Próxima etapa
 Auditoria de segurança, capacidade para mais usuários e padronização do código. Antes de propor essa padronização, analisar o projeto Aivo. A organização de arquivos, estilos e textos não foi definida agora.
