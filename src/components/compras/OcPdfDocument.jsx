@@ -2,6 +2,7 @@ import { SYAGRI_COMPANY } from '../../constants/company'
 import {
   cidadeDaPlanta,
   filialById,
+  plantaLabel,
   ocFaturamento,
   ocFilialFaturamentoId,
   ocItemVencimento,
@@ -190,7 +191,7 @@ export function OcPdfDocument({ compra, itens, fornecedorNome }) {
               { label: 'Data do pedido', value: formatDateBr(compra.data_documento) },
               { label: 'Data de vencimento', value: vencimentoLabel },
               { label: 'Condição', value: compra.condicao_pagamento || '—' },
-              { label: 'Planta', value: String(compra.planta ?? '').trim() || '—' },
+              { label: 'Planta', value: plantaLabel(compra.planta) || '—' },
               { label: 'Tipo de entrega', value: tipoEntregaLabel(compra.tipo_entrega) },
               {
                 label: 'Cidade / retirada',

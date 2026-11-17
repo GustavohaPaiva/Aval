@@ -1,3 +1,39 @@
+# Estado atual — 2026-11-17, planta da OC
+
+## Verificado nesta revisão
+O seletor de planta do pedido ao fornecedor lista só Uberaba (Minas Gerais), Cubatão (São Paulo) e Rio Grande (Rio Grande). Nome de filial comercial deixa de entrar nessa lista e deixa de sair na mensagem e no PDF como planta. Filial e filial de faturamento continuam no cabeçalho. Nenhuma compra antiga foi regravada.
+
+## Próxima etapa
+Conferir no site publicado se a planta da OC abre só Uberaba, Cubatão e Rio Grande.
+
+# Estado atual — 2026-11-17, carga da base de vendas
+
+## Verificado nesta revisão
+A planilha `Aval_Base_Vendas_2026-11-09_1.xlsx` foi gravada em `dashboard_vendas_historicas`. No Syagri-Test, a carga de 7 de novembro saiu e ficaram 1.532 linhas, com o faturamento e o volume da aba Validacao. No Syagri oficial, a tabela estava vazia e recebeu as mesmas 1.532 linhas. Os 102 pedidos convertidos ativos do oficial continuam no lugar. Nenhum pedido, cliente ou produto foi apagado.
+
+103 linhas da planilha repetem um pedido já convertido. A chave dessas linhas ficou igual à do pedido, então o painel mantém o pedido e não soma a planilha de novo. Metas e família/custo não foram gravados.
+
+## Pendências
+Parte dos pedidos convertidos não achou par com o mesmo cliente, produto, volume e valor. Esses ficam só como pedido do sistema. A meta da safra 26/27 ainda não cabe no ano calendário do cadastro.
+
+## Próxima etapa
+Abrir o painel do gestor no oficial e conferir se o total não repetiu os pedidos já lançados.
+
+# Estado atual — 2026-11-17, leitura da base de vendas
+
+## Verificado nesta revisão
+A planilha `Aval_Base_Vendas_2026-11-09_1.xlsx` foi lida localmente. São 6 abas. A aba Pedidos tem 1.532 linhas, de abril de 2024 a 5 de novembro de 2026. Os totais da aba Validacao batem com a soma recalculada. Alíquota, semana, à vista e margem batem com a regra do painel, com folga de um centavo.
+
+No Syagri-Test, as 705 linhas gravadas em 7 de novembro estão todas dentro desta planilha, com o mesmo faturamento e volume por chave. O arquivo novo acrescenta o restante. Nenhum insert foi feito. O banco oficial não foi consultado nesta leitura.
+
+O importador atual procura a aba GFERT com os nomes longos. Esta planilha usa a aba Pedidos e nomes curtos, então o botão de carga recusaria o arquivo.
+
+## Pendências
+Confirmar se a carga entra só na tabela histórica do painel. A meta da safra 26/27 não cabe no ano calendário do cadastro sem uma decisão. Família/custo continua marcada para conferência antes de subir. Seis linhas idênticas repetidas entram na validação da planilha.
+
+## Próxima etapa
+Com o destino confirmado, montar a carga de teste no formato da tabela histórica, no lugar da importação parcial de 7 de novembro.
+
 # Estado atual — 2026-11-17, visual de comissão e estoque
 
 ## Verificado nesta revisão

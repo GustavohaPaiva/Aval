@@ -271,7 +271,7 @@ function ModalNovaOc({ onClose, onCreated }) {
           required
         />
         <p className="text-sm text-slate-500">
-          A OC nasce na filial Uberaba, condição FAT. ANTECIPADO. A planta é Uberaba, Cubatão ou Rio Grande, escolhida no detalhe.
+          A OC nasce na filial Uberaba, condição FAT. ANTECIPADO. A planta é Uberaba (Minas Gerais), Cubatão (São Paulo) ou Rio Grande (Rio Grande), escolhida no detalhe.
         </p>
       </form>
     </Modal>

@@ -22,6 +22,7 @@ import {
   faturamentoFromFilial,
   filialOptions,
   ocFilialFaturamentoId,
+  plantaConhecida,
   plantaOptions,
 } from '../../constants/compras'
 import { useSyncPageLoading } from '../../contexts/PageLoadingContext'
@@ -81,7 +82,8 @@ export function ComprasOrdemDetalhePage() {
   const [obs, setObs] = useState('')
   const [planta, setPlanta] = useState('')
   const [cidadeGravada, setCidadeGravada] = useState('')
-  const cidade = String(planta ?? '').trim() || cidadeGravada
+  const plantaVisivel = plantaConhecida(planta)
+  const cidade = plantaVisivel || plantaConhecida(cidadeGravada)
   const faturamento = faturamentoFromFilial(filialFaturamento)
 
   useSyncPageLoading(loadState !== 'ready')
@@ -157,7 +159,7 @@ export function ComprasOrdemDetalhePage() {
           faturamento,
           entrega_retirada: entregaRetirada,
           ctc,
-          planta,
+          planta: plantaVisivel,
         },
         bundle.itens,
         bundle.fornecedorNome,
@@ -175,7 +177,7 @@ export function ComprasOrdemDetalhePage() {
       data_documento: dataDoc,
       observacoes: obs,
       ctc,
-      planta,
+      planta: plantaVisivel,
       entrega_retirada: entregaRetirada,
     })
     setSaving(false)
@@ -201,7 +203,7 @@ export function ComprasOrdemDetalhePage() {
       faturamento,
       entrega_retirada: entregaRetirada,
       ctc,
-      planta,
+      planta: plantaVisivel,
     }
     setPdfPreview({
       titulo: `Pedido ${bundle.numero}`,
@@ -230,7 +232,7 @@ export function ComprasOrdemDetalhePage() {
     faturamento,
     entregaRetirada,
     ctc,
-    planta,
+    plantaVisivel,
   ])
 
   async function handleCopy() {
@@ -340,9 +342,9 @@ export function ComprasOrdemDetalhePage() {
           />
           <Select
             label="Planta"
-            value={planta}
+            value={plantaVisivel}
             onChange={(e) => setPlanta(e.target.value)}
-            options={plantaOptions(planta)}
+            options={plantaOptions()}
             disabled={!canEdit}
           />
           <Input label="Cidade / retirada" value={cidade} disabled readOnly />

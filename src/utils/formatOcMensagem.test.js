@@ -25,7 +25,7 @@ describe('formatOcMensagem', () => {
       ],
       'Yara',
     )
-    expect(msg).toContain('Planta: Cubatão')
+    expect(msg).toContain('Planta: Cubatão — São Paulo')
     expect(msg).toContain('Cidade / retirada: Cubatão')
     expect(msg).not.toContain('Planta: Uberaba')
     expect(msg).not.toContain('Cidade / retirada: Uberaba')
@@ -140,7 +140,7 @@ describe('formatOcMensagem', () => {
       ],
       'YARA',
     )
-    expect(msg).toContain('Planta: Cubatão')
+    expect(msg).toContain('Planta: Cubatão — São Paulo')
     expect(msg).toContain('Cidade / retirada: Cubatão')
     expect(msg).not.toContain('Cidade / retirada: Ituverava')
     expect(msg).not.toContain('Cidade / retirada: Uberaba')
@@ -168,6 +168,26 @@ describe('formatOcMensagem', () => {
     expect(msg).toContain('Planta: —')
     expect(msg).toContain('Cidade / retirada: Rio Grande')
     expect(msg).not.toContain('Cidade / retirada: Ituverava')
+  })
+
+  it('nome de filial gravado no campo planta não entra no pedido ao fornecedor', () => {
+    const msg = formatOcMensagem(
+      {
+        numero: 'OC-7',
+        filial_site: 'ituverava',
+        filial_faturamento: 'ituverava',
+        planta: 'Ituverava',
+        cidade_retirada: 'Ituverava',
+        data_documento: '2026-09-01',
+      },
+      [],
+      'YARA',
+    )
+    expect(msg).toContain('Planta: —')
+    expect(msg).toContain('Cidade / retirada: —')
+    expect(msg).not.toContain('Planta: Ituverava')
+    expect(msg).not.toContain('Cidade / retirada: Ituverava')
+    expect(msg).toContain('Faturamento: Faturar p/Ituverava - SP')
   })
 
   it('mostra vencimento por produto quando as datas divergem', () => {

@@ -28,25 +28,44 @@ export const TIPO_ENTREGA_OPTIONS = [
   { value: 'FOB', label: 'FOB' },
 ]
 
-export const PLANTA_VALUES = ['Uberaba', 'Cubatão', 'Rio Grande']
+export const PLANTAS = [
+  { value: 'Uberaba', estado: 'Minas Gerais' },
+  { value: 'Cubatão', estado: 'São Paulo' },
+  { value: 'Rio Grande', estado: 'Rio Grande' },
+]
+
+export const PLANTA_VALUES = PLANTAS.map((item) => item.value)
+
+export function plantaConhecida(value) {
+  const text = String(value ?? '').trim()
+  return PLANTA_VALUES.includes(text) ? text : ''
+}
+
+export function plantaLabel(value) {
+  const cidade = plantaConhecida(value)
+  if (!cidade) return ''
+  const planta = PLANTAS.find((item) => item.value === cidade)
+  return `${planta.value} — ${planta.estado}`
+}
 
 export const PLANTA_OPTIONS = [
   { value: '', label: 'Selecione a planta…' },
-  ...PLANTA_VALUES.map((value) => ({ value, label: value })),
+  ...PLANTAS.map((item) => ({
+    value: item.value,
+    label: `${item.value} — ${item.estado}`,
+  })),
 ]
 
-/** Mantém planta antiga fora da lista para o save não apagar o texto já gravado. */
-export function plantaOptions(current = '') {
-  const value = String(current ?? '').trim()
-  if (!value || PLANTA_VALUES.includes(value)) return PLANTA_OPTIONS
-  return [...PLANTA_OPTIONS, { value, label: value }]
+/** Só as três plantas do fornecedor. Nome de filial comercial não entra na lista. */
+export function plantaOptions() {
+  return PLANTA_OPTIONS
 }
 
-/** Cidade do documento é a planta gravada. Sem planta, fica a cidade já salva. */
+/** Cidade do documento é a planta conhecida. Sem planta, fica a cidade salva se também for planta. */
 export function cidadeDaPlanta(compra) {
-  const planta = String(compra?.planta ?? '').trim()
+  const planta = plantaConhecida(compra?.planta)
   if (planta) return planta
-  return String(compra?.cidade_retirada ?? '').trim()
+  return plantaConhecida(compra?.cidade_retirada)
 }
 
 export const UNIDADE_OPTIONS = [

@@ -1,5 +1,11 @@
 # Decisões
 
+## 2026-11-17 — Planta da OC é cidade, com estado
+No pedido ao fornecedor, a planta é Uberaba (Minas Gerais), Cubatão (São Paulo) ou Rio Grande (Rio Grande). Ituverava, Nova Ponte, Guaíra e Frutal são filial comercial e não entram no seletor nem no texto da planta. Sem uma dessas três cidades gravada, a planta do documento fica em branco. A filial de faturamento continua à parte. Compras já gravadas não são reescritas.
+
+## 2026-11-17 — Carga da base de 09/11 sem somar pedido já convertido
+A planilha `Aval_Base_Vendas_2026-11-09_1.xlsx` entrou na tabela histórica do Syagri-Test, no lugar da carga de 07/11, e no Syagri oficial, que estava vazio. Pedido convertido não foi alterado nem apagado. Quando a mesma venda já existe como pedido do Aval, a linha histórica guarda a chave desse pedido. O painel fica com o pedido e não soma a linha da planilha. Metas da safra e família/custo ficaram de fora.
+
 ## 2026-11-16 — Publicação no banco oficial e no site
 O usuário pediu o deploy completo. A migration `20261111230000_simulacao_campos_venda_automaticos` entrou no Syagri oficial: preenche data nula, normaliza filial conhecida, muda o default para `lancado` e impede que um save regrave data, filial, tipo, safra ou lançamento. Não apaga pedido, compra nem histórico. A planilha GEFERT não foi importada. Migrations locais de logística e push que já estavam no oficial com outro número de versão não foram rodadas de novo. O frontend publicado é o push da `main` no GitHub Pages.
 

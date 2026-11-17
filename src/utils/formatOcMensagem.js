@@ -3,6 +3,7 @@ import { ocItemValoresPedido, ocTotalBrl } from './comprasPrecos'
 import {
   cidadeDaPlanta,
   ocFaturamento,
+  plantaLabel,
   ocItemVencimento,
   ocLista,
   ocVencimentoUnico,
@@ -32,7 +33,7 @@ export function formatOcMensagem(compra, itens, fornecedorNome) {
   if (vencimentoUnico) lines.push(`Data de vencimento: ${formatDateBr(vencimentoUnico)}`)
   lines.push(
     `Condição: ${compra.condicao_pagamento || '—'}`,
-    `Planta: ${String(compra.planta ?? '').trim() || '—'}`,
+    `Planta: ${plantaLabel(compra.planta) || '—'}`,
     `Tipo de entrega: ${tipoEntregaLabel(compra.tipo_entrega)}`,
     `Cidade / retirada: ${cidadeDaPlanta(compra) || '—'}`,
   )
