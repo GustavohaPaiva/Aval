@@ -1,3 +1,11 @@
+# Estado atual — 2026-11-17, visual de comissão e estoque
+
+## Verificado nesta revisão
+As telas de comissão e estoque tinham ajuste visual local, sem mudança de regra. Foram publicadas no GitHub Pages junto com o código já existente.
+
+## Próxima etapa
+Conferir no site o aviso push e o formulário de estoque.
+
 # Estado atual — 2026-11-17, push nativo no oficial
 
 ## Verificado nesta revisão

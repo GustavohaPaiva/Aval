@@ -1,22 +1,22 @@
-import { useCallback, useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { IconEye } from '../components/icons'
-import { AlertMessage } from '../components/ui/AlertMessage'
-import { Button } from '../components/ui/Button'
-import { DataTable } from '../components/ui/DataTable'
-import { DatePicker } from '../components/ui/DatePicker'
-import { EmptyState } from '../components/ui/EmptyState'
-import { Input } from '../components/ui/Input'
-import { MobileCardList } from '../components/ui/MobileCardList'
-import { Modal } from '../components/ui/Modal'
-import { PageHeader } from '../components/ui/PageHeader'
-import { SearchInput } from '../components/ui/SearchInput'
-import { Select } from '../components/ui/Select'
-import { useSyncPageLoading } from '../contexts/PageLoadingContext'
-import { useAbortableAsync } from '../hooks/useAbortableAsync'
-import { useAuth } from '../hooks/useAuth'
-import { useDebouncedValue } from '../hooks/useDebouncedValue'
-import { usePersistedFilters } from '../hooks/usePersistedFilters'
+import { useCallback, useMemo, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { IconEye } from "../components/icons";
+import { AlertMessage } from "../components/ui/AlertMessage";
+import { Button } from "../components/ui/Button";
+import { DataTable } from "../components/ui/DataTable";
+import { DatePicker } from "../components/ui/DatePicker";
+import { EmptyState } from "../components/ui/EmptyState";
+import { Input } from "../components/ui/Input";
+import { MobileCardList } from "../components/ui/MobileCardList";
+import { Modal } from "../components/ui/Modal";
+import { PageHeader } from "../components/ui/PageHeader";
+import { SearchInput } from "../components/ui/SearchInput";
+import { Select } from "../components/ui/Select";
+import { useSyncPageLoading } from "../contexts/PageLoadingContext";
+import { useAbortableAsync } from "../hooks/useAbortableAsync";
+import { useAuth } from "../hooks/useAuth";
+import { useDebouncedValue } from "../hooks/useDebouncedValue";
+import { usePersistedFilters } from "../hooks/usePersistedFilters";
 import {
   aggregateComissaoTotais,
   applyComissaoRegistroFaixas,
@@ -26,147 +26,151 @@ import {
   fetchComissaoRegistroDetalhe,
   fetchComissaoRegistros,
   updateComissaoFaixa,
-} from '../services/comissaoService'
+} from "../services/comissaoService";
 import {
   calcComissaoMediaPercentual,
   TIPOS_COMISSAO_PRODUTO,
-} from '../utils/comissaoCalculations'
-import { formatShortDate } from '../utils/formatShortDate'
-import { formatBRL, formatComissaoPctValor, formatPercentPoints } from '../utils/money'
+} from "../utils/comissaoCalculations";
+import { formatShortDate } from "../utils/formatShortDate";
+import {
+  formatBRL,
+  formatComissaoPctValor,
+  formatPercentPoints,
+} from "../utils/money";
 
 function pedidoPath(simulationId) {
-  if (!simulationId) return null
-  return `/pedido/${encodeURIComponent(simulationId)}`
+  if (!simulationId) return null;
+  return `/pedido/${encodeURIComponent(simulationId)}`;
 }
 
 const STATUS_OPTIONS = [
-  { value: '', label: 'Todos os status' },
-  { value: 'calculada', label: 'Calculada' },
-  { value: 'confirmada', label: 'Confirmada' },
-  { value: 'cancelada', label: 'Cancelada' },
-]
+  { value: "", label: "Todos os status" },
+  { value: "calculada", label: "Calculada" },
+  { value: "confirmada", label: "Confirmada" },
+  { value: "cancelada", label: "Cancelada" },
+];
 
 const EMPTY_FILTERS = {
-  searchQuery: '',
-  consultorId: '',
+  searchQuery: "",
+  consultorId: "",
   consultorIds: [],
-  status: '',
-  dateFrom: '',
-  dateTo: '',
-}
-const COMISSAO_PAGE_SIZE = 50
+  status: "",
+  dateFrom: "",
+  dateTo: "",
+};
+const COMISSAO_PAGE_SIZE = 50;
 
 /** YYYY-MM-DD local from an ISO timestamp (for inclusive date-range compare). */
 function toLocalDateKey(iso) {
-  if (!iso) return null
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return null
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 const STATUS_META = {
   calculada: {
-    label: 'Calculada',
-    className: 'bg-amber-50 text-amber-800 ring-amber-200',
+    label: "Calculada",
+    className: "bg-amber-50 text-amber-800 ring-amber-200",
   },
   confirmada: {
-    label: 'Confirmada',
-    className: 'bg-emerald-50 text-emerald-800 ring-emerald-200',
+    label: "Confirmada",
+    className: "bg-emerald-50 text-emerald-800 ring-emerald-200",
   },
   cancelada: {
-    label: 'Cancelada',
-    className: 'bg-rose-50 text-rose-800 ring-rose-200',
+    label: "Cancelada",
+    className: "bg-rose-50 text-rose-800 ring-rose-200",
   },
-}
+};
 
 function parseDecimalBr(value) {
-  const normalized = String(value ?? '')
+  const normalized = String(value ?? "")
     .trim()
-    .replace(/\./g, '')
-    .replace(',', '.')
-  if (!normalized) return null
-  const num = Number.parseFloat(normalized)
-  return Number.isFinite(num) ? num : NaN
+    .replace(/\./g, "")
+    .replace(",", ".");
+  if (!normalized) return null;
+  const num = Number.parseFloat(normalized);
+  return Number.isFinite(num) ? num : NaN;
 }
 
 function formatDecimalBr(value, { min = 2, max = 4 } = {}) {
-  if (value == null || value === '') return ''
-  const num = Number(value)
-  if (!Number.isFinite(num)) return ''
-  return num.toLocaleString('pt-BR', {
+  if (value == null || value === "") return "";
+  const num = Number(value);
+  if (!Number.isFinite(num)) return "";
+  return num.toLocaleString("pt-BR", {
     minimumFractionDigits: min,
     maximumFractionDigits: max,
-  })
+  });
 }
 
 function StatusBadge({ status }) {
   const meta = STATUS_META[status] ?? {
-    label: status || '—',
-    className: 'bg-slate-50 text-slate-700 ring-slate-200',
-  }
+    label: status || "—",
+    className: "bg-slate-50 text-slate-700 ring-slate-200",
+  };
   return (
     <span
       className={[
-        'inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1',
+        "inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1",
         meta.className,
-      ].join(' ')}
+      ].join(" ")}
     >
       {meta.label}
     </span>
-  )
+  );
 }
 
 function FaixaRowEditor({ row, onSaved, onDeleted, disabled }) {
   const [margem, setMargem] = useState(
     formatDecimalBr(row.margem_minima_percentual, { min: 0, max: 4 }),
-  )
+  );
   const [comissao, setComissao] = useState(
     formatDecimalBr(row.comissao_percentual, { min: 2, max: 4 }),
-  )
-  const [saving, setSaving] = useState(false)
-  const [deleting, setDeleting] = useState(false)
-  const [error, setError] = useState(null)
+  );
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState(null);
 
   async function handleSave(e) {
-    e.preventDefault()
-    setError(null)
-    const margemNum = parseDecimalBr(margem)
-    const comissaoNum = parseDecimalBr(comissao)
+    e.preventDefault();
+    setError(null);
+    const margemNum = parseDecimalBr(margem);
+    const comissaoNum = parseDecimalBr(comissao);
     if (!Number.isFinite(margemNum) || margemNum < 0) {
-      setError('Margem mínima inválida.')
-      return
+      setError("Margem mínima inválida.");
+      return;
     }
     if (!Number.isFinite(comissaoNum) || comissaoNum < 0) {
-      setError('Comissão inválida.')
-      return
+      setError("Comissão inválida.");
+      return;
     }
 
-    setSaving(true)
+    setSaving(true);
     const res = await updateComissaoFaixa(row.id, {
       margem_minima_percentual: margemNum,
       comissao_percentual: comissaoNum,
-    })
-    setSaving(false)
+    });
+    setSaving(false);
     if (!res.ok) {
-      setError(res.error)
-      return
+      setError(res.error);
+      return;
     }
-    onSaved?.(res.row)
+    onSaved?.(res.row);
   }
 
   async function handleDelete() {
-    setError(null)
-    setDeleting(true)
-    const res = await deleteComissaoFaixa(row.id)
-    setDeleting(false)
+    setError(null);
+    setDeleting(true);
+    const res = await deleteComissaoFaixa(row.id);
+    setDeleting(false);
     if (!res.ok) {
-      setError(res.error)
-      return
+      setError(res.error);
+      return;
     }
-    onDeleted?.(row.id)
+    onDeleted?.(row.id);
   }
 
   return (
@@ -209,46 +213,46 @@ function FaixaRowEditor({ row, onSaved, onDeleted, disabled }) {
         </p>
       ) : null}
     </form>
-  )
+  );
 }
 
 function FaixaTipoSection({ tipo, rows, onChanged, disabled }) {
-  const [novaMargem, setNovaMargem] = useState('')
-  const [novaComissao, setNovaComissao] = useState('')
-  const [adding, setAdding] = useState(false)
-  const [addError, setAddError] = useState(null)
+  const [novaMargem, setNovaMargem] = useState("");
+  const [novaComissao, setNovaComissao] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState(null);
 
   const titulo =
-    tipo === 'Especial' ? 'Produtos especiais' : 'Produtos convencionais'
+    tipo === "Especial" ? "Produtos especiais" : "Produtos convencionais";
 
   async function handleAdd(e) {
-    e.preventDefault()
-    setAddError(null)
-    const margemNum = parseDecimalBr(novaMargem)
-    const comissaoNum = parseDecimalBr(novaComissao)
+    e.preventDefault();
+    setAddError(null);
+    const margemNum = parseDecimalBr(novaMargem);
+    const comissaoNum = parseDecimalBr(novaComissao);
     if (!Number.isFinite(margemNum) || margemNum < 0) {
-      setAddError('Informe a margem mínima.')
-      return
+      setAddError("Informe a margem mínima.");
+      return;
     }
     if (!Number.isFinite(comissaoNum) || comissaoNum < 0) {
-      setAddError('Informe o percentual de comissão.')
-      return
+      setAddError("Informe o percentual de comissão.");
+      return;
     }
 
-    setAdding(true)
+    setAdding(true);
     const res = await createComissaoFaixa({
       tipo_produto: tipo,
       margem_minima_percentual: margemNum,
       comissao_percentual: comissaoNum,
-    })
-    setAdding(false)
+    });
+    setAdding(false);
     if (!res.ok) {
-      setAddError(res.error)
-      return
+      setAddError(res.error);
+      return;
     }
-    setNovaMargem('')
-    setNovaComissao('')
-    onChanged?.()
+    setNovaMargem("");
+    setNovaComissao("");
+    onChanged?.();
   }
 
   return (
@@ -311,51 +315,51 @@ function FaixaTipoSection({ tipo, rows, onChanged, disabled }) {
         ) : null}
       </form>
     </section>
-  )
+  );
 }
 
 function ComissaoParametrosModal({ open, onClose }) {
-  const [faixas, setFaixas] = useState([])
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(null)
-  const [successMessage, setSuccessMessage] = useState(null)
+  const [faixas, setFaixas] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [successMessage, setSuccessMessage] = useState(null);
 
   const loadFaixas = useCallback(async (isActive) => {
-    setLoading(true)
-    setError(null)
-    const res = await fetchComissaoFaixas()
-    if (isActive && !isActive()) return
-    setLoading(false)
+    setLoading(true);
+    setError(null);
+    const res = await fetchComissaoFaixas();
+    if (isActive && !isActive()) return;
+    setLoading(false);
     if (!res.ok) {
-      setError(res.error)
-      return
+      setError(res.error);
+      return;
     }
-    setFaixas(res.rows)
-  }, [])
+    setFaixas(res.rows);
+  }, []);
 
   useAbortableAsync(
     async (_signal, isActive) => {
-      setSuccessMessage(null)
-      await loadFaixas(isActive)
+      setSuccessMessage(null);
+      await loadFaixas(isActive);
     },
     [loadFaixas],
     open,
-  )
+  );
 
   const byTipo = useMemo(() => {
-    const map = Object.fromEntries(TIPOS_COMISSAO_PRODUTO.map((t) => [t, []]))
+    const map = Object.fromEntries(TIPOS_COMISSAO_PRODUTO.map((t) => [t, []]));
     for (const row of faixas) {
       const tipo = TIPOS_COMISSAO_PRODUTO.includes(row.tipo_produto)
         ? row.tipo_produto
-        : 'Convencional'
-      map[tipo].push(row)
+        : "Convencional";
+      map[tipo].push(row);
     }
-    return map
-  }, [faixas])
+    return map;
+  }, [faixas]);
 
   async function reload() {
-    setSuccessMessage('Faixas atualizadas.')
-    await loadFaixas(() => true)
+    setSuccessMessage("Faixas atualizadas.");
+    await loadFaixas(() => true);
   }
 
   return (
@@ -394,32 +398,29 @@ function ComissaoParametrosModal({ open, onClose }) {
         ))}
       </div>
     </Modal>
-  )
+  );
 }
 
 function consultorNome(row) {
-  return row.consultor_nome ?? '—'
+  return row.consultor_nome ?? "—";
 }
 
 function clienteNome(row) {
-  return row.simulations?.clients?.nome ?? '—'
+  return row.simulations?.clients?.nome ?? "—";
 }
 
 function registroComissaoLabel(row) {
-  const pct = calcComissaoMediaPercentual(
-    row.comissao_valor,
-    row.base_calculo,
-  )
-  return formatComissaoPctValor(pct, row.comissao_valor)
+  const pct = calcComissaoMediaPercentual(row.comissao_valor, row.base_calculo);
+  return formatComissaoPctValor(pct, row.comissao_valor);
 }
 
 function ComissaoValorLink({ row }) {
-  const path = pedidoPath(row.simulation_id)
-  const label = registroComissaoLabel(row)
+  const path = pedidoPath(row.simulation_id);
+  const label = registroComissaoLabel(row);
   if (!path) {
     return (
       <span className="finance-text font-semibold text-slate-900">{label}</span>
-    )
+    );
   }
   return (
     <Link
@@ -429,35 +430,35 @@ function ComissaoValorLink({ row }) {
     >
       {label}
     </Link>
-  )
+  );
 }
 
 function DraftFaixaRow({ row, disabled, onChange, onRemove }) {
   const [margem, setMargem] = useState(
     formatDecimalBr(row.margem_minima_percentual, { min: 0, max: 4 }),
-  )
+  );
   const [comissao, setComissao] = useState(
     formatDecimalBr(row.comissao_percentual, { min: 2, max: 4 }),
-  )
+  );
 
   function updateMargem(value) {
-    setMargem(value)
-    const margemNum = parseDecimalBr(value)
-    if (!Number.isFinite(margemNum) || margemNum < 0) return
+    setMargem(value);
+    const margemNum = parseDecimalBr(value);
+    if (!Number.isFinite(margemNum) || margemNum < 0) return;
     onChange?.({
       ...row,
       margem_minima_percentual: margemNum,
-    })
+    });
   }
 
   function updateComissao(value) {
-    setComissao(value)
-    const comissaoNum = parseDecimalBr(value)
-    if (!Number.isFinite(comissaoNum) || comissaoNum < 0) return
+    setComissao(value);
+    const comissaoNum = parseDecimalBr(value);
+    if (!Number.isFinite(comissaoNum) || comissaoNum < 0) return;
     onChange?.({
       ...row,
       comissao_percentual: comissaoNum,
-    })
+    });
   }
 
   return (
@@ -486,37 +487,33 @@ function DraftFaixaRow({ row, disabled, onChange, onRemove }) {
         Remover
       </Button>
     </div>
-  )
+  );
 }
 
 function DraftFaixaTipoSection({ tipo, rows, disabled, onChangeRows }) {
-  const [novaMargem, setNovaMargem] = useState('')
-  const [novaComissao, setNovaComissao] = useState('')
-  const [addError, setAddError] = useState(null)
+  const [novaMargem, setNovaMargem] = useState("");
+  const [novaComissao, setNovaComissao] = useState("");
+  const [addError, setAddError] = useState(null);
 
   const titulo =
-    tipo === 'Especial' ? 'Produtos especiais' : 'Produtos convencionais'
+    tipo === "Especial" ? "Produtos especiais" : "Produtos convencionais";
 
   function handleAdd(e) {
-    e.preventDefault()
-    setAddError(null)
-    const margemNum = parseDecimalBr(novaMargem)
-    const comissaoNum = parseDecimalBr(novaComissao)
+    e.preventDefault();
+    setAddError(null);
+    const margemNum = parseDecimalBr(novaMargem);
+    const comissaoNum = parseDecimalBr(novaComissao);
     if (!Number.isFinite(margemNum) || margemNum < 0) {
-      setAddError('Informe a margem mínima.')
-      return
+      setAddError("Informe a margem mínima.");
+      return;
     }
     if (!Number.isFinite(comissaoNum) || comissaoNum < 0) {
-      setAddError('Informe o percentual de comissão.')
-      return
+      setAddError("Informe o percentual de comissão.");
+      return;
     }
-    if (
-      rows.some(
-        (r) => Number(r.margem_minima_percentual) === margemNum,
-      )
-    ) {
-      setAddError('Já existe uma faixa com essa margem mínima.')
-      return
+    if (rows.some((r) => Number(r.margem_minima_percentual) === margemNum)) {
+      setAddError("Já existe uma faixa com essa margem mínima.");
+      return;
     }
     onChangeRows([
       ...rows,
@@ -527,9 +524,9 @@ function DraftFaixaTipoSection({ tipo, rows, disabled, onChangeRows }) {
         comissao_percentual: comissaoNum,
         ativo: true,
       },
-    ])
-    setNovaMargem('')
-    setNovaComissao('')
+    ]);
+    setNovaMargem("");
+    setNovaComissao("");
   }
 
   return (
@@ -553,13 +550,9 @@ function DraftFaixaTipoSection({ tipo, rows, disabled, onChangeRows }) {
               row={row}
               disabled={disabled}
               onChange={(next) =>
-                onChangeRows(
-                  rows.map((r) => (r.id === row.id ? next : r)),
-                )
+                onChangeRows(rows.map((r) => (r.id === row.id ? next : r)))
               }
-              onRemove={(id) =>
-                onChangeRows(rows.filter((r) => r.id !== id))
-              }
+              onRemove={(id) => onChangeRows(rows.filter((r) => r.id !== id))}
             />
           ))
         )}
@@ -598,33 +591,33 @@ function DraftFaixaTipoSection({ tipo, rows, disabled, onChangeRows }) {
         ) : null}
       </form>
     </section>
-  )
+  );
 }
 
 function ComissaoDetalheModal({ open, registroId, canEdit, onClose, onSaved }) {
-  const [loading, setLoading] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState(null)
-  const [registro, setRegistro] = useState(null)
-  const [faixas, setFaixas] = useState([])
-  const [usingOverride, setUsingOverride] = useState(false)
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  const [registro, setRegistro] = useState(null);
+  const [faixas, setFaixas] = useState([]);
+  const [usingOverride, setUsingOverride] = useState(false);
 
   const loadDetalhe = useCallback(
     async (isActive) => {
-      if (!registroId) return
-      setLoading(true)
-      setError(null)
-      const res = await fetchComissaoRegistroDetalhe(registroId)
-      if (isActive && !isActive()) return
-      setLoading(false)
+      if (!registroId) return;
+      setLoading(true);
+      setError(null);
+      const res = await fetchComissaoRegistroDetalhe(registroId);
+      if (isActive && !isActive()) return;
+      setLoading(false);
       if (!res.ok) {
-        setError(res.error)
-        setRegistro(null)
-        setFaixas([])
-        return
+        setError(res.error);
+        setRegistro(null);
+        setFaixas([]);
+        return;
       }
-      setRegistro(res.registro)
-      setUsingOverride(Boolean(res.usingOverride))
+      setRegistro(res.registro);
+      setUsingOverride(Boolean(res.usingOverride));
       setFaixas(
         (res.faixas ?? []).map((f, idx) => ({
           ...f,
@@ -632,57 +625,57 @@ function ComissaoDetalheModal({ open, registroId, canEdit, onClose, onSaved }) {
             f.id ??
             `seed-${f.tipo_produto}-${f.margem_minima_percentual}-${idx}`,
         })),
-      )
+      );
     },
     [registroId],
-  )
+  );
 
   useAbortableAsync(
     async (_signal, isActive) => {
-      await loadDetalhe(isActive)
+      await loadDetalhe(isActive);
     },
     [loadDetalhe],
     open && Boolean(registroId),
-  )
+  );
 
   const byTipo = useMemo(() => {
-    const map = Object.fromEntries(TIPOS_COMISSAO_PRODUTO.map((t) => [t, []]))
+    const map = Object.fromEntries(TIPOS_COMISSAO_PRODUTO.map((t) => [t, []]));
     for (const row of faixas) {
       const tipo = TIPOS_COMISSAO_PRODUTO.includes(row.tipo_produto)
         ? row.tipo_produto
-        : 'Convencional'
-      map[tipo].push(row)
+        : "Convencional";
+      map[tipo].push(row);
     }
-    return map
-  }, [faixas])
+    return map;
+  }, [faixas]);
 
   function replaceTipo(tipo, nextRows) {
     setFaixas((prev) => [
       ...prev.filter((r) => r.tipo_produto !== tipo),
       ...nextRows.map((r) => ({ ...r, tipo_produto: tipo })),
-    ])
+    ]);
   }
 
   async function handleApply() {
-    if (!canEdit || !registroId) return
-    setError(null)
+    if (!canEdit || !registroId) return;
+    setError(null);
     if (faixas.length === 0) {
-      setError('Informe ao menos uma faixa de margem × comissão.')
-      return
+      setError("Informe ao menos uma faixa de margem × comissão.");
+      return;
     }
 
-    setSaving(true)
+    setSaving(true);
     const res = await applyComissaoRegistroFaixas({
       registroId,
       faixas,
-    })
-    setSaving(false)
+    });
+    setSaving(false);
     if (!res.ok) {
-      setError(res.error)
-      return
+      setError(res.error);
+      return;
     }
-    onSaved?.(res)
-    onClose?.()
+    onSaved?.(res);
+    onClose?.();
   }
 
   return (
@@ -733,7 +726,7 @@ function ComissaoDetalheModal({ open, registroId, canEdit, onClose, onSaved }) {
                   Consultor
                 </p>
                 <p className="mt-1 text-sm font-medium text-slate-900">
-                  {registro.consultor_nome ?? '—'}
+                  {registro.consultor_nome ?? "—"}
                 </p>
               </div>
               <div>
@@ -741,7 +734,7 @@ function ComissaoDetalheModal({ open, registroId, canEdit, onClose, onSaved }) {
                   Cliente
                 </p>
                 <p className="mt-1 text-sm font-medium text-slate-900">
-                  {registro.simulations?.clients?.nome ?? '—'}
+                  {registro.simulations?.clients?.nome ?? "—"}
                 </p>
               </div>
               <div>
@@ -765,9 +758,9 @@ function ComissaoDetalheModal({ open, registroId, canEdit, onClose, onSaved }) {
             <p className="text-sm text-slate-600">
               {canEdit
                 ? usingOverride
-                  ? 'Estas faixas valem só para este pedido. As faixas globais não são alteradas.'
-                  : 'Partindo das faixas globais. Ao aplicar, o ajuste fica só neste pedido.'
-                : 'Faixas usadas no cálculo deste pedido (somente leitura).'}
+                  ? "Estas faixas valem só para este pedido. As faixas globais não são alteradas."
+                  : "Partindo das faixas globais. Ao aplicar, o ajuste fica só neste pedido."
+                : "Faixas usadas no cálculo deste pedido (somente leitura)."}
             </p>
 
             {TIPOS_COMISSAO_PRODUTO.map((tipo) => (
@@ -783,139 +776,150 @@ function ComissaoDetalheModal({ open, registroId, canEdit, onClose, onSaved }) {
         )}
       </div>
     </Modal>
-  )
+  );
 }
 
 export function ComissaoPage() {
-  const navigate = useNavigate()
-  const { role } = useAuth()
-  const isGestor = role === 'gestor'
-  const [registros, setRegistros] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-  const [paramsOpen, setParamsOpen] = useState(false)
-  const [detalheRegistroId, setDetalheRegistroId] = useState(null)
+  const navigate = useNavigate();
+  const { role } = useAuth();
+  const isGestor = role === "gestor";
+  const [registros, setRegistros] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [paramsOpen, setParamsOpen] = useState(false);
+  const [detalheRegistroId, setDetalheRegistroId] = useState(null);
 
   const [filters, setFilters, patchFilters] = usePersistedFilters(
-    'filters:comissao',
+    "filters:comissao",
     EMPTY_FILTERS,
-  )
-  const { searchQuery, consultorId, status, dateFrom, dateTo } = filters
+  );
+  const { searchQuery, consultorId, status, dateFrom, dateTo } = filters;
   const consultorIds = useMemo(() => {
-    if (Array.isArray(filters.consultorIds) && filters.consultorIds.length) return filters.consultorIds
-    return consultorId ? [consultorId] : []
-  }, [filters.consultorIds, consultorId])
-  const debouncedSearch = useDebouncedValue(searchQuery, 300)
-  const [page, setPage] = useState(1)
-  const [exporting, setExporting] = useState(false)
+    if (Array.isArray(filters.consultorIds) && filters.consultorIds.length)
+      return filters.consultorIds;
+    return consultorId ? [consultorId] : [];
+  }, [filters.consultorIds, consultorId]);
+  const debouncedSearch = useDebouncedValue(searchQuery, 300);
+  const [page, setPage] = useState(1);
+  const [exporting, setExporting] = useState(false);
 
   const hasFilters = Boolean(
     searchQuery.trim() || consultorIds.length || status || dateFrom || dateTo,
-  )
+  );
 
   function openPedido(row) {
-    const path = pedidoPath(row.simulation_id)
-    if (!path) return
-    navigate(path)
+    const path = pedidoPath(row.simulation_id);
+    if (!path) return;
+    navigate(path);
   }
 
   const loadPage = useCallback(async (isActive) => {
-    setLoading(true)
-    setError(null)
-    const res = await fetchComissaoRegistros()
-    if (isActive && !isActive()) return
-    setLoading(false)
+    setLoading(true);
+    setError(null);
+    const res = await fetchComissaoRegistros();
+    if (isActive && !isActive()) return;
+    setLoading(false);
     if (!res.ok) {
-      setError(res.error)
-      setRegistros([])
-      return
+      setError(res.error);
+      setRegistros([]);
+      return;
     }
-    setRegistros(res.rows)
-  }, [])
+    setRegistros(res.rows);
+  }, []);
 
-  useSyncPageLoading(loading)
+  useSyncPageLoading(loading);
 
   useAbortableAsync(
     async (_signal, isActive) => {
-      await loadPage(isActive)
+      await loadPage(isActive);
     },
     [loadPage],
-  )
+  );
 
   const consultorOptions = useMemo(() => {
-    const byId = new Map()
+    const byId = new Map();
     for (const row of registros) {
-      const id = row.consultor_id
-      if (id == null || byId.has(String(id))) continue
+      const id = row.consultor_id;
+      if (id == null || byId.has(String(id))) continue;
       byId.set(String(id), {
         value: String(id),
-        label: row.consultor_nome || 'Consultor sem nome',
-      })
+        label: row.consultor_nome || "Consultor sem nome",
+      });
     }
-    return [...byId.values()].sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'))
-  }, [registros])
+    return [...byId.values()].sort((a, b) =>
+      a.label.localeCompare(b.label, "pt-BR"),
+    );
+  }, [registros]);
 
   const filtered = useMemo(() => {
-    const q = debouncedSearch.trim().toLowerCase()
+    const q = debouncedSearch.trim().toLowerCase();
     return registros.filter((row) => {
-      if (consultorIds.length && !consultorIds.some((id) => String(id) === String(row.consultor_id))) {
-        return false
+      if (
+        consultorIds.length &&
+        !consultorIds.some((id) => String(id) === String(row.consultor_id))
+      ) {
+        return false;
       }
-      if (status && row.status !== status) return false
+      if (status && row.status !== status) return false;
 
       if (dateFrom || dateTo) {
-        const key = toLocalDateKey(row.calculado_em)
-        if (!key) return false
-        if (dateFrom && key < dateFrom) return false
-        if (dateTo && key > dateTo) return false
+        const key = toLocalDateKey(row.calculado_em);
+        if (!key) return false;
+        if (dateFrom && key < dateFrom) return false;
+        if (dateTo && key > dateTo) return false;
       }
 
       if (q) {
-        const nome = String(row.consultor_nome ?? '').toLowerCase()
+        const nome = String(row.consultor_nome ?? "").toLowerCase();
         const cliente = String(
-          row.simulations?.clients?.nome ?? '',
-        ).toLowerCase()
-        if (!nome.includes(q) && !cliente.includes(q)) return false
+          row.simulations?.clients?.nome ?? "",
+        ).toLowerCase();
+        if (!nome.includes(q) && !cliente.includes(q)) return false;
       }
 
-      return true
-    })
-  }, [registros, debouncedSearch, consultorIds, status, dateFrom, dateTo])
+      return true;
+    });
+  }, [registros, debouncedSearch, consultorIds, status, dateFrom, dateTo]);
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / COMISSAO_PAGE_SIZE))
-  const currentPage = Math.min(page, pageCount)
-  const visible = filtered.slice((currentPage - 1) * COMISSAO_PAGE_SIZE, currentPage * COMISSAO_PAGE_SIZE)
+  const pageCount = Math.max(
+    1,
+    Math.ceil(filtered.length / COMISSAO_PAGE_SIZE),
+  );
+  const currentPage = Math.min(page, pageCount);
+  const visible = filtered.slice(
+    (currentPage - 1) * COMISSAO_PAGE_SIZE,
+    currentPage * COMISSAO_PAGE_SIZE,
+  );
 
   async function exportXlsx() {
-    setExporting(true)
+    setExporting(true);
     try {
-      const XLSX = await import('xlsx')
-      const sheet = XLSX.utils.json_to_sheet(filtered.map((row) => ({
-        Consultor: row.consultor_nome || '',
-        Cliente: row.simulations?.clients?.nome || '',
-        Status: row.status || '',
-        Data: toLocalDateKey(row.calculado_em) || '',
-        Base: row.base_calculo ?? '',
-        Comissao: row.comissao_valor ?? '',
-      })))
-      const book = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(book, sheet, 'Comissoes')
-      XLSX.writeFile(book, 'comissoes.xlsx')
+      const XLSX = await import("xlsx");
+      const sheet = XLSX.utils.json_to_sheet(
+        filtered.map((row) => ({
+          Consultor: row.consultor_nome || "",
+          Cliente: row.simulations?.clients?.nome || "",
+          Status: row.status || "",
+          Data: toLocalDateKey(row.calculado_em) || "",
+          Base: row.base_calculo ?? "",
+          Comissao: row.comissao_valor ?? "",
+        })),
+      );
+      const book = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(book, sheet, "Comissoes");
+      XLSX.writeFile(book, "comissoes.xlsx");
     } finally {
-      setExporting(false)
+      setExporting(false);
     }
   }
 
-  const totals = useMemo(
-    () => aggregateComissaoTotais(filtered),
-    [filtered],
-  )
+  const totals = useMemo(() => aggregateComissaoTotais(filtered), [filtered]);
 
   const columns = useMemo(
     () => [
       {
-        key: 'consultor',
-        header: 'Consultor',
+        key: "consultor",
+        header: "Consultor",
         cell: (row) => (
           <div className="min-w-0">
             <p className="font-medium text-slate-900">{consultorNome(row)}</p>
@@ -926,26 +930,26 @@ export function ComissaoPage() {
         ),
       },
       {
-        key: 'valor',
-        header: 'Comissão',
-        align: 'right',
+        key: "valor",
+        header: "Comissão",
+        align: "right",
         cell: (row) => <ComissaoValorLink row={row} />,
       },
       {
-        key: 'data',
-        header: 'Data',
+        key: "data",
+        header: "Data",
         cell: (row) =>
-          row.calculado_em ? formatShortDate(row.calculado_em) : '—',
+          row.calculado_em ? formatShortDate(row.calculado_em) : "—",
       },
       {
-        key: 'status',
-        header: 'Status',
+        key: "status",
+        header: "Status",
         cell: (row) => <StatusBadge status={row.status} />,
       },
       {
-        key: 'acoes',
-        header: '',
-        align: 'right',
+        key: "acoes",
+        header: "",
+        align: "right",
         cell: (row) => (
           <button
             type="button"
@@ -960,7 +964,7 @@ export function ComissaoPage() {
       },
     ],
     [],
-  )
+  );
 
   return (
     <div className="w-full min-w-0 space-y-4 sm:space-y-6">
@@ -1012,7 +1016,7 @@ export function ComissaoPage() {
             Registros
           </p>
           <p className="mt-1 text-lg font-semibold text-slate-900">
-            {totals.count.toLocaleString('pt-BR')}
+            {totals.count.toLocaleString("pt-BR")}
           </p>
         </div>
       </div>
@@ -1029,16 +1033,22 @@ export function ComissaoPage() {
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="secondary" loading={exporting} disabled={!filtered.length} onClick={() => void exportXlsx()}>
-                Exportar XLSX
+              <Button
+                type="button"
+                variant="secondary"
+                loading={exporting}
+                disabled={!filtered.length}
+                onClick={() => void exportXlsx()}
+              >
+                Exportar Comissões
               </Button>
               {hasFilters ? (
                 <Button
                   type="button"
                   variant="secondary"
                   onClick={() => {
-                    setPage(1)
-                    setFilters({ ...EMPTY_FILTERS })
+                    setPage(1);
+                    setFilters({ ...EMPTY_FILTERS });
                   }}
                 >
                   Limpar filtros
@@ -1069,8 +1079,8 @@ export function ComissaoPage() {
             multiple
             value={consultorIds}
             onChange={(e) => {
-              setPage(1)
-              patchFilters({ consultorIds: e.target.value, consultorId: '' })
+              setPage(1);
+              patchFilters({ consultorIds: e.target.value, consultorId: "" });
             }}
             options={consultorOptions}
           />
@@ -1084,16 +1094,16 @@ export function ComissaoPage() {
             label="Data de"
             value={dateFrom}
             onChange={(e) => {
-              setPage(1)
-              patchFilters({ dateFrom: e.target.value })
+              setPage(1);
+              patchFilters({ dateFrom: e.target.value });
             }}
           />
           <DatePicker
             label="Data até"
             value={dateTo}
             onChange={(e) => {
-              setPage(1)
-              patchFilters({ dateTo: e.target.value })
+              setPage(1);
+              patchFilters({ dateTo: e.target.value });
             }}
           />
         </div>
@@ -1135,7 +1145,7 @@ export function ComissaoPage() {
                       <p className="text-sm text-slate-500">
                         {row.calculado_em
                           ? formatShortDate(row.calculado_em)
-                          : '—'}
+                          : "—"}
                       </p>
                       <span className="finance-text text-base font-semibold text-primary-700 underline-offset-2">
                         {registroComissaoLabel(row)}
@@ -1159,13 +1169,25 @@ export function ComissaoPage() {
           />
           <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-sm text-slate-600">
             <p>
-              {filtered.length} registro(s) no filtro · página {currentPage} de {pageCount}. A exportação inclui o filtro inteiro e só os registros que a sua sessão pode ler.
+              {filtered.length} registro(s) no filtro · página {currentPage} de{" "}
+              {pageCount}. A exportação inclui o filtro inteiro e só os
+              registros que a sua sessão pode ler.
             </p>
             <div className="flex gap-2">
-              <Button type="button" variant="secondary" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={currentPage <= 1}
+                onClick={() => setPage(currentPage - 1)}
+              >
                 Anterior
               </Button>
-              <Button type="button" variant="secondary" disabled={currentPage >= pageCount} onClick={() => setPage(currentPage + 1)}>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={currentPage >= pageCount}
+                onClick={() => setPage(currentPage + 1)}
+              >
                 Próxima
               </Button>
             </div>
@@ -1184,9 +1206,9 @@ export function ComissaoPage() {
         canEdit={isGestor}
         onClose={() => setDetalheRegistroId(null)}
         onSaved={() => {
-          void loadPage(() => true)
+          void loadPage(() => true);
         }}
       />
     </div>
-  )
+  );
 }
