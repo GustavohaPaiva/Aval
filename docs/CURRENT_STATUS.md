@@ -1,3 +1,16 @@
+# Estado atual — 2026-11-17, push nativo no oficial
+
+## Verificado nesta revisão
+O segredo `PUSH_DISPATCH_KEY` foi gravado na função oficial `enviar-push-notificacao` com o valor já existente no cofre. A função foi publicada de novo, com `verify_jwt` desligado. Às 06:26 UTC a resposta ainda era 403. Às 06:27 e 06:28 passou a 200. Sete envios ficaram `sent` e 33 foram pulados por não terem aparelho. Os 10 aparelhos que continuam inscritos — 5 iPhone/iPad, 3 Mac e 2 Android — aceitaram ao menos um aviso. Uma inscrição Android antiga saiu porque o navegador não a aceita mais.
+
+As migrations locais que não constam no histórico do oficial já estavam aplicadas com outro número. As funções de venda do oficial e do teste têm o mesmo conteúdo. Nenhuma migration nova foi executada.
+
+## Pendências
+A fila antiga continua saindo, até 20 por minuto. Windows e Linux seguem sem inscrição.
+
+## Próxima etapa
+Conferir no aparelho os avisos que já saíram. Quem ainda não ativou só recebe o que for criado depois da ativação.
+
 # Estado atual — 2026-11-16, publicação
 
 ## Verificado nesta revisão
