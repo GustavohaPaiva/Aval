@@ -40,6 +40,19 @@ export function todayDateOnly() {
   return `${y}-${m}-${day}`
 }
 
+/** Dia civil em America/Sao_Paulo. Data já gravada (YYYY-MM-DD) não é reinterpretada. */
+export function saoPauloDateOnly(value = new Date()) {
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value.trim())) return value.trim()
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date)
+}
+
 /**
  * Normaliza params de autonomia a partir da linha de parametros_sistema.
  */

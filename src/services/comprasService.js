@@ -8,9 +8,8 @@ import { DEFAULT_TAXA_JUROS } from '../utils/pricingCalculations'
 import {
   COMPRAS_EMBALAGEM_DEFAULT,
   COMPRAS_FILIAL_DEFAULT,
-  cidadeRetiradaFromFilial,
+  PLANTA_VALUES,
   faturamentoFromFilial,
-  plantaFromFilial,
 } from '../constants/compras'
 import { agruparLinhasPorFornecedor } from '../utils/comprasOcAgrupamento'
 import { buildEnderecoEntregaCif } from '../utils/formatPedidoCotacaoMensagem'
@@ -710,21 +709,23 @@ export async function fetchTaxaUsdVigente() {
 export async function updateCompraCabecalho(compraId, fields) {
   const filialSite = fields.filial_site ?? COMPRAS_FILIAL_DEFAULT
   const filialFaturamento = fields.filial_faturamento ?? filialSite
+  const planta = String(fields.planta ?? '').trim() || null
+  const patch = {
+    filial_site: filialSite,
+    filial_faturamento: filialFaturamento,
+    planta,
+    tipo_entrega: fields.tipo_entrega || null,
+    condicao_pagamento: fields.condicao_pagamento,
+    data_documento: fields.data_documento,
+    observacoes: fields.observacoes || null,
+    faturamento: faturamentoFromFilial(filialFaturamento),
+    ctc: fields.ctc || null,
+    entrega_retirada: fields.entrega_retirada || null,
+  }
+  if (planta && PLANTA_VALUES.includes(planta)) patch.cidade_retirada = planta
   const { error } = await supabase
     .from('compras')
-    .update({
-      filial_site: filialSite,
-      filial_faturamento: filialFaturamento,
-      planta: plantaFromFilial(filialSite),
-      tipo_entrega: fields.tipo_entrega || null,
-      cidade_retirada: cidadeRetiradaFromFilial(filialSite),
-      condicao_pagamento: fields.condicao_pagamento,
-      data_documento: fields.data_documento,
-      observacoes: fields.observacoes || null,
-      faturamento: faturamentoFromFilial(filialFaturamento),
-      ctc: fields.ctc || null,
-      entrega_retirada: fields.entrega_retirada || null,
-    })
+    .update(patch)
     .eq('id', compraId)
   if (error) return fail(error, 'Não foi possível salvar o cabeçalho.')
   invalidateSalesDashboardCache()
@@ -739,6 +740,13 @@ export async function fetchCtcsAtivos() {
     .order('nome')
   if (error) return fail(error, 'Não foi possível carregar os CTCs.')
   return { ok: true, rows: data ?? [] }
+}
+
+export async function inativarCtc(id) {
+  if (!id) return { ok: false, error: 'CTC inválido.' }
+  const { error } = await supabase.from('ctcs').update({ ativo: false }).eq('id', id)
+  if (error) return fail(error, 'Não foi possível inativar o CTC.')
+  return { ok: true }
 }
 
 export async function criarCtc(nome) {

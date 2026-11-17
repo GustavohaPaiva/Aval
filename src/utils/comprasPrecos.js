@@ -96,10 +96,11 @@ export function calcOcItemValores({
     liquidoUsd == null || precoCorrigido == null
       ? null
       : roundUsd(precoCorrigido - liquidoUsd)
-  const taxa = Number(taxaDolar) || 0
+  const taxa = Number(taxaDolar)
+  const cotacao = Number.isFinite(taxa) && taxa > 0 ? taxa : null
   const qty = ocQtyDisplay(volumeKg, unidade)
   const unitarioBrl =
-    precoCorrigido == null ? null : roundMoney(precoCorrigido * taxa)
+    precoCorrigido == null || cotacao == null ? null : roundMoney(precoCorrigido * cotacao)
   const freteN = Number(frete) || 0
   const total =
     unitarioBrl == null ? null : roundMoney((unitarioBrl + freteN) * qty)

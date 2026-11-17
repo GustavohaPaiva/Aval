@@ -28,6 +28,27 @@ export const TIPO_ENTREGA_OPTIONS = [
   { value: 'FOB', label: 'FOB' },
 ]
 
+export const PLANTA_VALUES = ['Uberaba', 'Cubatão', 'Rio Grande']
+
+export const PLANTA_OPTIONS = [
+  { value: '', label: 'Selecione a planta…' },
+  ...PLANTA_VALUES.map((value) => ({ value, label: value })),
+]
+
+/** Mantém planta antiga fora da lista para o save não apagar o texto já gravado. */
+export function plantaOptions(current = '') {
+  const value = String(current ?? '').trim()
+  if (!value || PLANTA_VALUES.includes(value)) return PLANTA_OPTIONS
+  return [...PLANTA_OPTIONS, { value, label: value }]
+}
+
+/** Cidade do documento é a planta gravada. Sem planta, fica a cidade já salva. */
+export function cidadeDaPlanta(compra) {
+  const planta = String(compra?.planta ?? '').trim()
+  if (planta) return planta
+  return String(compra?.cidade_retirada ?? '').trim()
+}
+
 export const UNIDADE_OPTIONS = [
   { value: 't', label: 'Tonelada (t)' },
   { value: 'kg', label: 'Quilo (kg)' },
@@ -113,7 +134,7 @@ export function filialById(id) {
   )
 }
 
-/** Planta da OC sempre replica a filial Syagri. */
+/** Cidade da filial comercial. Não é a planta do fornecedor. */
 export function plantaFromFilial(filialId) {
   const site = filialById(filialId)
   const city = String(site?.city ?? '').split('/')[0].trim()
@@ -137,7 +158,7 @@ export function ocFaturamento(compra) {
   return faturamentoFromFilial(ocFilialFaturamentoId(compra))
 }
 
-/** Cidade de retirada sempre igual à cidade da planta. */
+/** Cidade da filial comercial. O PDF da OC usa `cidadeDaPlanta`. */
 export function cidadeRetiradaFromFilial(filialId) {
   return plantaFromFilial(filialId)
 }

@@ -28,6 +28,7 @@ import {
   fetchFornecedoresAtivos,
   fetchProdutosPorFornecedor,
 } from '../../services/comprasService'
+import { calcOcItemValores, parseOcNumber } from '../../utils/comprasPrecos'
 import { formatQtyBoth, formatUsd, parseQtyInput } from '../../utils/comprasUnits'
 
 export function ComprasEstoquePage() {
@@ -222,8 +223,10 @@ function ModalAjusteEntrada({ onClose, onDone }) {
   const [embalagem, setEmbalagem] = useState(COMPRAS_EMBALAGEM_DEFAULT)
   const [unidade, setUnidade] = useState('t')
   const [qty, setQty] = useState('')
-  const [custoUsd, setCustoUsd] = useState('')
-  const [custoBrl, setCustoBrl] = useState('')
+  const [lista, setLista] = useState('')
+  const [preco, setPreco] = useState('')
+  const [desc, setDesc] = useState('')
+  const [cotacao, setCotacao] = useState('')
   const [obs, setObs] = useState('')
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -247,27 +250,47 @@ function ModalAjusteEntrada({ onClose, onDone }) {
       if (!isActive()) return
       if (res.ok) {
         setProdutos(res.rows)
-        setProdutoId(res.rows[0]?.id ?? '')
+        const first = res.rows[0]
+        setProdutoId(first?.id ?? '')
+        setLista(first?.quarter || '')
+        setPreco(first?.preco_original ?? '')
+        setDesc(first?.desconto_usd ?? '')
       }
     },
     [fornecedorId],
   )
 
+  const product = produtos.find((item) => item.id === produtoId)
+  const parsedVolume = parseQtyInput(qty, unidade)
+  const valores = calcOcItemValores({
+    precoUsd: parseOcNumber(preco),
+    descontoUsd: parseOcNumber(desc) ?? 0,
+    taxaDolar: parseOcNumber(cotacao),
+    volumeKg: parsedVolume.ok ? parsedVolume.kg : 0,
+    unidade,
+    vencimentoLista: product?.vencimento_lista ?? null,
+    pagamentoSyagri: product?.vencimento_lista ?? null,
+    taxaJuros: product?.taxaJuros,
+  })
+
   async function handleSubmit(e) {
     e.preventDefault()
-    const parsed = parseQtyInput(qty, unidade)
-    if (!parsed.ok) {
-      setError(parsed.error)
+    if (!parsedVolume.ok) {
+      setError(parsedVolume.error)
+      return
+    }
+    if (valores.unitarioBrl == null) {
+      setError('Informe o preço em dólar e a cotação negociada. A cotação do dia não entra no cálculo.')
       return
     }
     setSaving(true)
     const res = await ajusteEntrada({
       produtoOficialId: produtoId,
       embalagem,
-      quantidadeKg: parsed.kg,
-      custoUsdLiquido: custoUsd === '' ? null : Number(custoUsd),
-      custoUnitarioBrl: custoBrl === '' ? null : Number(custoBrl),
-      observacao: obs,
+      quantidadeKg: parsedVolume.kg,
+      custoUsdLiquido: valores.liquidoUsd,
+      custoUnitarioBrl: valores.unitarioBrl,
+      observacao: [lista.trim() ? `Lista ${lista.trim()}` : '', obs.trim()].filter(Boolean).join(' · '),
     })
     setSaving(false)
     if (!res.ok) {
@@ -297,7 +320,14 @@ function ModalAjusteEntrada({ onClose, onDone }) {
         <Select
           label="Produto"
           value={produtoId}
-          onChange={(e) => setProdutoId(e.target.value)}
+          onChange={(e) => {
+            const next = e.target.value
+            setProdutoId(next)
+            const nextProduct = produtos.find((item) => item.id === next)
+            setLista(nextProduct?.quarter || '')
+            setPreco(nextProduct?.preco_original ?? '')
+            setDesc(nextProduct?.desconto_usd ?? '')
+          }}
           options={produtos.map((p) => ({ value: p.id, label: p.displayNome }))}
         />
         <Select
@@ -315,9 +345,13 @@ function ModalAjusteEntrada({ onClose, onDone }) {
           />
           <Input label="Quantidade" value={qty} onChange={(e) => setQty(e.target.value)} required />
         </div>
+        <Input label="Lista de origem" value={lista} onChange={(e) => setLista(e.target.value)} />
         <div className="grid gap-4 sm:grid-cols-2">
-          <Input label="Custo USD líquido" value={custoUsd} onChange={(e) => setCustoUsd(e.target.value)} />
-          <Input label="Custo unitário R$" value={custoBrl} onChange={(e) => setCustoBrl(e.target.value)} />
+          <Input label="Preço USD" value={preco} onChange={(e) => setPreco(e.target.value)} />
+          <Input label="Desconto USD" value={desc} onChange={(e) => setDesc(e.target.value)} />
+          <Input label="Valor com desconto" value={valores.liquidoUsd == null ? '' : String(valores.liquidoUsd)} disabled readOnly />
+          <Input label="Cotação negociada" value={cotacao} onChange={(e) => setCotacao(e.target.value)} />
+          <Input label="Conversão R$" value={valores.unitarioBrl == null ? '' : String(valores.unitarioBrl)} disabled readOnly />
         </div>
         <Input label="Observação" value={obs} onChange={(e) => setObs(e.target.value)} />
       </form>

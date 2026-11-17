@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mock = vi.hoisted(() => ({ from: vi.fn() }))
 vi.mock('./supabase', () => ({ supabase: { from: mock.from } }))
-import { invalidateSalesDashboardCache, peekSalesDashboard } from './salesDashboardCache'
+import { invalidateSalesDashboardCache, peekSalesDashboard, subscribeSalesDashboardCache } from './salesDashboardCache'
 import { loadSalesDashboard } from './salesDashboardService'
 
 function query(result) {
@@ -14,6 +14,7 @@ function query(result) {
 }
 
 const order = (id) => ({ id, user_id: 'consultant-1', client_id: 'client-1', total_proposta: 100, data_negociacao: null,
+  created_at: '2026-03-01T12:00:00Z',
   clients: { nome: 'Cliente' }, simulation_items: [{ id: `item-${id}`, volume: 2, proposta: 50, cultura: 'Café', produtos_oficiais: { nome: 'Produto' } }] })
 
 beforeEach(() => {
@@ -27,7 +28,7 @@ describe('consulta de vendas nativas', () => {
     expect((await loadSalesDashboard({ role: 'logistica' })).ok).toBe(false)
     expect(mock.from).not.toHaveBeenCalled()
   })
-  it('pagina os convertidos ativos e não transforma pedido sem compra em venda', async () => {
+  it('pagina os convertidos ativos e inclui pedido sem compra pelo created_at', async () => {
     const first = query({ data: Array.from({ length: 200 }, (_, i) => order(String(i))), count: 201 })
     const second = query({ data: [order('200')], count: 201 })
     let pages = 0
@@ -40,8 +41,8 @@ describe('consulta de vendas nativas', () => {
     })
     const result = await loadSalesDashboard({ role: 'gestor' })
     expect(result.ok).toBe(true)
-    expect(result.native.rows).toHaveLength(0)
-    expect(result.native.issues.length).toBeGreaterThan(0)
+    expect(result.native.rows).toHaveLength(201)
+    expect(result.native.issues.some((issue) => issue.code === 'not-purchased')).toBe(true)
     expect(first.eq).toHaveBeenCalledWith('status', 'converted')
     expect(first.eq).toHaveBeenCalledWith('ativo', true)
     expect(second.range).toHaveBeenCalledWith(200, 399)
@@ -74,7 +75,9 @@ describe('consulta de vendas nativas', () => {
     expect(result.fields.dollar).toBe(false)
     expect(result.config.dollar).toBeNull()
     expect(mock.from).toHaveBeenCalledWith('alocacoes')
-    expect(result.native.coverage.excludedNegotiation).toBe(1)
+    expect(result.native.coverage.excludedNegotiation).toBe(0)
+    expect(result.native.rows).toHaveLength(1)
+    expect(result.native.rows[0].date).toBe('2026-03-01')
   })
   it('percorre o cadastro de clientes além da primeira página', async () => {
     const page = query({ data: Array.from({ length: 1000 }, (_, i) => ({ id: `c${i}`, nome: `Cliente ${i}` })) })
@@ -150,10 +153,106 @@ describe('consulta de vendas nativas', () => {
     expect(result.ok).toBe(false)
     expect(result.error).toContain('incompleta')
   })
-  it('recusa pedido com total divergente ou itens ausentes', async () => {
-    mock.from.mockReturnValue(query({ data: [{ ...order('1'), total_proposta: 200 }], count: 1 }))
+  it('isola pedido com total divergente e mantém os demais', async () => {
+    const good = order('1')
+    const bad = { ...order('2'), total_proposta: 200 }
+    mock.from.mockImplementation((table) => {
+      if (table === 'simulations') return query({ data: [good, bad], count: 2 })
+      if (table === 'profiles') return query({ data: [{ id: 'consultant-1', nome: 'Consultor', filial: 'Uberaba' }] })
+      if (table === 'alocacoes') return query({ data: [] })
+      if (table === 'clients' || table === 'fornecedores' || table === 'produtos_oficiais') return query({ data: [] })
+      return query({ error: { message: 'relation does not exist' } })
+    })
     const result = await loadSalesDashboard({ role: 'gestor' })
-    expect(result.ok).toBe(false)
-    expect(result.error).toContain('total divergente')
+    expect(result.ok).toBe(true)
+    expect(result.native.rows.map((row) => row.orderId).sort()).toEqual(['1', '2'])
+    expect(result.native.issues.some((issue) => issue.code === 'divergent-total' && issue.reason.includes('permanece'))).toBe(true)
+  })
+  it('inclui pedido com compra sem preço e pedido sem compra, sem repetir o histórico', async () => {
+    const bought = order('com-compra')
+    bought.data_negociacao = '2026-11-11'
+    bought.filial_venda = 'uberaba'
+    bought.tipo_venda = 'reais'
+    bought.status_lancamento = 'lancado'
+    bought.total_proposta = 3021.09
+    bought.simulation_items = [{
+      id: 'item-compra',
+      volume: 1,
+      proposta: 3021.09,
+      cultura: 'Café',
+      produto_classe: 'Convencional',
+      produtos_oficiais: { nome: 'MAP' },
+      alocacoes: [{
+        id: 'aloc-1',
+        simulation_item_id: 'item-compra',
+        quantidade_kg: 1000,
+        compra_item_id: 'ci-1',
+        estoque_lote_id: null,
+        compra_itens: {
+          id: 'ci-1',
+          unitario_brl: null,
+          pagamento_syagri: '2026-12-01',
+          compra_id: 'oc-1',
+          compras: { id: 'oc-1', fornecedor_id: 'forn-1', fornecedores: { nome: 'Fornecedor' } },
+        },
+      }],
+    }]
+    const plain = order('sem-compra')
+    plain.data_negociacao = '2026-11-12'
+    plain.filial_venda = 'uberaba'
+    plain.tipo_venda = 'reais'
+    plain.status_lancamento = 'lancado'
+    plain.total_proposta = 100
+    plain.simulation_items = [{
+      ...plain.simulation_items[0],
+      id: 'item-plain',
+      volume: 2,
+      proposta: 50,
+      alocacoes: [],
+    }]
+    mock.from.mockImplementation((table) => {
+      if (table === 'simulations') return query({ data: [bought, plain], count: 2 })
+      if (table === 'profiles') return query({ data: [{ id: 'consultant-1', nome: 'Consultor', filial: 'Frutal' }] })
+      if (table === 'clients' || table === 'fornecedores' || table === 'produtos_oficiais') return query({ data: [] })
+      return query({ error: { message: 'relation does not exist' } })
+    })
+    const result = await loadSalesDashboard({ role: 'gestor', userId: 'gestor-compra' })
+    expect(result.ok).toBe(true)
+    expect(mock.from).not.toHaveBeenCalledWith('alocacoes')
+    expect(result.native.rows.map((row) => row.orderId).sort()).toEqual(['com-compra', 'sem-compra'])
+    const linked = result.native.rows.find((row) => row.orderId === 'com-compra')
+    expect(linked.volume).toBe(1)
+    expect(linked.revenue).toBe(3021.09)
+    expect(linked.supplier).toBe('Fornecedor')
+    expect(linked.supplierId).toBe('forn-1')
+    expect(linked.date).toBe('2026-11-11')
+    expect(linked.branch).toBe('Uberaba')
+    expect(result.native.rows.find((row) => row.orderId === 'sem-compra').supplier).toBe('')
+    expect(result.native.issues.some((issue) => issue.code === 'purchase-without-price' && !issue.excluded)).toBe(true)
+    expect(result.native.issues.some((issue) => issue.code === 'not-purchased')).toBe(true)
+  })
+
+  it('avisa a tela aberta quando o cache do painel é invalidado', () => {
+    let hits = 0
+    const stop = subscribeSalesDashboardCache(() => { hits += 1 })
+    invalidateSalesDashboardCache()
+    stop()
+    invalidateSalesDashboardCache()
+    expect(hits).toBe(1)
+  })
+
+  it('usa o dia de criação em America/Sao_Paulo quando a negociação não foi gravada', async () => {
+    const early = order('1')
+    early.created_at = '2026-01-01T02:30:00Z'
+    mock.from.mockImplementation((table) => {
+      if (table === 'simulations') return query({ data: [early], count: 1 })
+      if (table === 'profiles') return query({ data: [{ id: 'consultant-1', nome: 'Consultor', filial: 'Uberaba' }] })
+      if (table === 'alocacoes') return query({ data: [] })
+      if (table === 'clients' || table === 'fornecedores' || table === 'produtos_oficiais') return query({ data: [] })
+      return query({ error: { message: 'relation does not exist' } })
+    })
+    const result = await loadSalesDashboard({ role: 'gestor' })
+    expect(result.ok).toBe(true)
+    expect(result.native.rows[0].date).toBe('2025-12-31')
   })
 })

@@ -49,10 +49,12 @@ const STATUS_OPTIONS = [
 const EMPTY_FILTERS = {
   searchQuery: '',
   consultorId: '',
+  consultorIds: [],
   status: '',
   dateFrom: '',
   dateTo: '',
 }
+const COMISSAO_PAGE_SIZE = 50
 
 /** YYYY-MM-DD local from an ISO timestamp (for inclusive date-range compare). */
 function toLocalDateKey(iso) {
@@ -799,10 +801,16 @@ export function ComissaoPage() {
     EMPTY_FILTERS,
   )
   const { searchQuery, consultorId, status, dateFrom, dateTo } = filters
+  const consultorIds = useMemo(() => {
+    if (Array.isArray(filters.consultorIds) && filters.consultorIds.length) return filters.consultorIds
+    return consultorId ? [consultorId] : []
+  }, [filters.consultorIds, consultorId])
   const debouncedSearch = useDebouncedValue(searchQuery, 300)
+  const [page, setPage] = useState(1)
+  const [exporting, setExporting] = useState(false)
 
   const hasFilters = Boolean(
-    searchQuery.trim() || consultorId || status || dateFrom || dateTo,
+    searchQuery.trim() || consultorIds.length || status || dateFrom || dateTo,
   )
 
   function openPedido(row) {
@@ -844,18 +852,13 @@ export function ComissaoPage() {
         label: row.consultor_nome || 'Consultor sem nome',
       })
     }
-    return [
-      { value: '', label: 'Todos os consultores' },
-      ...[...byId.values()].sort((a, b) =>
-        a.label.localeCompare(b.label, 'pt-BR'),
-      ),
-    ]
+    return [...byId.values()].sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'))
   }, [registros])
 
   const filtered = useMemo(() => {
     const q = debouncedSearch.trim().toLowerCase()
     return registros.filter((row) => {
-      if (consultorId && String(row.consultor_id) !== String(consultorId)) {
+      if (consultorIds.length && !consultorIds.some((id) => String(id) === String(row.consultor_id))) {
         return false
       }
       if (status && row.status !== status) return false
@@ -877,7 +880,31 @@ export function ComissaoPage() {
 
       return true
     })
-  }, [registros, debouncedSearch, consultorId, status, dateFrom, dateTo])
+  }, [registros, debouncedSearch, consultorIds, status, dateFrom, dateTo])
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / COMISSAO_PAGE_SIZE))
+  const currentPage = Math.min(page, pageCount)
+  const visible = filtered.slice((currentPage - 1) * COMISSAO_PAGE_SIZE, currentPage * COMISSAO_PAGE_SIZE)
+
+  async function exportXlsx() {
+    setExporting(true)
+    try {
+      const XLSX = await import('xlsx')
+      const sheet = XLSX.utils.json_to_sheet(filtered.map((row) => ({
+        Consultor: row.consultor_nome || '',
+        Cliente: row.simulations?.clients?.nome || '',
+        Status: row.status || '',
+        Data: toLocalDateKey(row.calculado_em) || '',
+        Base: row.base_calculo ?? '',
+        Comissao: row.comissao_valor ?? '',
+      })))
+      const book = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(book, sheet, 'Comissoes')
+      XLSX.writeFile(book, 'comissoes.xlsx')
+    } finally {
+      setExporting(false)
+    }
+  }
 
   const totals = useMemo(
     () => aggregateComissaoTotais(filtered),
@@ -1001,15 +1028,23 @@ export function ComissaoPage() {
                 Filtre comissões por consultor, status, período ou texto livre.
               </p>
             </div>
-            {hasFilters ? (
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => setFilters({ ...EMPTY_FILTERS })}
-              >
-                Limpar filtros
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="secondary" loading={exporting} disabled={!filtered.length} onClick={() => void exportXlsx()}>
+                Exportar XLSX
               </Button>
-            ) : null}
+              {hasFilters ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    setPage(1)
+                    setFilters({ ...EMPTY_FILTERS })
+                  }}
+                >
+                  Limpar filtros
+                </Button>
+              ) : null}
+            </div>
           </div>
         </div>
 
@@ -1030,9 +1065,13 @@ export function ComissaoPage() {
             />
           </div>
           <Select
-            label="Consultor"
-            value={consultorId}
-            onChange={(e) => patchFilters({ consultorId: e.target.value })}
+            label="Consultores"
+            multiple
+            value={consultorIds}
+            onChange={(e) => {
+              setPage(1)
+              patchFilters({ consultorIds: e.target.value, consultorId: '' })
+            }}
             options={consultorOptions}
           />
           <Select
@@ -1044,19 +1083,25 @@ export function ComissaoPage() {
           <DatePicker
             label="Data de"
             value={dateFrom}
-            onChange={(e) => patchFilters({ dateFrom: e.target.value })}
+            onChange={(e) => {
+              setPage(1)
+              patchFilters({ dateFrom: e.target.value })
+            }}
           />
           <DatePicker
             label="Data até"
             value={dateTo}
-            onChange={(e) => patchFilters({ dateTo: e.target.value })}
+            onChange={(e) => {
+              setPage(1)
+              patchFilters({ dateTo: e.target.value })
+            }}
           />
         </div>
 
         <div className="p-4 sm:p-6">
           <DataTable
             columns={columns}
-            rows={filtered}
+            rows={visible}
             loading={loading}
             emptyMessage="Nenhuma comissão encontrada."
             getRowKey={(row) => row.id}
@@ -1064,7 +1109,7 @@ export function ComissaoPage() {
           />
 
           <MobileCardList
-            items={filtered}
+            items={visible}
             loading={loading}
             emptyMessage="Nenhuma comissão encontrada."
             renderItem={(row) => (
@@ -1112,6 +1157,19 @@ export function ComissaoPage() {
               </li>
             )}
           />
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-sm text-slate-600">
+            <p>
+              {filtered.length} registro(s) no filtro · página {currentPage} de {pageCount}. A exportação inclui o filtro inteiro e só os registros que a sua sessão pode ler.
+            </p>
+            <div className="flex gap-2">
+              <Button type="button" variant="secondary" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>
+                Anterior
+              </Button>
+              <Button type="button" variant="secondary" disabled={currentPage >= pageCount} onClick={() => setPage(currentPage + 1)}>
+                Próxima
+              </Button>
+            </div>
+          </div>
         </div>
       </section>
 

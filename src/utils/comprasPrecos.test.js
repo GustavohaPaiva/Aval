@@ -42,6 +42,19 @@ describe('comprasPrecos', () => {
     expect(comMaisDesconto.unitarioBrl).toBeLessThan(base.unitarioBrl)
   })
 
+  it('não converte para reais sem a cotação negociada', () => {
+    const valores = calcOcItemValores({
+      precoUsd: 100,
+      descontoUsd: 10,
+      taxaDolar: null,
+      volumeKg: 2000,
+      unidade: 't',
+    })
+    expect(valores.liquidoUsd).toBe(90)
+    expect(valores.unitarioBrl).toBeNull()
+    expect(valores.total).toBeNull()
+  })
+
   it('infere o dólar a partir do unitário já salvo', () => {
     expect(
       inferTaxaDolar({

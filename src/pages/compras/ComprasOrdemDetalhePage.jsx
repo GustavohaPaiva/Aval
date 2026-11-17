@@ -1,4 +1,4 @@
-import { createElement, useCallback, useEffect, useMemo, useState } from 'react'
+import { createElement, useCallback, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { ComprasSubnav } from '../../components/compras/ComprasSubnav'
 import { OcPdfDocument } from '../../components/compras/OcPdfDocument'
@@ -17,12 +17,12 @@ import {
   EMBALAGEM_OPTIONS,
   TIPO_ENTREGA_OPTIONS,
   UNIDADE_OPTIONS,
-  cidadeRetiradaFromFilial,
   compraStatusBadgeClass,
   compraStatusLabel,
   faturamentoFromFilial,
   filialOptions,
   ocFilialFaturamentoId,
+  plantaOptions,
 } from '../../constants/compras'
 import { useSyncPageLoading } from '../../contexts/PageLoadingContext'
 import { useAbortableAsync } from '../../hooks/useAbortableAsync'
@@ -35,7 +35,7 @@ import {
   fetchCompraBundle,
   fetchCtcsAtivos,
   fetchProdutosPorFornecedor,
-  fetchTaxaUsdVigente,
+  inativarCtc,
   insertCompraItem,
   marcarPdfGerado,
   receberCompraItem,
@@ -79,8 +79,9 @@ export function ComprasOrdemDetalhePage() {
   const [ctcs, setCtcs] = useState([])
   const [ctcModalOpen, setCtcModalOpen] = useState(false)
   const [obs, setObs] = useState('')
-  const [taxaUsdVigente, setTaxaUsdVigente] = useState(null)
-  const cidade = cidadeRetiradaFromFilial(filial)
+  const [planta, setPlanta] = useState('')
+  const [cidadeGravada, setCidadeGravada] = useState('')
+  const cidade = String(planta ?? '').trim() || cidadeGravada
   const faturamento = faturamentoFromFilial(filialFaturamento)
 
   useSyncPageLoading(loadState !== 'ready')
@@ -107,17 +108,13 @@ export function ComprasOrdemDetalhePage() {
       setDataDoc(String(c.data_documento ?? '').slice(0, 10))
       setEntregaRetirada(c.entrega_retirada || '')
       setCtc(c.ctc || '')
+      setPlanta(c.planta || '')
+      setCidadeGravada(c.cidade_retirada || '')
       setObs(c.observacoes || '')
       setLoadState('ready')
     },
     [compraId, reloadKey],
   )
-
-  useAbortableAsync(async (_s, isActive) => {
-    const res = await fetchTaxaUsdVigente()
-    if (!isActive()) return
-    if (res.ok) setTaxaUsdVigente(res.taxa)
-  }, [])
 
   useAbortableAsync(async (_s, isActive) => {
     const res = await fetchCtcsAtivos()
@@ -160,6 +157,7 @@ export function ComprasOrdemDetalhePage() {
           faturamento,
           entrega_retirada: entregaRetirada,
           ctc,
+          planta,
         },
         bundle.itens,
         bundle.fornecedorNome,
@@ -177,6 +175,7 @@ export function ComprasOrdemDetalhePage() {
       data_documento: dataDoc,
       observacoes: obs,
       ctc,
+      planta,
       entrega_retirada: entregaRetirada,
     })
     setSaving(false)
@@ -202,6 +201,7 @@ export function ComprasOrdemDetalhePage() {
       faturamento,
       entrega_retirada: entregaRetirada,
       ctc,
+      planta,
     }
     setPdfPreview({
       titulo: `Pedido ${bundle.numero}`,
@@ -230,6 +230,7 @@ export function ComprasOrdemDetalhePage() {
     faturamento,
     entregaRetirada,
     ctc,
+    planta,
   ])
 
   async function handleCopy() {
@@ -317,7 +318,7 @@ export function ComprasOrdemDetalhePage() {
         <h2 className="mb-4 text-sm font-semibold text-primary-800">Cabeçalho</h2>
         <div className="grid gap-4 sm:grid-cols-2">
           <Select
-            label="Planta (filial Syagri)"
+            label="Filial"
             value={filial}
             onChange={(e) => setFilial(e.target.value)}
             options={filialOptions()}
@@ -337,7 +338,14 @@ export function ComprasOrdemDetalhePage() {
             options={TIPO_ENTREGA_OPTIONS}
             disabled={!canEdit}
           />
-          <Input label="Cidade / retirada (planta)" value={cidade} disabled readOnly />
+          <Select
+            label="Planta"
+            value={planta}
+            onChange={(e) => setPlanta(e.target.value)}
+            options={plantaOptions(planta)}
+            disabled={!canEdit}
+          />
+          <Input label="Cidade / retirada" value={cidade} disabled readOnly />
           <Input
             label="Condição de pagamento"
             value={condicao}
@@ -368,9 +376,31 @@ export function ComprasOrdemDetalhePage() {
               />
             </div>
             {canEdit ? (
-              <Button type="button" variant="secondary" onClick={() => setCtcModalOpen(true)}>
-                Novo CTC
-              </Button>
+              <>
+                <Button type="button" variant="secondary" onClick={() => setCtcModalOpen(true)}>
+                  Novo CTC
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={!ctcs.some((row) => row.nome === ctc)}
+                  onClick={() => {
+                    const row = ctcs.find((item) => item.nome === ctc)
+                    if (!row) return
+                    if (!window.confirm(`Inativar o CTC ${row.nome}? As compras já gravadas continuam com esse nome.`)) return
+                    void inativarCtc(row.id).then((res) => {
+                      if (!res.ok) {
+                        setError(res.error)
+                        return
+                      }
+                      setCtcs((current) => current.filter((item) => item.id !== row.id))
+                      setBanner('CTC inativado. O histórico das compras foi mantido.')
+                    })
+                  }}
+                >
+                  Inativar
+                </Button>
+              </>
             ) : null}
           </div>
           <div className="sm:col-span-2">
@@ -408,7 +438,6 @@ export function ComprasOrdemDetalhePage() {
                 item={item}
                 canEdit={canEdit}
                 canReceive={canReceive}
-                taxaUsdVigente={taxaUsdVigente}
                 onSaved={() => setReloadKey((k) => k + 1)}
                 onDelete={() => void handleDeleteItem(item.id)}
                 onReceive={() => setReceiveItem(item)}
@@ -470,7 +499,6 @@ export function ComprasOrdemDetalhePage() {
       {addOpen ? (
         <ModalAddItem
           fornecedorId={bundle.fornecedor_id}
-          taxaUsdVigente={taxaUsdVigente}
           onClose={() => setAddOpen(false)}
           onSave={async (payload) => {
             const res = await insertCompraItem(compraId, payload)
@@ -507,7 +535,7 @@ export function ComprasOrdemDetalhePage() {
   )
 }
 
-function OcItemEditor({ item, canEdit, canReceive, taxaUsdVigente, onSaved, onDelete, onReceive }) {
+function OcItemEditor({ item, canEdit, canReceive, onSaved, onDelete, onReceive }) {
   const [preco, setPreco] = useState(item.preco_usd ?? '')
   const [desc, setDesc] = useState(item.desconto_usd ?? '')
   const [dolar, setDolar] = useState(() => {
@@ -515,7 +543,6 @@ function OcItemEditor({ item, canEdit, canReceive, taxaUsdVigente, onSaved, onDe
       precoUsd: item.preco_usd,
       descontoUsd: item.desconto_usd,
       unitarioBrl: item.unitario_brl,
-      fallback: taxaUsdVigente,
       precoCorrigido: item.preco_corrigido,
     })
     return inferred == null ? '' : String(Number(inferred.toFixed(6)))
@@ -540,18 +567,6 @@ function OcItemEditor({ item, canEdit, canReceive, taxaUsdVigente, onSaved, onDe
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   const restoKg = Number(item.volume_kg) - Number(item.volume_recebido_kg)
-
-  useEffect(() => {
-    if (dolar !== '') return
-    const inferred = inferTaxaDolar({
-      precoUsd: item.preco_usd,
-      descontoUsd: item.desconto_usd,
-      unitarioBrl: item.unitario_brl,
-      fallback: taxaUsdVigente,
-      precoCorrigido: item.preco_corrigido,
-    })
-    if (inferred != null) setDolar(String(Number(inferred.toFixed(6))))
-  }, [dolar, item, taxaUsdVigente])
 
   const parsedVolume = parseQtyInput(qty, unidade)
   const volumeKg = parsedVolume.ok ? parsedVolume.kg : Number(item.volume_kg)
@@ -593,6 +608,11 @@ function OcItemEditor({ item, canEdit, canReceive, taxaUsdVigente, onSaved, onDe
     if (parsedVolume.kg + 0.0001 < Number(item.volume_recebido_kg)) {
       setSaving(false)
       setError('Volume não pode ser menor do que o já recebido.')
+      return
+    }
+    if (parseOcNumber(preco) != null && valores.unitarioBrl == null) {
+      setSaving(false)
+      setError('Informe a cotação negociada. A cotação do dia não entra no cálculo.')
       return
     }
     const res = await updateCompraItem(item.id, {
@@ -695,7 +715,7 @@ function OcItemEditor({ item, canEdit, canReceive, taxaUsdVigente, onSaved, onDe
           readOnly
         />
         <Input
-          label="Dólar"
+          label="Cotação negociada"
           value={dolar}
           onChange={(e) => setDolar(e.target.value)}
           disabled={!canEdit}
@@ -765,7 +785,7 @@ function OcItemEditor({ item, canEdit, canReceive, taxaUsdVigente, onSaved, onDe
   )
 }
 
-function ModalAddItem({ fornecedorId, taxaUsdVigente, onClose, onSave }) {
+function ModalAddItem({ fornecedorId, onClose, onSave }) {
   const [produtos, setProdutos] = useState([])
   const [produtoId, setProdutoId] = useState('')
   const [embalagem, setEmbalagem] = useState('BIG BAG')
@@ -774,6 +794,9 @@ function ModalAddItem({ fornecedorId, taxaUsdVigente, onClose, onSave }) {
   const [cultura, setCultura] = useState('')
   const [origem, setOrigem] = useState('')
   const [lista, setLista] = useState('')
+  const [preco, setPreco] = useState('')
+  const [desc, setDesc] = useState('')
+  const [cotacao, setCotacao] = useState('')
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
 
@@ -782,41 +805,49 @@ function ModalAddItem({ fornecedorId, taxaUsdVigente, onClose, onSave }) {
     if (!isActive()) return
     if (res.ok) {
       setProdutos(res.rows)
-      setProdutoId(res.rows[0]?.id ?? '')
-      setLista(res.rows[0]?.quarter || '')
+      const first = res.rows[0]
+      setProdutoId(first?.id ?? '')
+      setLista(first?.quarter || '')
+      setPreco(first?.preco_original ?? '')
+      setDesc(first?.desconto_usd ?? '')
     }
   }, [fornecedorId])
 
+  const product = produtos.find((p) => p.id === produtoId)
+  const parsedVolume = parseQtyInput(qty, unidade)
+  const valores = calcOcItemValores({
+    precoUsd: parseOcNumber(preco),
+    descontoUsd: parseOcNumber(desc) ?? 0,
+    taxaDolar: parseOcNumber(cotacao),
+    volumeKg: parsedVolume.ok ? parsedVolume.kg : 0,
+    unidade,
+    vencimentoLista: product?.vencimento_lista ?? null,
+    pagamentoSyagri: product?.vencimento_lista ?? null,
+    taxaJuros: product?.taxaJuros,
+  })
+
   async function handleSubmit(e) {
     e.preventDefault()
-    const parsed = parseQtyInput(qty, unidade)
-    if (!parsed.ok) {
-      setError(parsed.error)
+    if (!parsedVolume.ok) {
+      setError(parsedVolume.error)
       return
     }
-    const product = produtos.find((p) => p.id === produtoId)
+    if (valores.unitarioBrl == null) {
+      setError('Informe o preço em dólar e a cotação negociada. A cotação do dia não entra no cálculo.')
+      return
+    }
     const vencimento = product?.vencimento_lista ?? null
-    const valores = calcOcItemValores({
-      precoUsd: product?.preco_original,
-      descontoUsd: product?.desconto_usd,
-      taxaDolar: taxaUsdVigente,
-      volumeKg: parsed.kg,
-      unidade,
-      vencimentoLista: vencimento,
-      pagamentoSyagri: vencimento,
-      taxaJuros: product?.taxaJuros,
-    })
     setSaving(true)
     const res = await onSave({
       produto_oficial_id: produtoId,
       embalagem,
-      volume_kg: parsed.kg,
+      volume_kg: parsedVolume.kg,
       unidade_exibicao: unidade,
       cultura,
       origem: origem.trim() || null,
       lista: lista.trim() || product?.quarter || null,
-      preco_usd: product?.preco_original ?? null,
-      desconto_usd: product?.desconto_usd ?? null,
+      preco_usd: parseOcNumber(preco),
+      desconto_usd: parseOcNumber(desc),
       vencimento_lista: vencimento,
       pagamento_syagri: vencimento,
       preco_corrigido: valores.precoCorrigido,
@@ -845,8 +876,10 @@ function ModalAddItem({ fornecedorId, taxaUsdVigente, onClose, onSave }) {
           onChange={(e) => {
             const next = e.target.value
             setProdutoId(next)
-            const product = produtos.find((p) => p.id === next)
-            setLista(product?.quarter || '')
+            const nextProduct = produtos.find((p) => p.id === next)
+            setLista(nextProduct?.quarter || '')
+            setPreco(nextProduct?.preco_original ?? '')
+            setDesc(nextProduct?.desconto_usd ?? '')
           }}
           options={produtos.map((p) => ({ value: p.id, label: p.displayNome }))}
         />
@@ -867,7 +900,14 @@ function ModalAddItem({ fornecedorId, taxaUsdVigente, onClose, onSave }) {
         </div>
         <Input label="Cultura" value={cultura} onChange={(e) => setCultura(e.target.value)} />
         <Input label="Origem" value={origem} onChange={(e) => setOrigem(e.target.value)} />
-        <Input label="Lista" value={lista} onChange={(e) => setLista(e.target.value)} />
+        <Input label="Lista de origem" value={lista} onChange={(e) => setLista(e.target.value)} />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Input label="Preço USD" value={preco} onChange={(e) => setPreco(e.target.value)} />
+          <Input label="Desconto USD" value={desc} onChange={(e) => setDesc(e.target.value)} />
+          <Input label="Valor com desconto" value={valores.liquidoUsd == null ? '' : String(valores.liquidoUsd)} disabled readOnly />
+          <Input label="Cotação negociada" value={cotacao} onChange={(e) => setCotacao(e.target.value)} />
+          <Input label="Unitário R$" value={valores.unitarioBrl == null ? '' : String(valores.unitarioBrl)} disabled readOnly />
+        </div>
       </form>
     </Modal>
   )

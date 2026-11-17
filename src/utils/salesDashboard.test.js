@@ -76,11 +76,18 @@ describe('agregações, períodos e caixa', () => {
     expect(weekly.week).toBe('2026-08-03')
     expect(weekly.previous).toHaveLength(0)
   })
-  it('aplica filtros e mantém dois anos no comparativo até o mesmo corte', () => {
-    const rows = [record({ date: '2026-08-04' }), record({ date: '2025-08-04' }), record({ date: '2025-12-10' })]
-    expect(filterSales(rows, { year: '2026' })).toHaveLength(1)
+  it('filtra o ano-calendário inteiro, de 01/01 a 31/12', () => {
+    const rows = [
+      record({ date: '2026-08-04' }),
+      record({ id: '2', date: '2025-01-01' }),
+      record({ id: '3', date: '2025-12-31' }),
+      record({ id: '4', date: '2024-12-31' }),
+    ]
+    expect(filterSales(rows, { year: '2025' }).map((row) => row.date).sort()).toEqual(['2025-01-01', '2025-12-31'])
+    expect(filterSales(rows, { year: ['2026'] })).toHaveLength(1)
     const comparison = compareYears(rows, { year: '2026' }, '2026-11-06')
-    expect(comparison.map((row) => row.revenue)).toEqual([100, 100])
+    expect(comparison.map((row) => row.year)).toEqual(['2026', '2025'])
+    expect(comparison.map((row) => row.revenue)).toEqual([100, 200])
   })
   it('filtra cadastro pelo id e filial pelo nome oficial, sem unir histórico só pelo texto', () => {
     const linked = record({ clientId: 'c1', client: 'Cliente A', supplierId: 's1', supplier: 'Yara', productId: 'p1', branch: 'Filial Uberaba' })

@@ -1,13 +1,12 @@
 import { SYAGRI_COMPANY } from '../../constants/company'
 import {
-  cidadeRetiradaFromFilial,
+  cidadeDaPlanta,
   filialById,
   ocFaturamento,
   ocFilialFaturamentoId,
   ocItemVencimento,
   ocLista,
   ocVencimentoUnico,
-  plantaFromFilial,
   tipoEntregaLabel,
 } from '../../constants/compras'
 import { formatQtyByUnit, formatUsd } from '../../utils/comprasUnits'
@@ -191,11 +190,11 @@ export function OcPdfDocument({ compra, itens, fornecedorNome }) {
               { label: 'Data do pedido', value: formatDateBr(compra.data_documento) },
               { label: 'Data de vencimento', value: vencimentoLabel },
               { label: 'Condição', value: compra.condicao_pagamento || '—' },
-              { label: 'Planta', value: plantaFromFilial(compra.filial_site) || compra.planta || '—' },
+              { label: 'Planta', value: String(compra.planta ?? '').trim() || '—' },
               { label: 'Tipo de entrega', value: tipoEntregaLabel(compra.tipo_entrega) },
               {
                 label: 'Cidade / retirada',
-                value: cidadeRetiradaFromFilial(compra.filial_site) || compra.cidade_retirada || '—',
+                value: cidadeDaPlanta(compra) || '—',
               },
               { label: 'Faturamento', value: faturamento || '—' },
               { label: 'Entrega / retirada', value: compra.entrega_retirada || '—' },

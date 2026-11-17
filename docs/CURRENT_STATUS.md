@@ -1,30 +1,69 @@
-# Estado atual — 2026-11-06, revisão do dashboard
+# Estado atual — 2026-11-16, publicação
 
 ## Verificado nesta revisão
-Os cálculos do PDF que já estavam nos testes continuam passando: margem líquida, deduplicação, cancelamento e os exemplos de `src/utils/salesDashboard.js`, mais a consulta e os fatos nativos. São 34 testes desse conjunto.
+66 testes dos arquivos de venda, painel, filial, preços e mensagem da OC passaram. A migration `20261111230000_simulacao_campos_venda_automaticos` foi aplicada no Syagri oficial (`dnmjjgeqaigrvdsflqrs`) e registrada no histórico. O gatilho antigo de lançamento saiu; ficaram `normalize_filial_codigo` e `trg_simulations_campos_venda`. O default de `status_lancamento` passou a `lancado`. As 264 simulações do oficial ficaram com data de negociação. Não houve carga da planilha GEFERT. Logística e push já existiam no oficial, com versões diferentes das do arquivo local; essas migrations antigas não foram reexecutadas.
 
-A suíte completa ficou em 223 testes passando e 5 falhando. As cinco falhas abrem planilhas em `Planilhas de Fornecedores/`, pasta ausente no disco e ignorada no Git. Esses testes não foram alterados por esta entrega.
+## O que foi publicado
+Pedido convertido ativo entra no painel sem compra e sem preço unitário. A planta da OC é Uberaba, Cubatão ou Rio Grande. Simulação nova grava data, filial, tipo reais e lançamento sem pedir esses campos. O site segue o push da `main` para https://aval-fertilizantes.online.
 
-O lint dos arquivos da entrega não apontou erro novo. `useSimulation.js` e `Simulador.jsx` seguem com alertas anteriores (`no-extra-boolean-cast`, `set-state-in-effect`, atualização de ref no render). `vite build` concluiu. O aviso de chunk grande de PDF e planilha já existia.
-
-Sem sessão de gestor, o painel autenticado não foi percorrido. Em `http://127.0.0.1:5175`, `/dashboard` sem sessão vai para `/login`, também ao abrir de novo. O login no celular empilha o formulário. Essa rota não registrou falha de rede.
-
-O cliente usa a chave anônima. As tabelas novas têm RLS por `is_gestor()`. A gravação de data de negociação, filial, safra, tipo, lançamento e custo congelado só ocorre se a coluna existir. A carga de teste não entra no commit: planilha, referências e `.env` ficam de fora. O repositório é público; totais comerciais da carga não foram versionados.
-
-A aplicação publicada hoje aponta para o projeto Syagri de produção, não para Syagri-Test. A migration `20261106193000` está só no teste. O painel trata tabela ou coluna ausente e não transforma essa ausência em zero.
-
-## O que a tela cobre
-Gestor: visão geral, semana, fluxo de caixa, comparativo anual, consultores e margem contra a média. Atalhos para pendentes, aprovadas, clientes e consultores. Filtros e navegação não ficam abertos juntos. Consultor mantém os cartões anteriores. Logística segue para a própria área.
-
-## Pendências conhecidas
-Pedidos nativos ficam fora da base enquanto `data_negociacao` e o lastro da compra (`pagamento_syagri` e `unitario_brl`) estiverem vazios. Não há lançamento linha a linha de 2024. O histórico não tem id de cliente, fornecedor, consultor ou produto. Juros, frete, comissões, preços unitários e margens brutas da planilha não têm coluna. Não há meta cadastrada. A animação dos filtros, a reabertura em 60 segundos, o botão Atualizar e a troca de abas ainda dependem de uma sessão de gestor.
-
-## Publicação
-Commit `8860449` na `main`: https://github.com/GustavohaPaiva/Aval/commit/8860449. O push disparou o workflow Deploy GitHub Pages, run `42326837777`, com build e publicação concluídos. Endereço: https://aval-fertilizantes.online. O workflow usa Node 20. Não há aplicativo Heroku configurado e nenhum foi criado.
-
-O bundle publicado aponta para o projeto Syagri de produção e não contém chave administrativa. `/dashboard` sem sessão abre o aplicativo e segue para `/login`, também ao recarregar. O login publicado não registrou falha de recurso. Não havia sessão de gestor, então o painel autenticado não foi percorrido em produção.
-
-A migration não foi aplicada em produção e a carga de teste não foi copiada. Alterações locais de logística ficaram de fora do commit.
+## Pendências
+A tela publicada ainda não foi percorrida com sessão de gestor depois deste push. Histórico GEFERT continua fora do oficial.
 
 ## Próxima etapa
-Auditoria de segurança, capacidade para mais usuários e padronização do código. Antes de propor essa padronização, analisar o projeto Aivo. A organização de arquivos, estilos e textos não foi definida agora.
+Conferir no site publicado a semana de novembro e uma OC com planta escolhida.
+
+# Estado atual — 2026-11-12, pedido no painel e planta da OC
+
+## Verificado nesta revisão
+Os testes de fatos nativos, consulta do painel, mensagem da OC e preços passaram. O lint dos arquivos alterados nesta correção ficou limpo. O build do Vite concluiu. Cinco testes de planilha de fornecedor falharam porque os arquivos locais de `Planilhas de Fornecedores/` não estão na pasta; não fazem parte desta correção.
+
+No Syagri-Test, uma simulação inserida como `converted` nasceu com data do dia em America/Sao_Paulo, filial do perfil, tipo `reais` e lançamento `lancado`. Um rascunho criado no mesmo bloco não entrou no predicado do painel. A transação foi desfeita: continuam 6 pedidos convertidos ativos e 705 linhas históricas. Nenhuma compra antiga teve a planta regravada. As 7 ordens de compra seguem com planta vazia e cidade Uberaba.
+
+A auditoria foi só leitura. As 705 linhas estão ligadas ao arquivo importado, com data e valor. Há chaves de deduplicação repetidas dentro do mesmo arquivo; a regra atual mantém essas linhas. Nenhuma chave nativa coincidiu com o histórico. Nenhum dos 6 pedidos convertidos tem, ao mesmo tempo, preço unitário e vencimento na compra ligada.
+
+## O que mudou no código
+Pedido convertido ativo entra pelo item mesmo sem compra e mesmo com compra sem preço unitário. A linha não se repete por alocação. O painel aberto recarrega quando o cache é invalidado na conversão. A planta da OC é o seletor Uberaba, Cubatão ou Rio Grande. O seletor de filial comercial deixou de se chamar planta. PDF e mensagem usam a planta gravada.
+
+## Pendências
+Falta percorrer no navegador, com sessão de gestor, a semana de novembro no painel e o PDF depois de escolher a planta. O banco oficial e o site publicado não foram alterados.
+
+## Próxima etapa
+Conferir na tela o pedido de novembro e uma OC com planta Cubatão, Rio Grande ou Uberaba. Só então decidir publicação.
+
+# Estado atual — 2026-11-11, correção da integração do dashboard
+
+## Verificado nesta revisão
+58 testes passaram nos arquivos de filial, data em America/Sao_Paulo, painel, fatos nativos, preços de compra e mensagem da OC. O lint dos arquivos alterados ficou limpo, salvo avisos antigos do simulador que não fazem parte desta correção.
+
+No Syagri-Test, a migration `simulacao_campos_venda_regras` criou o gatilho `simulations_campos_venda` e o default `status_lancamento = lancado`. As 11 simulações existentes mantiveram tipo vazio e lançamento `nao_lancado`. A data nula foi preenchida com o dia de `created_at` em America/Sao_Paulo. A filial nula foi preenchida pelo perfil: 8 de consultores Uberaba e 3 de gestor, também Uberaba. Os códigos de perfil `UBERABA`, `NOVA PONTE`, `GUAÍRA`, `ITUVERAVA` e `FRUTAL` passaram para `uberaba`, `nova-ponte`, `guaira`, `ituverava` e `frutal`.
+
+## O que mudou no código
+O simulador não pede mais data, filial, tipo, safra nem lançamento. Esses campos só são gravados na criação. Um save posterior não os reenvia, e o gatilho devolve o valor antigo. Novas operações nascem em reais, lançadas, com a filial do consultor ou Uberaba para o gestor.
+
+O painel continua só com pedido convertido e ativo. Total divergente permanece na base pela soma dos itens. Safra saiu dos filtros. O ano é o calendário de 01/01 a 31/12. A lista do que fica de fora está no painel.
+
+Compra nova e lançamento individual pedem a cotação negociada e usam `calcOcItemValores`. A cotação do dia não preenche mais o cálculo. A planta do PDF é o valor gravado, entre Uberaba, Cubatão e Rio Grande. CTC pode ser inativado, sem apagar a compra. Comissão pagina de 50 em 50, busca o restante em páginas de 1000 e exporta XLSX só do que a sessão leu.
+
+## Pendências
+Fluxos de gestor e consultor na tela, criação, edição, aprovação e conversão não foram percorridos no navegador. Push de PWA não foi testado em aparelho iOS ou Android. O site oficial e o banco Syagri não foram alterados nem publicados. Histórico GEFERT não foi importado.
+
+## Próxima etapa
+Validar os fluxos na sessão de teste e só então decidir a publicação. A migration local é `supabase/migrations/20261111230000_simulacao_campos_venda_automaticos.sql`.
+
+# Estado anterior — 2026-11-11, dashboard com pedidos oficiais
+
+## Verificado nesta revisão
+Os 34 testes do conjunto de vendas nativas, fatos e painel passaram (`nativeSalesFacts`, `salesDashboardService`, `salesDashboard`). Pedido sem compra entra pelo volume/valor; compra parcial mantém o restante; `created_at` cobre data ausente; total divergente isola a linha.
+
+A conversão em pedido grava `data_negociacao` uma vez. O simulador não exige nem edita essa data. O painel abre sem ano pré-filtrado.
+
+A migration `20261106193000_dashboard_vendas_gestor` foi aplicada no banco oficial Syagri (`dnmjjgeqaigrvdsflqrs`) e registrada no histórico. Sem backfill de pedidos e sem carga de planilha. Syagri-Test já tinha essa versão.
+
+## O que a tela cobre
+Gestor: visão geral, semana, fluxo de caixa, comparativo anual, consultores e margem. Pedidos convertidos ativos do banco oficial entram sem planilha. Cliente, consultor, produto, volume, faturamento e vencimento do cliente vêm do que já está gravado. Filial, tipo, safra, margem e caixa ficam “—” quando o campo falta.
+
+## Pendências conhecidas
+O frontend publicado ainda não inclui estas mudanças até um deploy explícito. Histórico GEFERT não foi importado em produção. Metas e família/custo seguem sem cadastro operacional. Pedidos antigos usam `created_at` até haver `data_negociacao` gravada na conversão.
+
+## Próxima etapa
+Validar o painel com sessão de gestor no ambiente que aponta para o banco oficial e publicar o frontend quando pedido.

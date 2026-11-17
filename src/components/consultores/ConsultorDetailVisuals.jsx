@@ -11,6 +11,7 @@ import { ButtonGroup } from '../ui/ButtonGroup'
 import { formatShortDate } from '../../utils/formatShortDate'
 import { formatBRL } from '../../utils/money'
 import { formatCorporateEmail } from '../../utils/syagriEmail'
+import { branchLabel } from '../../utils/salesDashboard'
 
 function consultorInitial(nome) {
   const trimmed = (nome ?? '').trim()
@@ -152,7 +153,7 @@ export function ConsultorInfoPanel({
   const rows = [
     { label: 'Cadastro', value: formatShortDate(profile.created_at) },
     { label: 'Usuário', value: usuario ? formatCorporateEmail(usuario) : '—' },
-    { label: 'Filial', value: profile.filial?.trim() || '—' },
+    { label: 'Filial', value: branchLabel(profile.filial) || '—' },
     { label: 'WhatsApp', value: profile.whatsapp_phone_e164?.trim() || '—' },
     {
       label: 'Notificações no WhatsApp',

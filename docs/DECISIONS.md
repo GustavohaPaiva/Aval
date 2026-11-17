@@ -1,5 +1,17 @@
 # Decisões
 
+## 2026-11-16 — Publicação no banco oficial e no site
+O usuário pediu o deploy completo. A migration `20261111230000_simulacao_campos_venda_automaticos` entrou no Syagri oficial: preenche data nula, normaliza filial conhecida, muda o default para `lancado` e impede que um save regrave data, filial, tipo, safra ou lançamento. Não apaga pedido, compra nem histórico. A planilha GEFERT não foi importada. Migrations locais de logística e push que já estavam no oficial com outro número de versão não foram rodadas de novo. O frontend publicado é o push da `main` no GitHub Pages.
+
+## 2026-11-12 — Pedido convertido entra sem preço de compra
+A venda entra quando o pedido está `converted` e ativo, pelo volume e pelo valor dos itens. Compra ao fornecedor não é condição. Compra sem `unitario_brl` ou sem vencimento não tira a linha e não a duplica; se houver um único fornecedor ligado, o filtro usa esse fornecedor. Lastro com preço e vencimento continua só repartindo o volume. Rascunho, pendente, conversão solicitada, pedido aguardando aprovação, cancelado e inativo ficam de fora. A planta da ordem de compra é Uberaba, Cubatão ou Rio Grande, gravada em `compras.planta`. Filial comercial e filial de faturamento continuam à parte. PDF e mensagem usam a planta gravada; sem planta, a cidade já salva permanece. Compras antigas não são reescritas.
+
+## 2026-11-11 — Correção dos campos de venda e do painel
+A data da negociação é o dia de criação em America/Sao_Paulo. Data já gravada não é reescrita. Filial da venda nova sai do perfil; gestor fica em `uberaba`. Códigos conhecidos são normalizados; texto desconhecido permanece. Tipo das operações novas é `reais`; tipo já gravado, inclusive vazio, não é preenchido no save. Safra sai da tela e do filtro. O ano do painel é 01/01 a 31/12. Novas operações nascem `lancado`; as que já estavam `nao_lancado` continuam assim e saem só do caixa, não da base de vendas. Pedido convertido sem itens, sem nenhuma data, com volume e valor zerados ou com valor inválido fica de fora. Total de cabeçalho diferente da soma dos itens não exclui o pedido. Estados que não são `converted` ativo não entram como venda concluída. A cotação do dia não calcula compra nova; vale a cotação negociada informada. Planta do fornecedor é Uberaba, Cubatão ou Rio Grande, gravada à parte da filial. CTC inativo some da lista e permanece no texto das compras. Estas regras foram aplicadas no Syagri-Test. O banco oficial não entrou.
+
+## 2026-11-11 — Dashboard com pedidos oficiais sem planilha
+Pedido convertido e ativo entra pelo volume e valor do pedido. Data: `data_negociacao` ou, se vazia, o dia de `created_at`. A conversão grava `data_negociacao` uma vez; o formulário não pergunta nem sobrescreve. Compra deixa de ser condição de entrada; lastro válido só repartilha fornecedor, e a compra parcial mantém o restante. Pedido com total divergente sai com aviso. Sem filtro automático de ano. Planilha GEFERT continua de fora. Estrutura da migration `20261106193000` autorizada no banco oficial, sem backfill de dados nem carga histórica.
+
 ## 2026-11-06 — Contexto no repositório
 Usar Markdown dentro do projeto como contexto persistente compartilhado. AGENTS.md orienta a leitura; uma regra pequena do Cursor aponta para a mesma fonte, evitando duplicar as instruções completas.
 

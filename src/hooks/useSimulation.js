@@ -21,7 +21,7 @@ import {
   getFloorUnit,
   isPropostaBelowFloor,
   normalizeAutonomiaParams,
-  todayDateOnly,
+  saoPauloDateOnly,
 } from '../utils/autonomiaDesconto'
 import {
   calcCustoBrlComDesconto,
@@ -353,12 +353,7 @@ export function useSimulation(options = {}) {
   const [dataPagamento, setDataPagamentoState] = useState(
     () => initialDraft?.dataPagamento ?? '',
   )
-  const [dataNegociacao, setDataNegociacao] = useState(() => todayDateOnly())
-  const [filialVenda, setFilialVenda] = useState('')
-  const [tipoVenda, setTipoVenda] = useState('')
-  const [safra, setSafra] = useState('')
-  const [statusLancamento, setStatusLancamento] = useState('nao_lancado')
-  const [saleFieldsReady, setSaleFieldsReady] = useState(null)
+  const [dataNegociacao, setDataNegociacao] = useState(() => saoPauloDateOnly())
   const [tipoFrete, setTipoFreteState] = useState(
     () => initialDraft?.tipoFrete ?? null,
   )
@@ -930,7 +925,6 @@ export function useSimulation(options = {}) {
     if (!quarter) return 'Selecione o quarter antes de lançar.'
     if (!tipoFrete) return 'Selecione o tipo de frete.'
     if (!dataPagamento) return 'Informe a data de pagamento.'
-    if (saleFieldsReady && !dataNegociacao) return 'Informe a data da negociação.'
     if (tipoFrete === 'CIF') {
       if (!origemFrete?.trim()) return 'Origem do frete indisponível para o estado.'
       if (!destinoFrete?.trim()) return 'Selecione o destino do frete.'
@@ -955,8 +949,6 @@ export function useSimulation(options = {}) {
   }, [
     canOverrideFloor,
     dataPagamento,
-    dataNegociacao,
-    saleFieldsReady,
     destinoFrete,
     estado,
     globalStatus,
@@ -1004,15 +996,10 @@ export function useSimulation(options = {}) {
       setEstadoState(nextEstado)
       setDataPagamentoState(bundle.simulation.data_pagamento ?? '')
       setDataNegociacao(
-        bundle.simulation.sale_fields_ready
-          ? bundle.simulation.data_negociacao ?? ''
-          : '',
+        bundle.simulation.data_negociacao
+          || saoPauloDateOnly(bundle.simulation.created_at)
+          || saoPauloDateOnly(),
       )
-      setFilialVenda(bundle.simulation.filial_venda ?? '')
-      setTipoVenda(bundle.simulation.tipo_venda ?? '')
-      setSafra(bundle.simulation.safra ?? '')
-      setStatusLancamento(bundle.simulation.status_lancamento ?? 'nao_lancado')
-      setSaleFieldsReady(Boolean(bundle.simulation.sale_fields_ready))
       const nextTipoFrete = bundle.simulation.tipo_frete ?? null
       setTipoFreteState(nextTipoFrete)
       const origemSalva = bundle.simulation.origem_frete ?? ''
@@ -1127,12 +1114,7 @@ export function useSimulation(options = {}) {
     setClientCnpjCpfState('')
     setEstadoState(null)
     setDataPagamentoState('')
-    setDataNegociacao(todayDateOnly())
-    setFilialVenda('')
-    setTipoVenda('')
-    setSafra('')
-    setStatusLancamento('nao_lancado')
-    setSaleFieldsReady(null)
+    setDataNegociacao(saoPauloDateOnly())
     setTipoFreteState(null)
     setOrigemFreteState('')
     setDestinoFreteState('')
@@ -1225,17 +1207,6 @@ export function useSimulation(options = {}) {
     setClientCnpjCpf,
     dataPagamento,
     setDataPagamento,
-    dataNegociacao,
-    setDataNegociacao,
-    filialVenda,
-    setFilialVenda,
-    tipoVenda,
-    setTipoVenda,
-    safra,
-    setSafra,
-    statusLancamento,
-    setStatusLancamento,
-    saleFieldsReady,
     prazoDias,
     tipoFrete,
     setTipoFrete,

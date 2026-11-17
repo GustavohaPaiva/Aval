@@ -6,6 +6,8 @@ import { Modal } from '../ui/Modal'
 import { ModalFormFooter } from '../ui/ModalFormFooter'
 import { useAbortableAsync } from '../../hooks/useAbortableAsync'
 import { supabase } from '../../services/supabase'
+import { normalizeFilialCode } from '../../utils/filialCodigo'
+import { branchLabel } from '../../utils/salesDashboard'
 
 const FORM_ID = 'form-editar-consultor'
 
@@ -45,7 +47,7 @@ export function ModalEditarConsultor({
     async (_signal, isActive) => {
       if (!isActive()) return
       setNome(initialNome ?? '')
-      setFilial(initialFilial ?? '')
+      setFilial(branchLabel(initialFilial ?? ''))
       setWhatsappPhone(formatBrazilPhone(initialWhatsappPhone))
       setWhatsappEnabled(Boolean(initialWhatsappEnabled))
       setFormError(null)
@@ -81,10 +83,11 @@ export function ModalEditarConsultor({
     }
 
     setSaving(true)
+    const p_filial = normalizeFilialCode(filial) ?? ''
     const { error } = await supabase.rpc('update_consultant', {
       p_consultor_id: consultorId,
       p_nome,
-      p_filial: filial.trim(),
+      p_filial,
     })
     if (error) {
       setSaving(false)
@@ -104,7 +107,7 @@ export function ModalEditarConsultor({
       return
     }
 
-    onSaved?.({ nome: p_nome, filial: filial.trim() || null })
+    onSaved?.({ nome: p_nome, filial: p_filial || null })
     onClose()
   }
 

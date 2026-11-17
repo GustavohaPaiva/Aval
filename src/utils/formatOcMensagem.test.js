@@ -2,11 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { formatOcMensagem } from './formatOcMensagem'
 
 describe('formatOcMensagem', () => {
-  it('envia só o USD líquido e replica a planta da filial', () => {
+  it('envia só o USD líquido e usa a planta escolhida, sem deduzir da filial', () => {
     const msg = formatOcMensagem(
       {
         numero: 'OC-1',
         filial_site: 'uberaba',
+        planta: 'Cubatão',
         data_documento: '2026-09-16',
         condicao_pagamento: 'FAT. ANTECIPADO',
         tipo_entrega: 'FOB',
@@ -24,7 +25,10 @@ describe('formatOcMensagem', () => {
       ],
       'Yara',
     )
-    expect(msg).toContain('Planta: Uberaba')
+    expect(msg).toContain('Planta: Cubatão')
+    expect(msg).toContain('Cidade / retirada: Cubatão')
+    expect(msg).not.toContain('Planta: Uberaba')
+    expect(msg).not.toContain('Cidade / retirada: Uberaba')
     expect(msg).toContain('Faturamento: Faturar p/Uberaba - MG')
     expect(msg).toMatch(/USD: US\$\s*90,00/)
     expect(msg).not.toContain('Desc.')
@@ -96,12 +100,13 @@ describe('formatOcMensagem', () => {
     expect(msg).toContain('Lista: Q4')
   })
 
-  it('cidade segue a planta e mostra vencimento, R$, frete zero e total da OC', () => {
+  it('cidade segue a planta gravada e mostra vencimento, R$, frete zero e total da OC', () => {
     const msg = formatOcMensagem(
       {
         numero: 'OC-4',
         filial_site: 'ituverava',
         filial_faturamento: 'ituverava',
+        planta: 'Cubatão',
         data_documento: '2026-09-01',
         condicao_pagamento: 'FAT. ANTECIPADO',
         tipo_entrega: 'cif',
@@ -135,13 +140,34 @@ describe('formatOcMensagem', () => {
       ],
       'YARA',
     )
-    expect(msg).toContain('Cidade / retirada: Ituverava')
+    expect(msg).toContain('Planta: Cubatão')
+    expect(msg).toContain('Cidade / retirada: Cubatão')
+    expect(msg).not.toContain('Cidade / retirada: Ituverava')
+    expect(msg).not.toContain('Cidade / retirada: Uberaba')
     expect(msg).toContain('Faturamento: Faturar p/Ituverava - SP')
     expect(msg).toContain('Tipo de entrega: CIF')
     expect(msg).toContain('Data de vencimento: 30/10/2026')
     expect(msg).toMatch(/Frete: R\$\s*0,00/)
     expect(msg).toMatch(/R\$: R\$\s*550,00/)
     expect(msg).toMatch(/Total da OC: \*R\$\s*2\.250,00\*/)
+  })
+
+  it('sem planta nova, a cidade gravada permanece e a filial comercial não a substitui', () => {
+    const msg = formatOcMensagem(
+      {
+        numero: 'OC-6',
+        filial_site: 'ituverava',
+        filial_faturamento: 'ituverava',
+        planta: '',
+        cidade_retirada: 'Rio Grande',
+        data_documento: '2026-09-01',
+      },
+      [],
+      'YARA',
+    )
+    expect(msg).toContain('Planta: —')
+    expect(msg).toContain('Cidade / retirada: Rio Grande')
+    expect(msg).not.toContain('Cidade / retirada: Ituverava')
   })
 
   it('mostra vencimento por produto quando as datas divergem', () => {

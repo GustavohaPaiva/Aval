@@ -1,12 +1,11 @@
 import { formatQtyByUnit, formatUsd } from './comprasUnits'
 import { ocItemValoresPedido, ocTotalBrl } from './comprasPrecos'
 import {
-  cidadeRetiradaFromFilial,
+  cidadeDaPlanta,
   ocFaturamento,
   ocItemVencimento,
   ocLista,
   ocVencimentoUnico,
-  plantaFromFilial,
   tipoEntregaLabel,
 } from '../constants/compras'
 import { formatDateBr } from './formatDateBr'
@@ -33,9 +32,9 @@ export function formatOcMensagem(compra, itens, fornecedorNome) {
   if (vencimentoUnico) lines.push(`Data de vencimento: ${formatDateBr(vencimentoUnico)}`)
   lines.push(
     `Condição: ${compra.condicao_pagamento || '—'}`,
-    `Planta: ${plantaFromFilial(compra.filial_site) || compra.planta || '—'}`,
+    `Planta: ${String(compra.planta ?? '').trim() || '—'}`,
     `Tipo de entrega: ${tipoEntregaLabel(compra.tipo_entrega)}`,
-    `Cidade / retirada: ${cidadeRetiradaFromFilial(compra.filial_site) || compra.cidade_retirada || '—'}`,
+    `Cidade / retirada: ${cidadeDaPlanta(compra) || '—'}`,
   )
   if (faturamento) lines.push(`Faturamento: ${faturamento}`)
   if (compra.entrega_retirada?.trim()) {

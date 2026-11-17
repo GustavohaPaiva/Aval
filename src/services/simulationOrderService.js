@@ -12,6 +12,7 @@ import { resolvePropostaTravadaEm } from '../utils/simulationPropostaLock';
 import { parseCpfCnpjInput } from '../utils/dataFormatters';
 import { formatBRL } from '../utils/money';
 import { ilikeOrClause } from '../utils/postgrestSearch';
+import { newSimulationSaleFields } from '../utils/simulationSaleFields';
 import { invalidateSalesDashboardCache } from './salesDashboardCache';
 import {
     draftExpiryCutoffIso,
@@ -123,15 +124,20 @@ async function supportsItemCosts() {
     return itemCostSupport
 }
 
-function appendSaleFields(fields, input) {
-    fields.data_negociacao = input.dataNegociacao || null
-    fields.filial_venda = input.filialVenda?.trim() || null
-    fields.tipo_venda = input.tipoVenda === 'barter' || input.tipoVenda === 'reais' ? input.tipoVenda : null
-    fields.safra = input.safra?.trim() || null
-    if (input.statusLancamento === 'lancado' || input.statusLancamento === 'nao_lancado') {
-        fields.status_lancamento = input.statusLancamento
+async function saleFieldsForInsert(userId) {
+    const { data, error } = await supabase
+        .from('profiles')
+        .select('role, filial')
+        .eq('id', userId)
+        .maybeSingle()
+    if (error && !missingColumnError(error)) {
+        return { ok: false, error: error.message }
     }
-    return fields
+    return { ok: true, fields: newSimulationSaleFields(data ?? { role: null, filial: null }) }
+}
+
+function missingColumnError(error) {
+    return /column|schema cache|does not exist/i.test(error?.message ?? '')
 }
 
 function overrideVencimentoLista(value) {
@@ -537,7 +543,6 @@ async function upsertSimulationWithItems(input, status, userId) {
         client_id: clientResult.clientId,
         ...buildSimulationFields(input, status),
     };
-    if (await supportsSaleFields()) appendSaleFields(simulationFields, input)
 
     let simulationId = input.simulationId ?? null;
 
@@ -609,6 +614,11 @@ async function upsertSimulationWithItems(input, status, userId) {
     const propostaTravadaEm = resolvePropostaTravadaEm(status, null)
     if (propostaTravadaEm) {
         simulationFields.proposta_travada_em = propostaTravadaEm
+    }
+    if (await supportsSaleFields()) {
+        const saleDefaults = await saleFieldsForInsert(userId)
+        if (!saleDefaults.ok) return saleDefaults
+        Object.assign(simulationFields, saleDefaults.fields)
     }
 
     const { data: simRow, error: simError } = await supabase
@@ -1224,7 +1234,6 @@ export async function saveGestorReview(input) {
     if (input.quarter !== undefined) {
         simUpdate.quarter = input.quarter ?? null;
     }
-    if (await supportsSaleFields()) appendSaleFields(simUpdate, input)
     if (editingConverted) {
         simUpdate.valores_congelados_em = new Date().toISOString();
         simUpdate.status = 'converted';
@@ -1296,6 +1305,7 @@ export async function saveGestorReview(input) {
             auth.user.id,
         );
     if (!itemsResult.ok) return itemsResult;
+    invalidateSalesDashboardCache();
 
     const comissaoResult = await syncComissaoForSimulation(
         input.simulationId,

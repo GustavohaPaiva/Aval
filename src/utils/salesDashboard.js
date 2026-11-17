@@ -141,6 +141,12 @@ function matchesChoice(value, choice) {
   return list.some((item) => textKey(item) === textKey(value))
 }
 
+function matchesCalendarYear(date, choice) {
+  const list = chosen(choice)
+  if (!list.length) return true
+  return list.some((year) => date >= `${year}-01-01` && date <= `${year}-12-31`)
+}
+
 const ID_FIELDS = {
   client: 'clientId',
   consultant: 'consultantId',
@@ -166,7 +172,7 @@ export function filterSales(rows, filters = {}, { ignoreYear = false } = {}) {
   return rows.filter((row) => {
     if (filters.start && row.date < filters.start) return false
     if (filters.end && row.date > filters.end) return false
-    if (!ignoreYear && !matchesChoice(row.date.slice(0, 4), filters.year)) return false
+    if (!ignoreYear && !matchesCalendarYear(row.date, filters.year)) return false
     if (!matchesChoice(row.date.slice(5, 7), filters.month)) return false
     if (filters.family === 'exclude' && row.family) return false
     if (filters.family === 'only' && !row.family) return false
@@ -174,7 +180,7 @@ export function filterSales(rows, filters = {}, { ignoreYear = false } = {}) {
     for (const [key, field] of Object.entries(ID_FIELDS)) {
       if (!matchesId(row, field, filters[key])) return false
     }
-    for (const key of ['culture', 'productType', 'saleType', 'harvest']) {
+    for (const key of ['culture', 'productType', 'saleType']) {
       if (!matchesChoice(row[key], filters[key])) return false
     }
     return true
@@ -287,15 +293,14 @@ export function supplierCompare(currentRows, previousRows, limit = 6) {
   }))
 }
 
-export function compareYears(rows, filters = {}, today = new Date().toISOString().slice(0, 10)) {
+export function compareYears(rows, filters = {}) {
   const base = filterSales(rows, filters, { ignoreYear: true })
   const marked = chosen(filters.year).sort().reverse()
   const available = [...new Set(base.map((row) => row.date.slice(0, 4)))].sort().reverse()
   const years = (marked.length >= 2 ? marked : available).slice(0, 2)
   const months = chosen(filters.month)
   return years.map((year) => {
-    const cutoff = `${year}-${today.slice(5)}`
-    const selected = base.filter((row) => row.date.slice(0, 4) === year && (months.length || row.date <= cutoff))
+    const selected = base.filter((row) => row.date >= `${year}-01-01` && row.date <= `${year}-12-31` && (!months.length || months.some((month) => textKey(month) === textKey(row.date.slice(5, 7)))))
     return { year, rows: selected, ...aggregateSales(selected) }
   })
 }

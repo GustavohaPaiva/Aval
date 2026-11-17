@@ -12,6 +12,7 @@ import {
   normalizeDocumentDigits,
 } from "../../utils/consultantLogin";
 import { buildSyagriEmail } from "../../utils/syagriEmail";
+import { normalizeFilialCode } from "../../utils/filialCodigo";
 
 const FORM_ID = "form-novo-consultor";
 
@@ -55,7 +56,7 @@ export function ModalNovoConsultor({ open, onClose, onCreated }) {
     const p_nome = nome.trim();
     const p_email = buildSyagriEmail(usuario);
     const p_password = normalizeDocumentDigits(cpf);
-    const p_filial = filial.trim() || null;
+    const p_filial = normalizeFilialCode(filial);
 
     if (!p_nome) {
       setFormError("Informe o nome do consultor.");

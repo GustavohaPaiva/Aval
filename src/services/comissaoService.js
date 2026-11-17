@@ -406,22 +406,28 @@ const REGISTRO_SELECT = `
  * @param {{ consultorId?: string, status?: string }} [params]
  */
 export async function fetchComissaoRegistros(params = {}) {
-  let q = supabase
-    .from('comissao_registros')
-    .select(REGISTRO_SELECT)
-    .order('calculado_em', { ascending: false })
+  const pageSize = 1000
+  const rows = []
+  for (let offset = 0; offset < 50000; offset += pageSize) {
+    let q = supabase
+      .from('comissao_registros')
+      .select(REGISTRO_SELECT)
+      .order('calculado_em', { ascending: false })
+      .range(offset, offset + pageSize - 1)
 
-  if (params.consultorId) {
-    q = q.eq('consultor_id', params.consultorId)
+    if (params.consultorId) {
+      q = q.eq('consultor_id', params.consultorId)
+    }
+    if (params.status) {
+      q = q.eq('status', params.status)
+    }
+
+    const { data, error } = await q
+    if (error) return { ok: false, error: error.message }
+    const page = data ?? []
+    rows.push(...page)
+    if (page.length < pageSize) break
   }
-  if (params.status) {
-    q = q.eq('status', params.status)
-  }
-
-  const { data, error } = await q
-  if (error) return { ok: false, error: error.message }
-
-  const rows = data ?? []
   const consultorIds = [...new Set(rows.map((r) => r.consultor_id).filter(Boolean))]
   let consultorNomeById = {}
 

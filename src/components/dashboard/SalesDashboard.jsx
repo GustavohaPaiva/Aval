@@ -14,8 +14,8 @@ import { PageHeader } from '../ui/PageHeader'
 import { Select } from '../ui/Select'
 import { useAbortableAsync } from '../../hooks/useAbortableAsync'
 import { useAuth } from '../../hooks/useAuth'
-import { peekSalesDashboard } from '../../services/salesDashboardCache'
-import { loadSalesDashboard } from '../../services/salesDashboardService'
+import { peekSalesDashboard, subscribeSalesDashboardCache } from '../../services/salesDashboardCache'
+import { SALES_BASE_RULES, loadSalesDashboard } from '../../services/salesDashboardService'
 import {
   BRANCHES,
   aggregateSales,
@@ -59,7 +59,7 @@ const MEASURES = [
   ['margin', 'Margem %'],
 ]
 const MONTH_LABELS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
-const FILTER_FIELDS = ['branch', 'saleType', 'supplier', 'culture', 'productType', 'product', 'consultant', 'client', 'harvest', 'month', 'year']
+const FILTER_FIELDS = ['branch', 'saleType', 'supplier', 'culture', 'productType', 'product', 'consultant', 'client', 'month', 'year']
 const CARD = 'rounded-2xl border border-slate-200/90 bg-white shadow-sm sm:rounded-3xl'
 const todayKey = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
 const toneClass = { red: 'text-red-700', watch: 'text-amber-700', healthy: 'text-emerald-700' }
@@ -727,12 +727,6 @@ function periodOptions(rows, slice) {
     .map((value) => ({ value, label: slice[0] === 5 ? MONTH_LABELS[Number(value) - 1] : value }))
 }
 
-function storedOptions(rows, field) {
-  return [...new Set(rows.map((row) => row[field]).filter(Boolean))]
-    .sort((a, b) => a.localeCompare(b, 'pt-BR'))
-    .map((value) => ({ value, label: value }))
-}
-
 function optionLabel(options, value) {
   return options.find((option) => String(option.value) === String(value))?.label || 'Sem cadastro'
 }
@@ -828,6 +822,35 @@ function FilterRail({ buttonRef, count, onClick, controls, className = '', hidde
 
 const FILTER_MOTION_MS = 320
 
+function CoverageNote({ issues = [], rules = SALES_BASE_RULES }) {
+  const outside = issues.filter((issue) => issue.excluded)
+  const kept = issues.filter((issue) => !issue.excluded)
+  return (
+    <details className={`${CARD} px-3 py-2 text-sm text-slate-600`}>
+      <summary className="cursor-pointer font-medium text-slate-700">O que entra nos indicadores</summary>
+      <ul className="mt-2 list-disc space-y-1 pl-5">
+        {(rules?.length ? rules : SALES_BASE_RULES).map((rule) => <li key={rule}>{rule}</li>)}
+      </ul>
+      {outside.length ? (
+        <>
+          <p className="mt-3 font-medium text-slate-700">Fora desta consulta</p>
+          <ul className="mt-1 list-disc space-y-1 pl-5">
+            {outside.map((issue, index) => <li key={`${issue.code}-${issue.line}-${index}`}>{issue.line}: {issue.reason}</li>)}
+          </ul>
+        </>
+      ) : <p className="mt-3">Nenhum pedido carregado ficou de fora nesta consulta.</p>}
+      {kept.length ? (
+        <>
+          <p className="mt-3 font-medium text-slate-700">Permanecem na base, com aviso</p>
+          <ul className="mt-1 list-disc space-y-1 pl-5">
+            {kept.map((issue, index) => <li key={`${issue.code}-${issue.line}-${index}`}>{issue.line}: {issue.reason}</li>)}
+          </ul>
+        </>
+      ) : null}
+    </details>
+  )
+}
+
 function DashboardPending() {
   return (
     <div className={`${CARD} flex min-h-64 flex-col items-center justify-center gap-3 px-6 py-10`} role="status" aria-live="polite" aria-busy="true">
@@ -844,11 +867,11 @@ export function SalesDashboard({ role, operations = [], operationsLoading = fals
   const [tab, setTab] = useState('overview')
   const [measure, setMeasure] = useState('revenue')
   const [filters, setFilters] = useState({})
-  const [yearDefaultDismissed, setYearDefaultDismissed] = useState(false)
   const [loading, setLoading] = useState(() => peekSalesDashboard(userId) == null)
   const [error, setError] = useState(null)
   const [refresh, setRefresh] = useState(0)
   const [, startTransition] = useTransition()
+  useEffect(() => subscribeSalesDashboardCache(() => setRefresh((value) => value + 1)), [])
   useAbortableAsync(async (signal, isActive) => {
     const fresh = refresh > 0
     if (fresh || !peekSalesDashboard(userId)) {
@@ -879,12 +902,10 @@ export function SalesDashboard({ role, operations = [], operationsLoading = fals
     return unifySales(native, { ...bundle.historical, rows: historicalRows })
   }, [bundle])
   const familyKnown = bundle?.fields?.family === true
-  const yearNow = todayKey().slice(0, 4)
   const appliedFilters = useMemo(() => {
     const next = familyKnown ? { ...filters } : { ...filters, family: '' }
-    if (!yearDefaultDismissed && !next.year?.length && prepared.rows.some((row) => row.date.startsWith(yearNow))) next.year = [yearNow]
     return next
-  }, [filters, familyKnown, yearDefaultDismissed, prepared.rows, yearNow])
+  }, [filters, familyKnown])
   const rows = useMemo(() => filterSales(prepared.rows, appliedFilters), [prepared.rows, appliedFilters])
   const alerts = bundle?.config.alerts ?? { vistaRed: 1.5, vistaHealthy: 3, prazoRed: 5, prazoHealthy: 7 }
 
@@ -899,7 +920,6 @@ export function SalesDashboard({ role, operations = [], operationsLoading = fals
     product: bundle?.catalogs?.products ?? [],
     consultant: bundle?.catalogs?.consultants ?? [],
     client: bundle?.catalogs?.clients ?? [],
-    harvest: storedOptions(prepared.rows, 'harvest'),
   }), [prepared.rows, bundle])
   const activeChips = []
   if (appliedFilters.start) activeChips.push(['start', `De ${brDate(appliedFilters.start)}`])
@@ -911,19 +931,16 @@ export function SalesDashboard({ role, operations = [], operationsLoading = fals
   }
 
   function clearChip(key) {
-    if (key === 'year') setYearDefaultDismissed(true)
     const next = { ...appliedFilters }
     delete next[key]
     setFilters(next)
   }
 
   function clearFilters() {
-    setYearDefaultDismissed(true)
     setFilters({})
   }
 
   function setFilter(key, value) {
-    if (key === 'year') setYearDefaultDismissed(true)
     setFilters({ ...appliedFilters, [key]: value })
   }
 
@@ -1008,6 +1025,7 @@ export function SalesDashboard({ role, operations = [], operationsLoading = fals
 
   const orders = rows.length ? aggregateSales(rows).orders : 0
   const countLabel = prepared.rows.length ? `${rows.length} de ${prepared.rows.length} linhas · ${orders} pedidos` : '—'
+  const yearNow = todayKey().slice(0, 4)
   const reload = () => setRefresh((value) => value + 1)
 
   function dimension(key, label, searchable = false) {
@@ -1038,7 +1056,6 @@ export function SalesDashboard({ role, operations = [], operationsLoading = fals
         <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Dimensões</p>
         {dimension('branch', 'Filial')}
         {dimension('saleType', 'Tipo de venda')}
-        {dimension('harvest', 'Safra', true)}
         {dimension('culture', 'Cultura', true)}
         {dimension('productType', 'Tipo')}
         {dimension('product', 'Produto', true)}
@@ -1114,6 +1131,7 @@ export function SalesDashboard({ role, operations = [], operationsLoading = fals
           </div>
 
           {error ? <AlertMessage>{error}</AlertMessage> : null}
+          {bundle ? <CoverageNote issues={prepared.issues} rules={bundle.exclusionRules} /> : null}
           {loading && !bundle ? <DashboardPending /> : null}
           {bundle && tab === 'overview' ? <Overview rows={rows} measure={measure} setMeasure={setMeasure} dollar={bundle?.config.dollar} snapshotDelta={snapshotDeltaOf(bundle, appliedFilters, prepared.rows, yearNow)} familyKnown={familyKnown} alerts={alerts} /> : null}
           {bundle && tab === 'week' ? <WeekView rows={rows} alerts={alerts} /> : null}
@@ -1150,7 +1168,7 @@ export function SalesDashboard({ role, operations = [], operationsLoading = fals
 
 function snapshotDeltaOf(bundle, filters, rows, year) {
   if (!bundle?.fields?.snapshots) return null
-  const ignored = ['start', 'end', 'month', 'branch', 'saleType', 'supplier', 'culture', 'productType', 'product', 'consultant', 'client', 'harvest', 'family']
+  const ignored = ['start', 'end', 'month', 'branch', 'saleType', 'supplier', 'culture', 'productType', 'product', 'consultant', 'client', 'family']
   if (ignored.some((key) => Array.isArray(filters[key]) ? filters[key].length : filters[key])) return null
   if (filters.year?.length && !(filters.year.length === 1 && filters.year[0] === year)) return null
   const previous = (bundle.config.snapshots ?? []).find((item) => String(item.ano) === year)

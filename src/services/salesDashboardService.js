@@ -1,3 +1,4 @@
+import { saoPauloDateOnly } from '../utils/autonomiaDesconto'
 import { supabase } from './supabase'
 import { formatProdutoDisplayNome } from '../constants/mapeamentoCampos'
 import { buildNativeSaleFacts } from '../utils/nativeSalesFacts'
@@ -11,8 +12,22 @@ import {
 const one = (value) => Array.isArray(value) ? value[0] : value
 const GESTOR_ONLY = 'Painel disponível somente para gestores.'
 
+export const SALES_BASE_RULES = [
+  'Entram pedidos convertidos e ativos, pelo volume e pelo valor dos itens.',
+  'Ficam de fora rascunho, pendente, aprovado sem conversão, conversão solicitada, pedido aguardando aprovação, cancelado e inativo. Esses estados não são venda concluída.',
+  'Pedido convertido sem itens fica de fora: não há volume nem valor para somar.',
+  'Pedido sem data de negociação e sem data de criação fica de fora.',
+  'Linha com volume e faturamento zerados fica de fora como cancelada.',
+  'Linha com volume inválido ou faturamento negativo fica de fora.',
+  'Total do cabeçalho diferente da soma dos itens não tira o pedido da base. O indicador usa os itens e registra o aviso.',
+  'Pedido sem compra entra na base, sem fornecedor. Compra sem preço unitário também entra, uma vez, pelo item. Compra parcial mantém o restante.',
+  'Status diferente de lançado continua na base de vendas e fica fora apenas do fluxo de caixa.',
+  'O ano do filtro é o ano-calendário da data, de 01/01 a 31/12. Safra não filtra o painel.',
+  'A planilha histórica só entra se já estiver gravada. Esta etapa não importa arquivo novo.',
+]
+
 const ORDER_RICH = `
-  id, user_id, client_id, total_proposta, data_pagamento, data_negociacao,
+  id, user_id, client_id, total_proposta, data_pagamento, created_at, data_negociacao,
   filial_venda, tipo_venda, safra, status_lancamento,
   clients(nome),
   simulation_items(
@@ -21,11 +36,11 @@ const ORDER_RICH = `
     produtos_oficiais(nome)
   )`
 const ORDER_BASIC = `
-  id, user_id, client_id, total_proposta, data_pagamento,
+  id, user_id, client_id, total_proposta, data_pagamento, created_at,
   clients(nome),
   simulation_items(id, product_id, volume, proposta, cultura, produto_classe, produtos_oficiais(nome))`
 const ORDER_EMBEDDED = `
-  id, user_id, client_id, total_proposta, data_pagamento, data_negociacao,
+  id, user_id, client_id, total_proposta, data_pagamento, created_at, data_negociacao,
   filial_venda, tipo_venda, safra, status_lancamento,
   clients(nome),
   simulation_items(
@@ -47,6 +62,11 @@ const ORDER_EMBEDDED = `
       )
     )
   )`
+
+function negotiationDate(order, saleFields) {
+  if (saleFields && order.data_negociacao) return String(order.data_negociacao).slice(0, 10)
+  return order.created_at ? saoPauloDateOnly(order.created_at) : null
+}
 const HISTORICAL_COLUMNS = `id, importacao_id, linha, dedup_key, data_venda, data_venc_cliente, data_venc_fornecedor, status_lancado, tipo_venda, filial, consultor, cliente, cultura, safra, fornecedor, tipo_produto, produto, volume, preco_fornecedor, custo_com_icms, custo_sem_icms, faturamento`
 const PARAMETER_COLUMNS = 'id, dolar_referencia, dias_vista, alerta_vista_vermelho, alerta_vista_saudavel, alerta_prazo_vermelho, alerta_prazo_saudavel, meta_incrementos'
 
@@ -236,19 +256,41 @@ async function loadNative(signal) {
       throw error
     }
   }
+  const divergentIssues = []
+  const validOrders = []
   for (const order of orders) {
     const items = order.simulation_items ?? []
-    const sum = items.reduce((value, item) => value + Number(item.volume) * Number(item.proposta), 0)
-    if (!items.length || Math.abs(sum - Number(order.total_proposta)) > 0.05) {
-      throw new Error('Há pedidos com itens ausentes ou total divergente. Confira os pedidos antes de consolidar o painel.')
+    const client = one(order.clients)?.nome || 'Cliente'
+    if (!items.length) {
+      divergentIssues.push({
+        source: 'Aval',
+        line: client,
+        orderId: order.id,
+        code: 'missing-items',
+        excluded: true,
+        reason: 'Pedido convertido sem itens. Ficou fora porque não há volume nem valor para somar.',
+      })
+      continue
     }
+    const sum = Math.round((items.reduce((value, item) => value + Number(item.volume) * Number(item.proposta), 0) + Number.EPSILON) * 100) / 100
+    const header = Number(order.total_proposta)
+    if (!Number.isFinite(header) || Math.abs(sum - header) > 0.05) {
+      divergentIssues.push({
+        source: 'Aval',
+        line: client,
+        orderId: order.id,
+        code: 'divergent-total',
+        reason: `Total do pedido (${Number.isFinite(header) ? header : 'ausente'}) difere da soma dos itens (${sum}). O pedido permanece na base pela soma dos itens.`,
+      })
+    }
+    validOrders.push(order)
   }
-  const profileIds = [...new Set(orders.map((row) => row.user_id).filter(Boolean))]
+  const profileIds = [...new Set(validOrders.map((row) => row.user_id).filter(Boolean))]
   const [profileRows, support] = await Promise.all([
     profileIds.length ? inChunks(profileIds, signal, (ids, current) => (
       supabase.from('profiles').select('id, nome, filial').in('id', ids).abortSignal(current)
     )) : [],
-    loadSupport(orders, signal),
+    loadSupport(validOrders, signal),
   ])
   const profiles = new Map(profileRows.map((row) => [row.id, row]))
   const supplierByCompra = new Map(support.compras.map((row) => [row.id, {
@@ -256,12 +298,12 @@ async function loadNative(signal) {
     id: row.fornecedor_id || null,
   }]))
   const native = buildNativeSaleFacts({
-    orders: orders.map((order) => ({
+    orders: validOrders.map((order) => ({
       id: order.id,
       userId: order.user_id,
       clientId: order.client_id,
       client: one(order.clients)?.nome || '',
-      negotiatedOn: saleFields && order.data_negociacao ? String(order.data_negociacao).slice(0, 10) : null,
+      negotiatedOn: negotiationDate(order, saleFields),
       customerDue: order.data_pagamento ? String(order.data_pagamento).slice(0, 10) : null,
       branch: saleFields ? (order.filial_venda || '') : '',
       saleType: !saleFields ? '' : order.tipo_venda === 'barter' ? 'Barter' : order.tipo_venda === 'reais' ? 'Reais' : '',
@@ -296,6 +338,9 @@ async function loadNative(signal) {
     })),
     lots: support.lots.map((row) => ({ id: row.id, compraItemId: row.compra_item_id })),
   })
+  if (divergentIssues.length) {
+    native.issues = [...divergentIssues, ...(native.issues ?? [])]
+  }
   return { schemaReady, saleFields, native }
 }
 
@@ -339,7 +384,7 @@ export async function loadSalesDashboard({ role, signal, fresh = false, userId =
       dollar: config.values.dollar != null,
       historical: config.schemaReady && historical.files.length > 0,
     }
-    const result = { ok: true, schemaReady, fields, native, historical, catalogs, config: config.values, updatedAt: new Date().toISOString() }
+    const result = { ok: true, schemaReady, fields, native, historical, catalogs, config: config.values, exclusionRules: SALES_BASE_RULES, updatedAt: new Date().toISOString() }
     if (cacheId && ticket === loadTicket && !signal?.aborted) storeSalesDashboard(cacheId, result)
     return result
   } catch (error) {
