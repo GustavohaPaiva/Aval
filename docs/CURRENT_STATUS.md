@@ -9,6 +9,9 @@ O dólar do pedido ao fornecedor sai da negociação: o câmbio gravado na linha
 ## O que entrou no oficial
 As migrations locais posteriores a `20261111230000`: papel financeiro, recebimentos, tipo `pagamento_vencimento`, aviso de vencimento e dólar negociado. A política de `public.products` só é recriada se a tabela existir; no oficial ela não existe. Migrations antigas, já aplicadas com outro número, não foram reexecutadas.
 
+## Publicado
+Commit `26f876e` está em `main`. O workflow Deploy GitHub Pages `44486470064` concluiu com sucesso. A função `enviar-push-notificacao` foi republicada no Syagri oficial, com o clique de vencimento em `/pedido/:id`.
+
 ## Próxima etapa
 Entrar como gestor, abrir um pedido de compra ligado a uma negociação e conferir o dólar, uma edição manual e o PDF.
 
