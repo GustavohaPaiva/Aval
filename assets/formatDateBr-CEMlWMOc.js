@@ -1,0 +1,1 @@
+function e(e){if(!e)return`—`;if(e instanceof Date)return Number.isNaN(e.getTime())?`—`:t(e);let n=String(e).trim(),r=n.match(/^(\d{4})-(\d{2})-(\d{2})$/);if(r)return`${r[3]}/${r[2]}/${r[1]}`;let i=new Date(n);return Number.isNaN(i.getTime())?`—`:t(i)}function t(e){return e.toLocaleDateString(`pt-BR`,{day:`2-digit`,month:`2-digit`,year:`numeric`})}export{e as t};
