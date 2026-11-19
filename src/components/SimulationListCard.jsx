@@ -1,4 +1,5 @@
 import { IconCalendar, IconDollarSign, IconUser } from './icons'
+import { FinanceiroSituacao } from './financeiro/FinanceiroSituacao'
 import { Button } from './ui/Button'
 import {
   isPedidoStatus,
@@ -150,6 +151,19 @@ export function SimulationListCard({
             </div>
           </div>
         </div>
+
+        {row.financeiro ? (
+          <div className="space-y-2 rounded-2xl border border-slate-100 px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+              Financeiro
+            </p>
+            <p className="text-sm text-slate-600">
+              Recebido {formatBRL(row.financeiro.valorRecebido)} · em aberto{' '}
+              {formatBRL(row.financeiro.saldo)}
+            </p>
+            <FinanceiroSituacao {...row.financeiro} compact />
+          </div>
+        ) : null}
 
         {isGestor ? (
           <div className="flex items-center gap-2 text-sm text-slate-600">

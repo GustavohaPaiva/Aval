@@ -121,7 +121,7 @@ export function SpreadsheetPreviewPanel({
         </p>
         <p className="mt-1 text-sm text-slate-600">
           {multiQuarter
-            ? `Detectamos ${quarterGroups.length} quarters — cada um vira um lançamento separado.`
+            ? `Detectamos ${quarterGroups.length} quarters. As listas ficam separadas e o lançamento publica todas.`
             : 'Revise validade, quarter e uma amostra dos produtos detectados.'}
         </p>
       </div>
@@ -131,11 +131,11 @@ export function SpreadsheetPreviewPanel({
           <>
             <div className="rounded-2xl border border-sky-200/80 bg-sky-50/50 px-4 py-3">
               <p className="text-sm font-semibold text-sky-900">
-                {quarterGroups.length} lançamentos serão criados
+                {quarterGroups.length} listas, um lançamento
               </p>
               <p className="mt-1 text-xs leading-relaxed text-sky-800/90">
-                Selecione cada quarter abaixo para conferir validade e prévia
-                dos produtos. Depois, processe todos de uma vez.
+                Confira a validade e a prévia de cada quarter. O lançamento
+                grava todos, cada produto no seu quarter.
               </p>
             </div>
 

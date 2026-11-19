@@ -4,6 +4,7 @@ import { AtribuirConsultorPanel } from '../components/AtribuirConsultorPanel'
 import { PedidoPdfDocument } from '../components/pedido/PedidoPdfDocument'
 import { PedidoAssinaturaPanel } from '../components/pedido/PedidoAssinaturaPanel'
 import { PedidoSimulationSummary } from '../components/pedido/PedidoSimulationSummary'
+import { FinanceiroResumoConsulta } from '../components/financeiro/FinanceiroResumoConsulta'
 import { PdfPreviewModal } from '../components/pdf/PdfPreviewModal'
 import { AlertMessage } from '../components/ui/AlertMessage'
 import { Button } from '../components/ui/Button'
@@ -656,6 +657,8 @@ export function Pedido({ simulationId }) {
           {actionBanner}
         </div>
       ) : null}
+
+      <FinanceiroResumoConsulta simulationId={simulationId} />
 
       {isGestor ? (
         <AtribuirConsultorPanel

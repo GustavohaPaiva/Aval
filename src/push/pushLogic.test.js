@@ -46,6 +46,8 @@ describe('destino da notificação', () => {
       .toBe(`/simulador?simulationId=${SIM}`)
     expect(notificationTargetPath({ type: 'push_test', simulationId: null, role: 'gestor' }))
       .toBe('/notificacoes')
+    expect(notificationTargetPath({ type: 'pagamento_vencimento', simulationId: SIM, role: 'consultor' }))
+      .toBe(`/pedido/${SIM}`)
   })
 
   it('codifica um identificador hostil dentro do caminho', () => {

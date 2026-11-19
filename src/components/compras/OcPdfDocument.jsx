@@ -11,7 +11,13 @@ import {
   tipoEntregaLabel,
 } from '../../constants/compras'
 import { formatQtyByUnit, formatUsd } from '../../utils/comprasUnits'
-import { ocItemValoresPedido, ocTotalBrl } from '../../utils/comprasPrecos'
+import {
+  dolarNegociadoResumo,
+  formatTaxaDolar,
+  ocItemValoresPedido,
+  ocTotalBrl,
+  resolverTaxaDolarItem,
+} from '../../utils/comprasPrecos'
 import { formatDateBr } from '../../utils/formatDateBr'
 import { formatBRL } from '../../utils/money'
 
@@ -19,12 +25,16 @@ function brlOrDash(value) {
   return value == null ? '—' : formatBRL(value)
 }
 
-function itemMeta(item, showVencimento) {
+function itemMeta(item, showVencimento, showDolar) {
   const lista = ocLista(item)
   const vencimento = showVencimento ? ocItemVencimento(item) : null
+  const dolar = showDolar
+    ? (formatTaxaDolar(resolverTaxaDolarItem(item).taxa) ?? '—')
+    : null
   const parts = [
     item.embalagem ? `Embalagem: ${item.embalagem}` : null,
     vencimento ? `Vencimento: ${formatDateBr(vencimento)}` : null,
+    dolar ? `Dólar negociado: ${dolar}` : null,
     item.cultura ? `Cultura: ${item.cultura}` : null,
     item.origem ? `Origem: ${item.origem}` : null,
     lista ? `Lista: ${lista}` : null,
@@ -48,6 +58,12 @@ export function OcPdfDocument({ compra, itens, fornecedorNome }) {
       ? 'Ver por produto'
       : '—'
   const totalOc = ocTotalBrl(itens)
+  const dolar = dolarNegociadoResumo(itens)
+  const dolarLabel = dolar.ausente
+    ? '—'
+    : dolar.unico
+      ? (formatTaxaDolar(dolar.taxa) ?? '—')
+      : 'Ver por produto'
 
   return (
     <div
@@ -191,6 +207,7 @@ export function OcPdfDocument({ compra, itens, fornecedorNome }) {
               { label: 'Data do pedido', value: formatDateBr(compra.data_documento) },
               { label: 'Data de vencimento', value: vencimentoLabel },
               { label: 'Condição', value: compra.condicao_pagamento || '—' },
+              { label: 'Dólar negociado', value: dolarLabel },
               { label: 'Planta', value: plantaLabel(compra.planta) || '—' },
               { label: 'Tipo de entrega', value: tipoEntregaLabel(compra.tipo_entrega) },
               {
@@ -263,7 +280,7 @@ export function OcPdfDocument({ compra, itens, fornecedorNome }) {
             <tbody>
               {(itens ?? []).map((item, index) => {
                 const valores = ocItemValoresPedido(item)
-                const meta = itemMeta(item, !vencimentoUnico)
+                const meta = itemMeta(item, !vencimentoUnico, !dolar.unico && !dolar.ausente)
                 return (
                   <tr
                     key={item.id}

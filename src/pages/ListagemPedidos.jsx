@@ -18,6 +18,7 @@ import { useAuth } from "../hooks/useAuth";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { usePersistedFilters } from "../hooks/usePersistedFilters";
 import { fetchSimulationsList } from "../services/simulationOrderService";
+import { resumoFinanceiroPedidos } from "../services/financeiroService";
 
 const PAGE_SIZE = 50;
 
@@ -94,15 +95,26 @@ export function ListagemPedidos() {
 
       if (!isActive()) return;
 
-      setLoading(false);
       if (!result.ok) {
+        setLoading(false);
         setError(result.error);
         setRows([]);
         setTotal(0);
         setConsultorNomeById({});
         return;
       }
-      setRows(result.rows);
+      let nextRows = result.rows;
+      const resumo = await resumoFinanceiroPedidos(nextRows.map((row) => row.id));
+      if (!isActive()) return;
+      if (resumo.ok) {
+        const byId = new Map(resumo.rows.map((row) => [row.simulationId, row]));
+        nextRows = nextRows.map((row) => ({
+          ...row,
+          financeiro: byId.get(row.id) ?? null,
+        }));
+      }
+      setLoading(false);
+      setRows(nextRows);
       setTotal(result.total);
       setConsultorNomeById(result.consultorNomeById);
     },

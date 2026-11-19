@@ -20,6 +20,7 @@ import {
   summarizeCascadeCounts,
 } from '../utils/loteMetadataCascade'
 import { formatSupabaseError } from '../utils/supabaseErrors'
+import { recordQuarterGroups, runQuarterLaunch } from '../utils/quarterLaunch'
 import { fetchParametrosSistema } from './parametrosService'
 
 const STAGING_ROW_FIELDS =
@@ -1146,6 +1147,202 @@ export async function promoverLote(loteId) {
   return { ok: true, result: data }
 }
 
+export async function fetchLotesByImportGroup(importGroupId) {
+  const groupId = String(importGroupId ?? '').trim()
+  if (!groupId) return { ok: true, rows: [] }
+
+  const { data, error } = await supabase
+    .from('lotes_importacao')
+    .select('id, status, quarter_calculado, metadata_planilha')
+    .contains('metadata_planilha', { importGroupId: groupId })
+    .order('quarter_calculado', { ascending: true })
+
+  if (error) return { ok: false, error: formatSupabaseError(error) }
+
+  return {
+    ok: true,
+    rows: (data ?? []).map((row) => ({
+      loteId: row.id,
+      quarter: row.quarter_calculado ?? '',
+      status: row.status,
+      catalogCode: row.metadata_planilha?.catalogCode ?? '',
+    })),
+  }
+}
+
+function toQuarterLaunchEntry(lote, rows) {
+  const identityCounts = buildStagingIdentityCounts(rows)
+  const matchContext = {
+    identityCounts,
+    loteEstadoPadrao: lote.estado_padrao ?? '',
+    loteDescontoUsd: lote.desconto_usd ?? 0,
+  }
+  const produtos = rows.map((row) => {
+    const erros = getStagingRowErrors(row, matchContext)
+    return {
+      nome: row.nome,
+      quarter: String(row.quarter || lote.quarter_calculado || '').trim(),
+      preco: Number(row.preco_original),
+      quantidade:
+        row.dados_brutos?.quantidade ?? row.dados_brutos?.Quantidade ?? null,
+      desconto:
+        row.desconto_usd !== undefined && row.desconto_usd !== null
+          ? Number(row.desconto_usd)
+          : Number(lote.desconto_usd ?? 0),
+      erros,
+      statusLinha: erros.length > 0 ? 'erro' : row.status_linha,
+    }
+  })
+
+  return {
+    loteId: lote.id,
+    quarter: String(lote.quarter_calculado ?? '').trim(),
+    status: lote.status,
+    moeda: lote.moeda_detectada ?? '',
+    estadoPadrao: lote.estado_padrao ?? '',
+    ativo: lote.ativo !== false,
+    produtos,
+  }
+}
+
+async function discardUnlaunchedLote(loteId) {
+  const { data, error } = await supabase
+    .from('lotes_importacao')
+    .delete()
+    .eq('id', loteId)
+    .in('status', ['aguardando_validacao', 'processando'])
+    .select('id')
+
+  if (error) return { ok: false, error: formatSupabaseError(error) }
+  return { ok: true, removed: (data ?? []).length > 0 }
+}
+
+/**
+ * Lança todos os lotes do grupo. Quarter já concluído é ignorado.
+ * Estado, desconto e taxas vazios herdam o lote que o usuário revisou.
+ */
+export async function promoverLotesDoGrupo(loteIds, { sourceLoteId } = {}) {
+  const ids = [
+    ...new Set(
+      (loteIds ?? []).map((id) => String(id ?? '').trim()).filter(Boolean),
+    ),
+  ]
+  if (ids.length === 0) {
+    return {
+      ok: false,
+      phase: 'preflight',
+      error: 'Nenhum lote para lançar.',
+      launched: [],
+      failed: null,
+      pending: [],
+      alreadyLaunched: [],
+    }
+  }
+
+  const loaded = []
+  for (const loteId of ids) {
+    const loteRes = await fetchLoteById(loteId)
+    if (!loteRes.ok) {
+      return {
+        ok: false,
+        phase: 'preflight',
+        error: loteRes.error,
+        launched: [],
+        failed: null,
+        pending: [],
+        alreadyLaunched: [],
+      }
+    }
+    loaded.push({ lote: loteRes.row })
+  }
+
+  const source =
+    loaded.find(
+      (item) =>
+        item.lote.id === sourceLoteId &&
+        String(item.lote.estado_padrao ?? '').trim(),
+    ) ??
+    loaded.find((item) => String(item.lote.estado_padrao ?? '').trim())
+
+  if (source && ids.length > 1) {
+    for (const item of loaded) {
+      if (item.lote.status !== 'aguardando_validacao') continue
+      if (String(item.lote.estado_padrao ?? '').trim()) continue
+      const upd = await updateLoteMetadata(item.lote.id, {
+        estado_padrao: source.lote.estado_padrao,
+        desconto_usd: source.lote.desconto_usd ?? 0,
+        taxa_antecipacao: source.lote.taxa_antecipacao,
+        taxa_juros: source.lote.taxa_juros,
+      })
+      if (!upd.ok) {
+        return {
+          ok: false,
+          phase: 'preflight',
+          error: upd.error,
+          launched: [],
+          failed: null,
+          pending: [],
+          alreadyLaunched: [],
+        }
+      }
+      item.lote = {
+        ...item.lote,
+        estado_padrao: upd.row.estado_padrao ?? source.lote.estado_padrao,
+        desconto_usd: Number(
+          upd.row.desconto_usd ?? source.lote.desconto_usd ?? 0,
+        ),
+        taxa_antecipacao: Number(
+          upd.row.taxa_antecipacao ?? source.lote.taxa_antecipacao,
+        ),
+        taxa_juros: Number(upd.row.taxa_juros ?? source.lote.taxa_juros),
+      }
+    }
+  }
+
+  for (const item of loaded) {
+    if (item.lote.status === 'concluido') {
+      item.rows = []
+      continue
+    }
+    const stagingRes = await fetchStagingByLote(item.lote.id)
+    if (!stagingRes.ok) {
+      return {
+        ok: false,
+        phase: 'preflight',
+        error: stagingRes.error,
+        launched: [],
+        failed: null,
+        pending: [],
+        alreadyLaunched: [],
+      }
+    }
+    item.rows = stagingRes.rows
+  }
+
+  const entries = loaded.map((item) =>
+    toQuarterLaunchEntry(item.lote, item.rows ?? []),
+  )
+
+  return runQuarterLaunch(entries, async (entry) => {
+    const res = await promoverLote(entry.loteId)
+    if (!res.ok && /aguardando valida/i.test(res.error ?? '')) {
+      const again = await fetchLoteById(entry.loteId)
+      if (again.ok && again.row.status === 'concluido') {
+        return {
+          ok: true,
+          result: {
+            novos: 0,
+            atualizacoes: 0,
+            listas_inativadas: 0,
+            already: true,
+          },
+        }
+      }
+    }
+    return res
+  })
+}
+
 export async function fetchProdutosOficiaisByLote(loteId) {
   if (!loteId) return { ok: true, rows: [] }
 
@@ -1656,7 +1853,11 @@ export async function processLoteAuto({
       .insert(stagingPayload)
 
     if (stagingError) {
-      return { ok: false, error: formatSupabaseError(stagingError) }
+      return {
+        ok: false,
+        error: formatSupabaseError(stagingError),
+        loteId: loteRow.id,
+      }
     }
 
     await applyStagingMatchToLote(loteRow.id, fornecedorId)
@@ -1671,7 +1872,7 @@ export async function processLoteAuto({
     .eq('id', loteRow.id)
 
   if (statusError) {
-    return { ok: false, error: statusError.message }
+    return { ok: false, error: statusError.message, loteId: loteRow.id }
   }
 
   return {
@@ -1703,53 +1904,95 @@ export async function processLotesPorQuarter({
     })
   }
 
-  const lotes = []
-  for (const group of groups) {
-    const quarter = String(group.quarter ?? '').trim()
-    if (!quarter) {
-      return {
-        ok: false,
-        error: 'Grupo de quarter sem identificação. Revise a planilha.',
-      }
-    }
+  const importGroupId = groups.length > 1 ? crypto.randomUUID() : null
 
-    const res = await processLoteAuto({
-      fornecedorId,
-      columnMappings,
-      file,
-      parseOptions: {
-        ...parseOptions,
-        quarterCalculado: quarter,
-        dataValidade: group.dataValidade || parseOptions.dataValidade,
-        metadataPlanilha: {
-          ...(parseOptions.metadataPlanilha ?? {}),
-          catalogCode: group.catalogCode ?? '',
-          quarterGroup: quarter,
+  const recorded = await recordQuarterGroups(groups, {
+    createGroup: async (group) => {
+      const quarter = String(group.quarter ?? '').trim()
+      if (!quarter) {
+        return {
+          ok: false,
+          error: 'Grupo de quarter sem identificação. Revise a planilha.',
+        }
+      }
+
+      const res = await processLoteAuto({
+        fornecedorId,
+        columnMappings,
+        file,
+        parseOptions: {
+          ...parseOptions,
+          quarterCalculado: quarter,
+          dataValidade: group.dataValidade || parseOptions.dataValidade,
+          metadataPlanilha: {
+            ...(parseOptions.metadataPlanilha ?? {}),
+            catalogCode: group.catalogCode ?? '',
+            quarterGroup: quarter,
+            ...(importGroupId ? { importGroupId } : {}),
+          },
         },
-      },
-      dataRowsOverride: group.dataRows ?? [],
-    })
+        dataRowsOverride: group.dataRows ?? [],
+      })
 
-    if (!res.ok) {
-      return {
-        ok: false,
-        error: `Falha ao criar lote ${quarter}: ${res.error}`,
-        lotes,
+      if (!res.ok) {
+        if (res.loteId) {
+          const removed = await discardUnlaunchedLote(res.loteId)
+          if (!removed.ok) {
+            return {
+              ok: false,
+              error: `${res.error} O lote ${quarter} ficou gravado e não pôde ser desfeito.`,
+              loteId: res.loteId,
+              quarter,
+            }
+          }
+        }
+        return { ok: false, error: res.error, quarter }
       }
-    }
 
-    lotes.push({
-      loteId: res.loteId,
-      quarter,
-      rowsProcessed: res.rowsProcessed,
-      catalogCode: group.catalogCode ?? '',
-    })
+      return {
+        ok: true,
+        loteId: res.loteId,
+        quarter,
+        rowsProcessed: res.rowsProcessed,
+        catalogCode: group.catalogCode ?? '',
+      }
+    },
+    removeGroup: async (created) => discardUnlaunchedLote(created.loteId),
+  })
+
+  if (!recorded.ok) {
+    const quarter = String(recorded.failed?.quarter ?? '').trim() || 'sem quarter'
+    const stuck = recorded.stuck ?? []
+    const failedLote =
+      recorded.failed?.loteId && !stuck.some((item) => item.loteId === recorded.failed.loteId)
+        ? [{ loteId: recorded.failed.loteId, quarter }]
+        : []
+    const remaining = [...stuck, ...failedLote]
+    const recovery =
+      remaining.length === 0
+        ? 'Nenhum lote parcial permaneceu. A importação pode ser repetida.'
+        : `Não foi possível desfazer: ${remaining
+            .map((item) => item.quarter || item.loteId)
+            .join(', ')}. Abra esses lotes em vez de importar a planilha de novo.`
+    return {
+      ok: false,
+      error: `Falha ao criar lote ${quarter}: ${recorded.error} ${recovery}`,
+      lotes: remaining,
+    }
   }
+
+  const lotes = recorded.created.map((item) => ({
+    loteId: item.loteId,
+    quarter: item.quarter,
+    rowsProcessed: item.rowsProcessed,
+    catalogCode: item.catalogCode ?? '',
+  }))
 
   return {
     ok: true,
     loteId: lotes[0]?.loteId,
     lotes,
-    rowsProcessed: lotes.reduce((sum, l) => sum + (l.rowsProcessed ?? 0), 0),
+    importGroupId,
+    rowsProcessed: lotes.reduce((sum, item) => sum + (item.rowsProcessed ?? 0), 0),
   }
 }

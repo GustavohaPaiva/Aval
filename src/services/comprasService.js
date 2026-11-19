@@ -3,7 +3,7 @@ import { invalidateSalesDashboardCache } from './salesDashboardCache'
 import { formatProdutoDisplayNome } from '../constants/mapeamentoCampos'
 import { formatSupabaseError } from '../utils/supabaseErrors'
 import { tonsToKg } from '../utils/comprasUnits'
-import { calcOcItemValores } from '../utils/comprasPrecos'
+import { negociacaoDoItem, precoOcFromNegociacao } from '../utils/comprasPrecos'
 import { DEFAULT_TAXA_JUROS } from '../utils/pricingCalculations'
 import {
   COMPRAS_EMBALAGEM_DEFAULT,
@@ -106,6 +106,7 @@ const DEMANDA_SIM_SELECT = `
     override_desconto_usd,
     override_taxa,
     override_vencimento_lista,
+    custo_brl_unitario,
     produtos_oficiais (
       id, nome, referencia_complementar, fornecedor_id, estado, classe, quarter,
       preco_original, desconto_usd, vencimento_lista, taxa_juros, fornecedores ( nome )
@@ -170,6 +171,7 @@ function mapDemandaLinhas(sims, alocs) {
         overrideDescontoUsd: item.override_desconto_usd,
         overrideTaxa: item.override_taxa,
         overrideVencimentoLista: item.override_vencimento_lista,
+        custoBrlUnitario: item.custo_brl_unitario,
         alocacoes: alocacoesByItem[item.id] ?? [],
         createdAt: sim.created_at,
       })
@@ -312,11 +314,30 @@ export async function fetchComprasList() {
   return { ok: true, rows }
 }
 
-export async function fetchCompraBundle(compraId) {
-  const { data, error } = await supabase
-    .from('compras')
-    .select(
-      `
+let taxaDolarSuportada = null
+
+function faltaColunaTaxaDolar(error) {
+  const text = `${error?.message ?? ''} ${error?.details ?? ''} ${error?.hint ?? ''}`
+  return /taxa_dolar/i.test(text) && /column|schema cache|does not exist/i.test(text)
+}
+
+async function compraAceitaTaxaDolar() {
+  if (taxaDolarSuportada != null) return taxaDolarSuportada
+  const { error } = await supabase.from('compra_itens').select('taxa_dolar').limit(1)
+  if (!error) {
+    taxaDolarSuportada = true
+    return true
+  }
+  if (faltaColunaTaxaDolar(error)) {
+    taxaDolarSuportada = false
+    return false
+  }
+  return true
+}
+
+function compraBundleSelect(comTaxa) {
+  const taxa = comTaxa ? 'taxa_dolar, ' : ''
+  return `
       id, numero, status, fornecedor_id, filial_site, filial_faturamento, planta, tipo_entrega,
       cidade_retirada, condicao_pagamento, data_documento, observacoes,
       faturamento, ctc, entrega_retirada,
@@ -326,26 +347,75 @@ export async function fetchCompraBundle(compraId) {
         id, produto_oficial_id, embalagem, volume_kg, volume_recebido_kg,
         unidade_exibicao, cultura, origem, lista, preco_usd, desconto_usd,
         vencimento_lista, pagamento_syagri, preco_corrigido, juros,
-        unitario_brl, frete, total, ordem,
+        ${taxa}unitario_brl, frete, total, ordem,
         produtos_oficiais (
           id, nome, referencia_complementar, fornecedor_id, estado, classe, quarter,
           preco_original, desconto_usd, vencimento_lista, taxa_juros, fornecedores ( nome )
         )
       )
+    `
+}
+
+async function negociacoesPorItem(itens) {
+  const ids = itens.map((item) => item.id).filter(Boolean)
+  if (ids.length === 0) return { ok: true, porItem: {} }
+  const { data, error } = await supabase
+    .from('alocacoes')
+    .select(
+      `
+      compra_item_id,
+      simulation_items (
+        override_taxa, override_custo_usd, override_desconto_usd, custo_brl_unitario
+      )
     `,
     )
+    .in('compra_item_id', ids)
+    .eq('origem_tipo', 'compra')
+  if (error) return fail(error, 'Não foi possível carregar o dólar da negociação.')
+  const porItem = {}
+  for (const row of data ?? []) {
+    const fontes = Array.isArray(row.simulation_items)
+      ? row.simulation_items
+      : row.simulation_items
+        ? [row.simulation_items]
+        : []
+    if (!row.compra_item_id || fontes.length === 0) continue
+    porItem[row.compra_item_id] = [...(porItem[row.compra_item_id] ?? []), ...fontes]
+  }
+  return { ok: true, porItem }
+}
+
+export async function fetchCompraBundle(compraId) {
+  const comTaxa = await compraAceitaTaxaDolar()
+  let { data, error } = await supabase
+    .from('compras')
+    .select(compraBundleSelect(comTaxa))
     .eq('id', compraId)
     .maybeSingle()
+  if (error && faltaColunaTaxaDolar(error)) {
+    taxaDolarSuportada = false
+    ;({ data, error } = await supabase
+      .from('compras')
+      .select(compraBundleSelect(false))
+      .eq('id', compraId)
+      .maybeSingle())
+  }
   if (error) return fail(error, 'Não foi possível carregar a ordem de compra.')
   if (!data) return { ok: false, error: 'Ordem de compra não encontrada.' }
 
-  const itens = (data.compra_itens ?? [])
+  const itensBase = (data.compra_itens ?? [])
     .slice()
     .sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0) || a.created_at?.localeCompare?.(b.created_at))
     .map((it) => ({
       ...it,
       product: mapProduto(it.produtos_oficiais),
     }))
+  const negociacoes = await negociacoesPorItem(itensBase)
+  if (!negociacoes.ok) return negociacoes
+  const itens = itensBase.map((it) => ({
+    ...it,
+    negociacao: negociacaoDoItem(it, negociacoes.porItem[it.id]),
+  }))
 
   return {
     ok: true,
@@ -772,37 +842,47 @@ export async function insertCompraItem(compraId, item) {
     .order('ordem', { ascending: false })
     .limit(1)
   const ordem = Number(existing?.[0]?.ordem ?? 0) + 1
-  const { data, error } = await supabase
-    .from('compra_itens')
-    .insert({
-      compra_id: compraId,
-      produto_oficial_id: item.produto_oficial_id,
-      embalagem: item.embalagem ?? COMPRAS_EMBALAGEM_DEFAULT,
-      volume_kg: item.volume_kg,
-      unidade_exibicao: item.unidade_exibicao ?? 't',
-      cultura: item.cultura || null,
-      origem: item.origem || null,
-      lista: item.lista || null,
-      preco_usd: item.preco_usd ?? null,
-      desconto_usd: item.desconto_usd ?? null,
-      vencimento_lista: item.vencimento_lista || null,
-      pagamento_syagri: item.pagamento_syagri || null,
-      preco_corrigido: item.preco_corrigido ?? null,
-      juros: item.juros ?? null,
-      unitario_brl: item.unitario_brl ?? null,
-      frete: item.frete ?? null,
-      total: item.total ?? null,
-      ordem,
-    })
-    .select('id')
-    .single()
+  const payload = {
+    compra_id: compraId,
+    produto_oficial_id: item.produto_oficial_id,
+    embalagem: item.embalagem ?? COMPRAS_EMBALAGEM_DEFAULT,
+    volume_kg: item.volume_kg,
+    unidade_exibicao: item.unidade_exibicao ?? 't',
+    cultura: item.cultura || null,
+    origem: item.origem || null,
+    lista: item.lista || null,
+    preco_usd: item.preco_usd ?? null,
+    desconto_usd: item.desconto_usd ?? null,
+    vencimento_lista: item.vencimento_lista || null,
+    pagamento_syagri: item.pagamento_syagri || null,
+    preco_corrigido: item.preco_corrigido ?? null,
+    juros: item.juros ?? null,
+    unitario_brl: item.unitario_brl ?? null,
+    frete: item.frete ?? null,
+    total: item.total ?? null,
+    ordem,
+  }
+  if (await compraAceitaTaxaDolar()) payload.taxa_dolar = item.taxa_dolar ?? null
+  let { data, error } = await supabase.from('compra_itens').insert(payload).select('id').single()
+  if (error && faltaColunaTaxaDolar(error)) {
+    taxaDolarSuportada = false
+    delete payload.taxa_dolar
+    ;({ data, error } = await supabase.from('compra_itens').insert(payload).select('id').single())
+  }
   if (error) return fail(error, 'Não foi possível adicionar o item.')
   invalidateSalesDashboardCache()
   return { ok: true, id: data.id }
 }
 
 export async function updateCompraItem(itemId, fields) {
-  const { error } = await supabase.from('compra_itens').update(fields).eq('id', itemId)
+  const payload = { ...fields }
+  if (!(await compraAceitaTaxaDolar())) delete payload.taxa_dolar
+  let { error } = await supabase.from('compra_itens').update(payload).eq('id', itemId)
+  if (error && faltaColunaTaxaDolar(error)) {
+    taxaDolarSuportada = false
+    delete payload.taxa_dolar
+    ;({ error } = await supabase.from('compra_itens').update(payload).eq('id', itemId))
+  }
   if (error) return fail(error, 'Não foi possível atualizar o item.')
   invalidateSalesDashboardCache()
   return { ok: true }
@@ -815,43 +895,6 @@ export async function deleteCompraItem(itemId) {
   return { ok: true }
 }
 
-export function itemPrecoFromDemanda(row, { volumeKg, unidade, taxaDolar } = {}) {
-  const custo =
-    row.overrideCustoUsd != null && row.overrideCustoUsd !== ''
-      ? Number(row.overrideCustoUsd)
-      : Number(row.product?.preco_original ?? 0)
-  const desconto =
-    row.overrideDescontoUsd != null && row.overrideDescontoUsd !== ''
-      ? Number(row.overrideDescontoUsd)
-      : Number(row.product?.desconto_usd ?? 0)
-  const taxa =
-    taxaDolar != null && taxaDolar !== ''
-      ? Number(taxaDolar)
-      : row.overrideTaxa != null && row.overrideTaxa !== ''
-        ? Number(row.overrideTaxa)
-        : null
-  const vencimento =
-    row.overrideVencimentoLista || row.product?.vencimento_lista || null
-  const valores = calcOcItemValores({
-    precoUsd: custo,
-    descontoUsd: desconto,
-    taxaDolar: Number.isFinite(taxa) && taxa > 0 ? taxa : 0,
-    volumeKg,
-    unidade: unidade ?? 't',
-    vencimentoLista: vencimento,
-    pagamentoSyagri: vencimento,
-    taxaJuros: row.product?.taxaJuros,
-  })
-  const temCambio = Number.isFinite(taxa) && taxa > 0 && volumeKg != null
-  return {
-    preco_usd: Number.isFinite(custo) ? custo : null,
-    desconto_usd: Number.isFinite(desconto) ? desconto : null,
-    vencimento_lista: vencimento,
-    pagamento_syagri: vencimento,
-    preco_corrigido: valores.precoCorrigido,
-    juros: valores.juros,
-    lista: row.product?.quarter || null,
-    unitario_brl: temCambio ? valores.unitarioBrl : null,
-    total: temCambio ? valores.total : null,
-  }
+export function itemPrecoFromDemanda(row, options) {
+  return precoOcFromNegociacao(row, options)
 }

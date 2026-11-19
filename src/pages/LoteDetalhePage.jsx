@@ -28,22 +28,35 @@ import {
   createStagingRow,
   deleteStagingRow,
   fetchLoteById,
+  fetchLotesByImportGroup,
   fetchProdutosOficiaisByLote,
   fetchStagingByLote,
   getStagingRowErrors,
   inativarListaImportacao,
   promoverLote,
+  promoverLotesDoGrupo,
   reativarListaImportacao,
   updateLoteMetadata,
   updateStagingRow,
 } from "../services/produtoImportacaoService";
 import { CLASSES_PRODUTO } from "../constants/mapeamentoCampos";
 
+const EMPTY_LOTE_GROUP = [];
+import {
+  collectQuarterLaunchIds,
+  formatQuarterLaunchFailure,
+  formatQuarterLaunchSuccess,
+} from "../utils/quarterLaunch";
+
 export function LoteDetalhePage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const siblingLotes = location.state?.siblingLotes ?? [];
+  const routeGroupLotes =
+    location.state?.groupLotes ??
+    location.state?.siblingLotes ??
+    EMPTY_LOTE_GROUP;
+  const [groupLotes, setGroupLotes] = useState(routeGroupLotes);
   const routeSuccessMessage = location.state?.successMessage ?? null;
   const cameFromListas = location.state?.from === "listas";
   const backTo = cameFromListas ? "/admin/listas" : "/admin/importacao";
@@ -147,6 +160,15 @@ export function LoteDetalhePage() {
 
       setLote(loteRes.row);
 
+      const groupId = loteRes.row.metadata_planilha?.importGroupId;
+      if (groupId) {
+        const groupRes = await fetchLotesByImportGroup(groupId);
+        if (!isActive || !isActive()) return;
+        if (groupRes.ok) setGroupLotes(groupRes.rows);
+      } else {
+        setGroupLotes(routeGroupLotes);
+      }
+
       if (loteRes.row.status === "concluido") {
         const oficiaisRes = await fetchProdutosOficiaisByLote(id);
         if (!isActive || !isActive()) return;
@@ -191,7 +213,7 @@ export function LoteDetalhePage() {
 
       setLoading(false);
     },
-    [id],
+    [id, routeGroupLotes],
   );
 
   useSyncPageLoading(loading);
@@ -213,6 +235,29 @@ export function LoteDetalhePage() {
     if (!summary) return rows.length > 0;
     return summary.erros === 0 && rows.length > 0;
   }, [lote, summary, rows.length, semEstadoCount]);
+
+  const launchIds = collectQuarterLaunchIds(lote?.id ?? id, groupLotes);
+  const hasOtherQuarters = launchIds.length > 1;
+  const hasPendingSibling = groupLotes.some(
+    (item) =>
+      String(item.loteId) !== String(lote?.id ?? id) &&
+      item.status !== "concluido",
+  );
+  const canLaunchAll = hasOtherQuarters
+    ? canLaunch || (lote?.status === "concluido" && hasPendingSibling)
+    : canLaunch;
+  const launchLabel = !hasOtherQuarters
+    ? "Lançar produtos"
+    : lote?.status === "concluido"
+      ? "Lançar quarters pendentes"
+      : "Lançar todos os quarters";
+  const groupQuarterLabel = [
+    ...new Set(
+      [lote?.quarter_calculado, ...groupLotes.map((item) => item.quarter)]
+        .map((value) => String(value ?? "").trim())
+        .filter(Boolean),
+    ),
+  ].join(", ");
 
   async function refreshMatch() {
     const matchRes = await applyStagingMatchToLote(id, lote.fornecedor_id);
@@ -365,25 +410,47 @@ export function LoteDetalhePage() {
     setLaunching(true);
     setActionError(null);
 
-    const res = await promoverLote(id);
+    if (!hasOtherQuarters) {
+      const res = await promoverLote(id);
+      setLaunching(false);
+      setConfirmLaunchOpen(false);
+
+      if (!res.ok) {
+        setActionError(res.error);
+        return;
+      }
+
+      const { novos = 0, atualizacoes = 0, listas_inativadas = 0 } =
+        res.result ?? {};
+      const baseMsg = `Lista lançada com sucesso: ${novos} novo(s), ${atualizacoes} atualização(ões).`;
+      const inativaMsg =
+        Number(listas_inativadas) > 0
+          ? ` ${listas_inativadas} lista(s) anterior(es) inativada(s).`
+          : "";
+      navigate("/admin/listas", {
+        state: {
+          successMessage: `${baseMsg}${inativaMsg}`,
+        },
+      });
+      return;
+    }
+
+    const res = await promoverLotesDoGrupo(launchIds, { sourceLoteId: id });
     setLaunching(false);
     setConfirmLaunchOpen(false);
 
     if (!res.ok) {
-      setActionError(res.error);
+      setActionError(formatQuarterLaunchFailure(res));
+      if ((res.launched ?? []).length > 0) {
+        setSuccessMessage(formatQuarterLaunchSuccess(res));
+      }
+      await loadData(() => true);
       return;
     }
 
-    const { novos = 0, atualizacoes = 0, listas_inativadas = 0 } =
-      res.result ?? {};
-    const baseMsg = `Lista lançada com sucesso: ${novos} novo(s), ${atualizacoes} atualização(ões).`;
-    const inativaMsg =
-      Number(listas_inativadas) > 0
-        ? ` ${listas_inativadas} lista(s) anterior(es) inativada(s).`
-        : "";
     navigate("/admin/listas", {
       state: {
-        successMessage: `${baseMsg}${inativaMsg}`,
+        successMessage: formatQuarterLaunchSuccess(res),
       },
     });
   }
@@ -424,7 +491,7 @@ export function LoteDetalhePage() {
           ) : null}
 
           <SiblingQuartersNav
-            siblingLotes={siblingLotes}
+            siblingLotes={groupLotes}
             currentLoteId={lote.id}
             currentQuarter={lote.quarter_calculado}
           />
@@ -489,7 +556,8 @@ export function LoteDetalhePage() {
               setRowModalOpen(true);
             }}
             onLaunch={() => setConfirmLaunchOpen(true)}
-            canLaunch={canLaunch}
+            canLaunch={canLaunchAll}
+            launchLabel={launchLabel}
             errorCount={summary?.erros ?? 0}
             onShowErrors={() => setStatusFilter("erro")}
           >
@@ -546,14 +614,20 @@ export function LoteDetalhePage() {
             />
           </LoteProductsSection>
 
-          {!productsReadOnly ? (
+          {!productsReadOnly || hasPendingSibling ? (
             <LoteLaunchBar
-              canLaunch={canLaunch}
+              canLaunch={canLaunchAll}
               launching={launching}
               onLaunch={() => setConfirmLaunchOpen(true)}
               summary={summary}
-              quarter={lote.quarter_calculado}
+              quarter={hasOtherQuarters ? groupQuarterLabel : lote.quarter_calculado}
               moeda={lote.moeda_detectada}
+              launchLabel={launchLabel}
+              hint={
+                hasOtherQuarters
+                  ? `Publica ${groupQuarterLabel}. Cada produto permanece no seu quarter.`
+                  : undefined
+              }
             />
           ) : null}
 
@@ -597,9 +671,11 @@ export function LoteDetalhePage() {
             }
           >
             <p className="text-sm text-slate-700">
-              {summary
-                ? `Serão lançados ${summary.novos} produto(s) novo(s) e ${summary.atualizacoes} atualização(ões) no catálogo oficial (quarter ${lote.quarter_calculado}, moeda ${lote.moeda_detectada}).`
-                : "Os produtos serão publicados no catálogo oficial."}
+              {hasOtherQuarters
+                ? `Serão lançadas as listas ${groupQuarterLabel}. Cada produto permanece no quarter da própria lista. Quarter já concluído não é gravado de novo.`
+                : summary
+                  ? `Serão lançados ${summary.novos} produto(s) novo(s) e ${summary.atualizacoes} atualização(ões) no catálogo oficial (quarter ${lote.quarter_calculado}, moeda ${lote.moeda_detectada}).`
+                  : "Os produtos serão publicados no catálogo oficial."}
             </p>
           </Modal>
         </>

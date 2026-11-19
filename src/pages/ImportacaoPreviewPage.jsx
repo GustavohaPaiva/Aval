@@ -289,7 +289,6 @@ export function ImportacaoPreviewPage() {
         return;
       }
 
-      const siblingLotes = (res.lotes ?? []).slice(1);
       const labels = (res.lotes ?? [])
         .map((l) => l.quarter)
         .filter(Boolean)
@@ -297,8 +296,8 @@ export function ImportacaoPreviewPage() {
 
       navigate(`/admin/importacao/lote/${res.loteId}`, {
         state: {
-          siblingLotes,
-          successMessage: `Criados ${res.lotes?.length ?? 0} lançamentos separados (${labels}). Valide e promova cada um.`,
+          groupLotes: res.lotes ?? [],
+          successMessage: `Listas criadas por quarter (${labels}). Revise e lance todas de uma vez.`,
         },
       });
       return;
@@ -385,12 +384,12 @@ export function ImportacaoPreviewPage() {
 
           {multiQuarter ? (
             <AlertMessage tone="info">
-              Esta planilha gerará {derivedQuarterGroups.length} listas
-              separadas ({derivedQuarterGroups
+              Esta planilha separa {derivedQuarterGroups.length} listas (
+              {derivedQuarterGroups
                 .map((g) => g.quarter)
                 .filter(Boolean)
                 .join(", ")}
-              ). Você revisará e lançará cada quarter de forma independente.
+              ). Um único lançamento publica todos os quarters.
             </AlertMessage>
           ) : null}
 
@@ -447,7 +446,7 @@ export function ImportacaoPreviewPage() {
               <p className="mt-1 text-sm text-slate-600">
                 {totalPreviewRows} linha(s) serão importadas
                 {multiQuarter
-                  ? ` em ${derivedQuarterGroups.length} lançamentos separados`
+                  ? ` em ${derivedQuarterGroups.length} listas por quarter`
                   : ""}{" "}
                 (embalagem 1000KG / Big bag liner, quando a coluna existir).
               </p>

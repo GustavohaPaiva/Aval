@@ -4,6 +4,7 @@ import {
   statusLabelPt,
 } from '../constants/simulationStatus'
 import { formatBRL } from '../utils/money'
+import { FinanceiroSituacao } from './financeiro/FinanceiroSituacao'
 import { resolveSimulationListAction } from './SimulationListCard'
 import { Button } from './ui/Button'
 import { DataTable } from './ui/DataTable'
@@ -81,6 +82,21 @@ export function SimulationListTable({
         ),
       },
     ]
+
+    if (listKind === 'pedidos') {
+      cols.push({
+        key: 'financeiro',
+        header: 'Financeiro',
+        cell: (row) =>
+          row.financeiro ? (
+            <div className="min-w-44">
+              <FinanceiroSituacao {...row.financeiro} compact />
+            </div>
+          ) : (
+            <span className="text-slate-400">—</span>
+          ),
+      })
+    }
 
     if (isGestor) {
       cols.push({

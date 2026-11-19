@@ -20,7 +20,7 @@ import { AuthProvider } from "./contexts/AuthProvider";
 import { MainLayout } from "./layouts/MainLayout";
 import { Login } from "./pages/Login";
 import { supabaseConfigError } from "./services/supabase";
-import { ROLES_OPERACAO_LOGISTICA } from "./utils/roleAccess";
+import { ROLES_OPERACAO_FINANCEIRA, ROLES_OPERACAO_LOGISTICA } from "./utils/roleAccess";
 
 const AdminPage = lazy(() =>
   import("./pages/AdminPage").then((m) => ({ default: m.AdminPage })),
@@ -156,6 +156,26 @@ const LogisticaPedidosPage = lazy(() =>
 const LogisticaPedidoDetalhePage = lazy(() =>
   import("./pages/logistica/LogisticaPedidoDetalhePage").then((m) => ({
     default: m.LogisticaPedidoDetalhePage,
+  })),
+);
+const FinanceiroPedidosPage = lazy(() =>
+  import("./pages/financeiro/FinanceiroPedidosPage").then((m) => ({
+    default: m.FinanceiroPedidosPage,
+  })),
+);
+const FinanceiroPedidoDetalhePage = lazy(() =>
+  import("./pages/financeiro/FinanceiroPedidoDetalhePage").then((m) => ({
+    default: m.FinanceiroPedidoDetalhePage,
+  })),
+);
+const GerenciarFinanceiro = lazy(() =>
+  import("./pages/GerenciarFinanceiro").then((m) => ({
+    default: m.GerenciarFinanceiro,
+  })),
+);
+const FinanceiroUsuarioDetalhePage = lazy(() =>
+  import("./pages/FinanceiroUsuarioDetalhePage").then((m) => ({
+    default: m.FinanceiroUsuarioDetalhePage,
   })),
 );
 
@@ -339,6 +359,26 @@ export default function App() {
                 }
               />
               <Route
+                path="financeiro"
+                element={
+                  <ProtectedRoute roles={ROLES_OPERACAO_FINANCEIRA}>
+                    <LazyPage>
+                      <FinanceiroPedidosPage />
+                    </LazyPage>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="financeiro/:simulationId"
+                element={
+                  <ProtectedRoute roles={ROLES_OPERACAO_FINANCEIRA}>
+                    <LazyPage>
+                      <FinanceiroPedidoDetalhePage />
+                    </LazyPage>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
                 path="compras"
                 element={
                   <ProtectedRoute roles={ROLES_GESTOR}>
@@ -467,6 +507,22 @@ export default function App() {
                   element={
                     <LazyPage>
                       <LogisticaUsuarioDetalhePage />
+                    </LazyPage>
+                  }
+                />
+                <Route
+                  path="financeiro"
+                  element={
+                    <LazyPage>
+                      <GerenciarFinanceiro />
+                    </LazyPage>
+                  }
+                />
+                <Route
+                  path="financeiro/:id"
+                  element={
+                    <LazyPage>
+                      <FinanceiroUsuarioDetalhePage />
                     </LazyPage>
                   }
                 />

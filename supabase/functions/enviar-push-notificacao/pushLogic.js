@@ -85,7 +85,11 @@ export function notificationTargetPath({ type, simulationId, role }) {
   }
   const id = encodeURIComponent(String(simulationId))
   const isGestor = role === 'gestor'
-  if (type === 'order_approved' || type === 'pedido_fields_updated') {
+  if (
+    type === 'order_approved'
+    || type === 'pedido_fields_updated'
+    || type === 'pagamento_vencimento'
+  ) {
     return `/pedido/${id}`
   }
   if (type === 'simulation_gestor_updated') {

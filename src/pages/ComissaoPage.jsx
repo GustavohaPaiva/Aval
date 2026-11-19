@@ -24,14 +24,18 @@ import {
   deleteComissaoFaixa,
   fetchComissaoFaixas,
   fetchComissaoRegistroDetalhe,
+  fetchComissaoRegistroItens,
   fetchComissaoRegistros,
   updateComissaoFaixa,
 } from "../services/comissaoService";
+import { linhasExportacaoComissao, workbookComissoes } from "../utils/comissaoExport";
 import {
   calcComissaoMediaPercentual,
   TIPOS_COMISSAO_PRODUTO,
 } from "../utils/comissaoCalculations";
 import { formatShortDate } from "../utils/formatShortDate";
+import { comissaoLiberadaPorQuitacao } from "../utils/financeiroSituacao";
+import { resumoFinanceiroPedidos } from "../services/financeiroService";
 import {
   formatBRL,
   formatComissaoPctValor,
@@ -784,6 +788,7 @@ export function ComissaoPage() {
   const { role } = useAuth();
   const isGestor = role === "gestor";
   const [registros, setRegistros] = useState([]);
+  const [liberacaoByPedido, setLiberacaoByPedido] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [paramsOpen, setParamsOpen] = useState(false);
@@ -822,9 +827,26 @@ export function ComissaoPage() {
     if (!res.ok) {
       setError(res.error);
       setRegistros([]);
+      setLiberacaoByPedido({});
       return;
     }
     setRegistros(res.rows);
+    const resumo = await resumoFinanceiroPedidos(
+      res.rows.map((row) => row.simulation_id),
+    );
+    if (isActive && !isActive()) return;
+    if (!resumo.ok) {
+      setLiberacaoByPedido({});
+      return;
+    }
+    setLiberacaoByPedido(
+      Object.fromEntries(
+        resumo.rows.map((row) => [
+          row.simulationId,
+          comissaoLiberadaPorQuitacao(row),
+        ]),
+      ),
+    );
   }, []);
 
   useSyncPageLoading(loading);
@@ -894,20 +916,28 @@ export function ComissaoPage() {
   async function exportXlsx() {
     setExporting(true);
     try {
+      const [itensRes, resumo] = await Promise.all([
+        fetchComissaoRegistroItens(filtered.map((row) => row.id)),
+        resumoFinanceiroPedidos(filtered.map((row) => row.simulation_id)),
+      ]);
+      if (!itensRes.ok) {
+        setError(itensRes.error);
+        return;
+      }
+      if (!resumo.ok) {
+        setError(resumo.error || "Não foi possível consultar a situação financeira.");
+        return;
+      }
+      const linhas = linhasExportacaoComissao({
+        registros: filtered,
+        itens: itensRes.rows,
+        financeiroById: Object.fromEntries(
+          resumo.rows.map((row) => [row.simulationId, row]),
+        ),
+      });
       const XLSX = await import("xlsx");
-      const sheet = XLSX.utils.json_to_sheet(
-        filtered.map((row) => ({
-          Consultor: row.consultor_nome || "",
-          Cliente: row.simulations?.clients?.nome || "",
-          Status: row.status || "",
-          Data: toLocalDateKey(row.calculado_em) || "",
-          Base: row.base_calculo ?? "",
-          Comissao: row.comissao_valor ?? "",
-        })),
-      );
-      const book = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(book, sheet, "Comissoes");
-      XLSX.writeFile(book, "comissoes.xlsx");
+      XLSX.writeFile(workbookComissoes(XLSX, linhas), "comissoes.xlsx");
+      setError(null);
     } finally {
       setExporting(false);
     }
@@ -920,8 +950,9 @@ export function ComissaoPage() {
       {
         key: "consultor",
         header: "Consultor",
+        align: "center",
         cell: (row) => (
-          <div className="min-w-0">
+          <div className="min-w-0 text-center">
             <p className="font-medium text-slate-900">{consultorNome(row)}</p>
             <p className="truncate text-xs text-slate-500">
               {clienteNome(row)}
@@ -932,24 +963,47 @@ export function ComissaoPage() {
       {
         key: "valor",
         header: "Comissão",
-        align: "right",
+        align: "center",
         cell: (row) => <ComissaoValorLink row={row} />,
       },
       {
         key: "data",
         header: "Data",
+        align: "center",
         cell: (row) =>
           row.calculado_em ? formatShortDate(row.calculado_em) : "—",
       },
       {
         key: "status",
         header: "Status",
+        align: "center",
         cell: (row) => <StatusBadge status={row.status} />,
+      },
+      {
+        key: "liberacao",
+        header: "Liberação",
+        align: "center",
+        cell: (row) => {
+          const liberada = liberacaoByPedido[row.simulation_id];
+          if (liberada == null) return <span className="text-slate-400">—</span>;
+          return (
+            <span
+              className={[
+                "inline-flex rounded-full px-2.5 py-1 text-xs font-semibold",
+                liberada
+                  ? "bg-emerald-50 text-emerald-800"
+                  : "bg-slate-100 text-slate-600",
+              ].join(" ")}
+            >
+              {liberada ? "Liberada" : "Aguardando quitação"}
+            </span>
+          );
+        },
       },
       {
         key: "acoes",
         header: "",
-        align: "right",
+        align: "center",
         cell: (row) => (
           <button
             type="button"
@@ -963,7 +1017,7 @@ export function ComissaoPage() {
         ),
       },
     ],
-    [],
+    [liberacaoByPedido],
   );
 
   return (
@@ -1128,31 +1182,27 @@ export function ComissaoPage() {
                   <button
                     type="button"
                     onClick={() => openPedido(row)}
-                    className="w-full text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
+                    className="flex w-full flex-col items-center gap-3 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="font-semibold text-slate-900">
-                          {consultorNome(row)}
-                        </p>
-                        <p className="mt-0.5 truncate text-sm text-slate-500">
-                          {clienteNome(row)}
-                        </p>
-                      </div>
-                      <StatusBadge status={row.status} />
-                    </div>
-                    <div className="mt-3 flex items-end justify-between gap-3">
-                      <p className="text-sm text-slate-500">
-                        {row.calculado_em
-                          ? formatShortDate(row.calculado_em)
-                          : "—"}
+                    <div className="min-w-0">
+                      <p className="font-semibold text-slate-900">
+                        {consultorNome(row)}
                       </p>
-                      <span className="finance-text text-base font-semibold text-primary-700 underline-offset-2">
-                        {registroComissaoLabel(row)}
-                      </span>
+                      <p className="mt-0.5 truncate text-sm text-slate-500">
+                        {clienteNome(row)}
+                      </p>
                     </div>
+                    <StatusBadge status={row.status} />
+                    <p className="text-sm text-slate-500">
+                      {row.calculado_em
+                        ? formatShortDate(row.calculado_em)
+                        : "—"}
+                    </p>
+                    <span className="finance-text text-base font-semibold text-primary-700 underline-offset-2">
+                      {registroComissaoLabel(row)}
+                    </span>
                   </button>
-                  <div className="mt-3 flex justify-end border-t border-slate-100 pt-3">
+                  <div className="mt-3 flex justify-center border-t border-slate-100 pt-3">
                     <button
                       type="button"
                       className="inline-flex size-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-primary-50 hover:text-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"

@@ -24,6 +24,7 @@ import {
   notificationOpensPedido,
   notificationTypeLabel,
 } from "../services/notificationService";
+import { AVISO_VENCIMENTO_TIPO } from "../services/vencimentoAvisos";
 
 const NOTIFICATION_TYPES = [
   "approval_request",
@@ -38,6 +39,7 @@ const NOTIFICATION_TYPES = [
   "pedido_fields_updated",
   "exchange_rate_changed",
   "price_list_changed",
+  AVISO_VENCIMENTO_TIPO,
   "push_test",
 ];
 
@@ -90,6 +92,7 @@ function typeBadgeClass(type) {
     case "approval_request":
     case "order_approval_request":
     case "order_conversion_request":
+    case AVISO_VENCIMENTO_TIPO:
       return "bg-amber-50 text-amber-800 ring-1 ring-amber-200";
     case "simulation_approved":
     case "order_approved":
@@ -456,7 +459,7 @@ export function NotificacoesPage() {
               {filtered.map((row) => {
                 const unread = !row.read_at;
                 const openLabel =
-                  row.type === "order_approved"
+                  row.type === "order_approved" || row.type === AVISO_VENCIMENTO_TIPO
                     ? "Abrir pedido"
                     : notificationOpensPedido(row.type) && isGestor
                       ? "Abrir pedido"

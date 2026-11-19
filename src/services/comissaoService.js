@@ -398,7 +398,7 @@ const REGISTRO_SELECT = `
   status,
   calculado_em,
   faixas_override,
-  simulations ( id, status, total_proposta, created_at, clients ( nome ) )
+  simulations ( id, status, total_proposta, created_at, data_negociacao, data_pagamento, clients ( nome ) )
 `
 
 /**
@@ -447,6 +447,61 @@ export async function fetchComissaoRegistros(params = {}) {
     rows: rows.map((row) => ({
       ...row,
       consultor_nome: consultorNomeById[String(row.consultor_id)] || null,
+    })),
+  }
+}
+
+const ITENS_EXPORT_SELECT = `
+  id,
+  comissao_registro_id,
+  simulation_item_id,
+  product_id,
+  base_calculo,
+  margem_percentual,
+  comissao_percentual,
+  comissao_valor,
+  produtos_oficiais ( nome )
+`
+
+/**
+ * Itens já calculados dos registros, para a exportação por produto.
+ * Não recalcula margem nem comissão.
+ * @param {string[]} registroIds
+ */
+export async function fetchComissaoRegistroItens(registroIds) {
+  const ids = [...new Set((registroIds ?? []).filter(Boolean))]
+  if (ids.length === 0) return { ok: true, rows: [] }
+
+  const pageSize = 1000
+  const rows = []
+  for (let start = 0; start < ids.length; start += 200) {
+    const chunk = ids.slice(start, start + 200)
+    for (let offset = 0; offset < 50000; offset += pageSize) {
+      const { data, error } = await supabase
+        .from('comissao_registro_itens')
+        .select(ITENS_EXPORT_SELECT)
+        .in('comissao_registro_id', chunk)
+        .order('id', { ascending: true })
+        .range(offset, offset + pageSize - 1)
+      if (error) return { ok: false, error: error.message }
+      const page = data ?? []
+      rows.push(...page)
+      if (page.length < pageSize) break
+    }
+  }
+
+  return {
+    ok: true,
+    rows: rows.map((row) => ({
+      id: row.id,
+      comissao_registro_id: row.comissao_registro_id,
+      simulation_item_id: row.simulation_item_id,
+      product_id: row.product_id,
+      base_calculo: row.base_calculo,
+      margem_percentual: row.margem_percentual,
+      comissao_percentual: row.comissao_percentual,
+      comissao_valor: row.comissao_valor,
+      produto_nome: row.produtos_oficiais?.nome ?? '',
     })),
   }
 }

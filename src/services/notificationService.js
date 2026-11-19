@@ -1,3 +1,4 @@
+import { AVISO_VENCIMENTO_TIPO } from './vencimentoAvisos'
 import { supabase } from './supabase'
 
 export const NOTIFICATIONS_CHANGED_EVENT = 'aval:notifications-changed'
@@ -241,6 +242,8 @@ export function notificationTypeLabel(type) {
       return 'Alteração no valor do dólar'
     case 'price_list_changed':
       return 'Lista de produtos'
+    case AVISO_VENCIMENTO_TIPO:
+      return 'Pagamento próximo do vencimento'
     case 'push_test':
       return 'Teste de push'
     default:
@@ -254,7 +257,8 @@ export function isOrderNotification(type) {
     type === 'order_conversion_request' ||
     type === 'order_approved' ||
     type === 'order_rejected' ||
-    type === 'pedido_fields_updated'
+    type === 'pedido_fields_updated' ||
+    type === AVISO_VENCIMENTO_TIPO
   )
 }
 
@@ -263,6 +267,7 @@ export function notificationOpensPedido(type) {
     type === 'order_approval_request' ||
     type === 'order_approved' ||
     type === 'order_rejected' ||
-    type === 'pedido_fields_updated'
+    type === 'pedido_fields_updated' ||
+    type === AVISO_VENCIMENTO_TIPO
   )
 }

@@ -131,8 +131,8 @@ export function SiblingQuartersNav({
               Planilha com múltiplos quarters
             </p>
             <p className="mt-1 text-sm text-slate-600">
-              Cada quarter vira um lançamento independente. Valide e promova um
-              por um.
+              As listas continuam separadas por quarter. O lançamento publica
+              todas de uma vez.
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
               <span className="inline-flex items-center rounded-xl bg-primary-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm">
@@ -151,6 +151,7 @@ export function SiblingQuartersNav({
                   className="inline-flex items-center rounded-xl bg-white px-3 py-1.5 text-sm font-semibold text-primary-700 ring-1 ring-sky-200/80 transition hover:bg-sky-50 hover:ring-sky-300"
                 >
                   {sibling.quarter || 'Lote'}
+                  {sibling.status === 'concluido' ? ' · lançado' : ''}
                 </Link>
               ))}
             </div>
@@ -175,6 +176,7 @@ export function LoteProductsSection({
   onAddProduct,
   onLaunch,
   canLaunch,
+  launchLabel = 'Lançar produtos',
   errorCount = 0,
   onShowErrors,
   children,
@@ -203,7 +205,7 @@ export function LoteProductsSection({
                   Adicionar produto
                 </Button>
                 <Button type="button" disabled={!canLaunch} onClick={onLaunch}>
-                  Lançar produtos
+                  {launchLabel}
                 </Button>
               </ButtonGroup>
             ) : null}
@@ -263,6 +265,8 @@ export function LoteLaunchBar({
   summary,
   quarter,
   moeda,
+  launchLabel = 'Lançar produtos',
+  hint,
 }) {
   if (!canLaunch && !summary) return null
 
@@ -274,11 +278,12 @@ export function LoteLaunchBar({
             Pronto para lançar?
           </p>
           <p className="mt-0.5 text-xs text-slate-600">
-            {summary
-              ? `${summary.novos} novo(s) · ${summary.atualizacoes} atualização(ões)${
-                  quarter ? ` · ${quarter}` : ''
-                }${moeda ? ` · ${moeda}` : ''}`
-              : 'Revise os metadados e produtos antes de publicar no catálogo.'}
+            {hint ??
+              (summary
+                ? `${summary.novos} novo(s) · ${summary.atualizacoes} atualização(ões)${
+                    quarter ? ` · ${quarter}` : ''
+                  }${moeda ? ` · ${moeda}` : ''}`
+                : 'Revise os metadados e produtos antes de publicar no catálogo.')}
           </p>
         </div>
         <Button
@@ -288,7 +293,7 @@ export function LoteLaunchBar({
           onClick={onLaunch}
           className="sm:shrink-0"
         >
-          Lançar produtos
+          {launchLabel}
         </Button>
       </div>
     </div>

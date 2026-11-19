@@ -203,4 +203,33 @@ describe('formatOcMensagem', () => {
     expect(msg).toContain('Vencimento: 30/10/2026')
     expect(msg).toContain('Vencimento: 30/11/2026')
   })
+
+  it('mostra o dólar salvo e não troca pela negociação', () => {
+    const msg = formatOcMensagem(
+      { numero: 'OC-8', filial_site: 'uberaba', data_documento: '2026-09-01' },
+      [
+        {
+          product: { displayNome: 'MAP' },
+          volume_kg: 1000,
+          preco_usd: 100,
+          desconto_usd: 0,
+          taxa_dolar: 5.33,
+          unitario_brl: 550,
+          negociacao: { overrideTaxa: 5.5 },
+        },
+      ],
+      'YARA',
+    )
+    expect(msg).toContain('Dólar negociado: 5,33')
+    expect(msg).not.toContain('Dólar negociado: 5,50')
+  })
+
+  it('sem dólar registrado, a mensagem não usa outra cotação', () => {
+    const msg = formatOcMensagem(
+      { numero: 'OC-9', filial_site: 'uberaba', data_documento: '2026-09-01' },
+      [{ product: { displayNome: 'MAP' }, volume_kg: 1000, preco_usd: 100, desconto_usd: 0 }],
+      'YARA',
+    )
+    expect(msg).toContain('Dólar negociado: —')
+  })
 })

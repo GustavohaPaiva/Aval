@@ -27,7 +27,7 @@ export function DashboardPage() {
 
   useAbortableAsync(
     async (_signal, isActive) => {
-      if (role === 'logistica') {
+      if (role === 'logistica' || role === 'financeiro') {
         if (isActive()) setLoading(false)
         return
       }
@@ -63,11 +63,15 @@ export function DashboardPage() {
       setGestorStats(null)
     },
     [user?.id, role],
-    !initializing && Boolean(user?.id) && Boolean(role) && role !== 'logistica',
+    !initializing && Boolean(user?.id) && Boolean(role) && role !== 'logistica' && role !== 'financeiro',
   )
 
   if (role === 'logistica') {
     return <Navigate to="/logistica" replace />
+  }
+
+  if (role === 'financeiro') {
+    return <Navigate to="/financeiro" replace />
   }
 
   const gestorCards = gestorStats

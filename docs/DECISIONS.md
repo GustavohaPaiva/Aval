@@ -1,5 +1,23 @@
 # Decisões
 
+## 2026-11-19 — Dólar do pedido ao fornecedor
+O dólar negociado vem do câmbio gravado na linha da negociação ou, se ele não foi gravado, do custo em reais congelado naquela venda dividido pelo líquido em dólar do próprio item. A cotação vigente não entra. Se a conta não fecha, o campo fica vazio para preenchimento manual. O valor salvo em `compra_itens.taxa_dolar` prevalece sobre a negociação ao reabrir. Pedido antigo sem essa coluna usa o unitário em reais já gravado, quando existe. A coluna foi criada no Syagri-Test e, em 19/11, no Syagri oficial. Nenhuma compra foi regravada.
+
+## 2026-11-19 — Lançamento único dos quarters da mesma planilha
+Planilha com mais de um quarter continua em listas separadas. O lançamento percorre todas as listas da mesma importação. Quarter, preço e produto de cada linha não mudam de lista. Lista já concluída não é promovida de novo. Falha em um quarter interrompe os seguintes; a repetição grava só o que ainda está aguardando validação. Lista sem estado herda estado, desconto e taxas da lista revisada, e não herda o quarter. Planilha de um quarter só permanece no lançamento de um lote.
+
+## 2026-11-19 — Excel de comissão por produto
+A planilha leva o snapshot de `comissao_registro_itens`: margem, percentual e valor já gravados, um produto por linha. A margem média do pedido não substitui a margem da linha. A data da venda é `data_negociacao` ou, se vazia, o dia de `created_at` em America/Sao_Paulo. O vencimento é o vigente do resumo financeiro; sem título, fica `data_pagamento`. Pago segue a liberação da tela: valor devido maior que zero e quitação integral. Pedido de valor zero quitado sai como Não pago. Parcial, pendente e estorno que reabre saldo ficam Não pago em todos os produtos do pedido. O valor calculado permanece mesmo sem quitação. A comissão do gestor João continua de fora. Filtros, permissão e o módulo financeiro não mudam.
+
+## 2026-11-19 — Aviso de vencimento ao consultor
+O aviso sai 3 dias antes do vencimento vigente, no calendário de America/Sao_Paulo, só para o consultor dono do pedido convertido e ativo com saldo maior que zero. Quitado, zerado, atrasado e qualquer outra distância ficam de fora. Dia perdido não gera aviso depois. Cada pedido tem um aviso por data, gravado em `notificacoes.avisos_vencimento`; a data antiga já avisada não é reenviada, e a data renegociada pode ser avisada quando chegar aos 3 dias. Se o consultor mudar antes da execução, recebe o responsável daquele momento. A notificação interna é o INSERT já existente; o push continua no gatilho atual e uma falha dele não apaga o aviso. O cron diário é 11:00 UTC, 08:00 em São Paulo. O classificador financeiro, o recebimento e a comissão não mudam. Em 19/11 as migrations entraram só no Syagri-Test. O banco oficial continua sem elas.
+
+## 2026-11-19 — Situação única na tela financeira
+A tela mostra um status por pedido: quitado, atrasado, próximo do vencimento, parcial, pendente ou sem vencimento. Próximo, na tela, é hoje e os 3 dias seguintes. Atraso e proximidade aparecem no lugar de parcial ou pendente. O classificador do banco continua com a janela de 7 dias e não foi alterado. Comissão, estorno e valor devido seguem a decisão de 18/11.
+
+## 2026-11-18 — Recebimento do pedido e liberação da comissão
+Não havia parcela nem título de cliente. O vencimento continua em `simulations.data_pagamento` e o valor negociado em `total_proposta`. O título financeiro nasce no primeiro recebimento ou na primeira renegociação e guarda esse valor. Renegociação muda só o vencimento e guarda a data anterior. Estorno não apaga a linha. Quitado exige 100% do valor devido. Comissão liberada exige quitação e valor devido maior que zero; pagamento parcial não libera. O status antigo da comissão e o Excel permanecem. Próximo do vencimento é hoje mais 7 dias, em America/Sao_Paulo. Recebimento e renegociação só em pedido convertido e ativo. Essas regras foram aplicadas no Syagri-Test. O banco oficial não entrou.
+
 ## 2026-11-17 — Planta da OC é cidade, com estado
 No pedido ao fornecedor, a planta é Uberaba (Minas Gerais), Cubatão (São Paulo) ou Rio Grande (Rio Grande). Ituverava, Nova Ponte, Guaíra e Frutal são filial comercial e não entram no seletor nem no texto da planta. Sem uma dessas três cidades gravada, a planta do documento fica em branco. A filial de faturamento continua à parte. Compras já gravadas não são reescritas.
 

@@ -1,5 +1,11 @@
 import { formatQtyByUnit, formatUsd } from './comprasUnits'
-import { ocItemValoresPedido, ocTotalBrl } from './comprasPrecos'
+import {
+  dolarNegociadoResumo,
+  formatTaxaDolar,
+  ocItemValoresPedido,
+  ocTotalBrl,
+  resolverTaxaDolarItem,
+} from './comprasPrecos'
 import {
   cidadeDaPlanta,
   ocFaturamento,
@@ -18,6 +24,10 @@ function bold(value) {
 
 function brlOrDash(value) {
   return value == null ? '—' : formatBRL(value)
+}
+
+function textoDolar(taxa) {
+  return `Dólar negociado: ${formatTaxaDolar(taxa) ?? '—'}`
 }
 
 export function formatOcMensagem(compra, itens, fornecedorNome) {
@@ -42,6 +52,8 @@ export function formatOcMensagem(compra, itens, fornecedorNome) {
     lines.push(`Entrega/retirada: ${compra.entrega_retirada.trim()}`)
   }
   if (compra.ctc?.trim()) lines.push(`CTC: ${compra.ctc.trim()}`)
+  const dolar = dolarNegociadoResumo(itens)
+  if (dolar.unico || dolar.ausente) lines.push(textoDolar(dolar.taxa))
 
   for (const item of itens ?? []) {
     const valores = ocItemValoresPedido(item)
@@ -63,6 +75,9 @@ export function formatOcMensagem(compra, itens, fornecedorNome) {
     if (item.cultura) lines.push(`Cultura: ${item.cultura}`)
     if (item.origem) lines.push(`Origem: ${item.origem}`)
     if (lista) lines.push(`Lista: ${lista}`)
+    if (!dolar.unico && !dolar.ausente) {
+      lines.push(textoDolar(resolverTaxaDolarItem(item).taxa))
+    }
   }
 
   const totalOc = ocTotalBrl(itens)

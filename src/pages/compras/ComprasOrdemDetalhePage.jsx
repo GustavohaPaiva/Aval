@@ -51,9 +51,11 @@ import {
   parseQtyInput,
 } from '../../utils/comprasUnits'
 import {
+  AVISO_DOLAR_AUSENTE,
   calcOcItemValores,
-  inferTaxaDolar,
   parseOcNumber,
+  resolverTaxaDolarItem,
+  taxaDolarInput,
 } from '../../utils/comprasPrecos'
 import { formatBRL } from '../../utils/money'
 
@@ -540,15 +542,8 @@ export function ComprasOrdemDetalhePage() {
 function OcItemEditor({ item, canEdit, canReceive, onSaved, onDelete, onReceive }) {
   const [preco, setPreco] = useState(item.preco_usd ?? '')
   const [desc, setDesc] = useState(item.desconto_usd ?? '')
-  const [dolar, setDolar] = useState(() => {
-    const inferred = inferTaxaDolar({
-      precoUsd: item.preco_usd,
-      descontoUsd: item.desconto_usd,
-      unitarioBrl: item.unitario_brl,
-      precoCorrigido: item.preco_corrigido,
-    })
-    return inferred == null ? '' : String(Number(inferred.toFixed(6)))
-  })
+  const dolarInicial = resolverTaxaDolarItem(item)
+  const [dolar, setDolar] = useState(() => taxaDolarInput(dolarInicial.taxa))
   const [vencimento, setVencimento] = useState(
     String(item.vencimento_lista ?? '').slice(0, 10),
   )
@@ -614,7 +609,7 @@ function OcItemEditor({ item, canEdit, canReceive, onSaved, onDelete, onReceive 
     }
     if (parseOcNumber(preco) != null && valores.unitarioBrl == null) {
       setSaving(false)
-      setError('Informe a cotação negociada. A cotação do dia não entra no cálculo.')
+      setError('Informe o dólar negociado. A cotação do dia não entra no cálculo.')
       return
     }
     const res = await updateCompraItem(item.id, {
@@ -627,6 +622,7 @@ function OcItemEditor({ item, canEdit, canReceive, onSaved, onDelete, onReceive 
       pagamento_syagri: pagamentoSyagri || null,
       preco_corrigido: valores.precoCorrigido,
       juros: valores.juros,
+      taxa_dolar: parseOcNumber(dolar),
       cultura: cultura.trim() || null,
       origem: origem.trim() || null,
       lista: lista.trim() || null,
@@ -717,11 +713,14 @@ function OcItemEditor({ item, canEdit, canReceive, onSaved, onDelete, onReceive 
           readOnly
         />
         <Input
-          label="Cotação negociada"
+          label="Dólar negociado"
           value={dolar}
           onChange={(e) => setDolar(e.target.value)}
           disabled={!canEdit}
         />
+        {dolarInicial.origem === 'ausente' && !String(dolar).trim() ? (
+          <p className="text-xs text-amber-800 sm:col-span-2 lg:col-span-4">{AVISO_DOLAR_AUSENTE}</p>
+        ) : null}
         <DatePicker
           label="Vencimento da lista"
           value={vencimento}
@@ -835,7 +834,7 @@ function ModalAddItem({ fornecedorId, onClose, onSave }) {
       return
     }
     if (valores.unitarioBrl == null) {
-      setError('Informe o preço em dólar e a cotação negociada. A cotação do dia não entra no cálculo.')
+      setError('Informe o preço em dólar e o dólar negociado. A cotação do dia não entra no cálculo.')
       return
     }
     const vencimento = product?.vencimento_lista ?? null
@@ -854,6 +853,7 @@ function ModalAddItem({ fornecedorId, onClose, onSave }) {
       pagamento_syagri: vencimento,
       preco_corrigido: valores.precoCorrigido,
       juros: valores.juros,
+      taxa_dolar: parseOcNumber(cotacao),
       unitario_brl: valores.unitarioBrl,
       total: valores.total,
     })
@@ -907,7 +907,10 @@ function ModalAddItem({ fornecedorId, onClose, onSave }) {
           <Input label="Preço USD" value={preco} onChange={(e) => setPreco(e.target.value)} />
           <Input label="Desconto USD" value={desc} onChange={(e) => setDesc(e.target.value)} />
           <Input label="Valor com desconto" value={valores.liquidoUsd == null ? '' : String(valores.liquidoUsd)} disabled readOnly />
-          <Input label="Cotação negociada" value={cotacao} onChange={(e) => setCotacao(e.target.value)} />
+          <Input label="Dólar negociado" value={cotacao} onChange={(e) => setCotacao(e.target.value)} />
+          {!String(cotacao).trim() ? (
+            <p className="text-xs text-amber-800 sm:col-span-2">{AVISO_DOLAR_AUSENTE}</p>
+          ) : null}
           <Input label="Unitário R$" value={valores.unitarioBrl == null ? '' : String(valores.unitarioBrl)} disabled readOnly />
         </div>
       </form>

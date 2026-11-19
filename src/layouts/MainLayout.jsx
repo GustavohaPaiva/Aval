@@ -126,6 +126,11 @@ function navSectionsForRole(role) {
             label: "Logística",
             icon: IconTruck,
           },
+          {
+            to: "/admin/financeiro",
+            label: "Financeiro",
+            icon: IconDollarSign,
+          },
           { to: "/frete", label: "Fretes", icon: IconTruck },
         ],
       },
@@ -141,6 +146,7 @@ function navSectionsForRole(role) {
           },
           { to: "/pedidos", label: "Pedidos", icon: IconPackage },
           { to: "/logistica", label: "Logística", icon: IconTruck },
+          { to: "/financeiro", label: "Financeiro", icon: IconDollarSign },
           { to: "/compras", label: "Compras", icon: IconWarehouse },
         ],
       },
@@ -168,6 +174,20 @@ function navSectionsForRole(role) {
     ];
   }
 
+  if (role === "financeiro") {
+    return [
+      {
+        items: [
+          {
+            to: "/financeiro",
+            label: "Recebimentos",
+            icon: IconDollarSign,
+          },
+        ],
+      },
+    ];
+  }
+
   return [
     {
       items: [
@@ -189,6 +209,7 @@ function cargoLabel(role) {
   if (role === "gestor") return "Gestor";
   if (role === "consultor") return "Consultor";
   if (role === "logistica") return "Logística";
+  if (role === "financeiro") return "Financeiro";
   return "—";
 }
 
@@ -387,7 +408,7 @@ export function MainLayout() {
   }, [prefCollapsed, isDashboard]);
 
   useEffect(() => {
-    if (!user?.id || !role || role === "logistica") {
+    if (!user?.id || !role || role === "logistica" || role === "financeiro") {
       return undefined;
     }
 

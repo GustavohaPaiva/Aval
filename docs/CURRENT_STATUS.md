@@ -1,3 +1,103 @@
+# Estado atual — 2026-11-19, dólar negociado no pedido ao fornecedor
+
+## Verificado nesta revisão
+25 testes de preço da ordem de compra e da mensagem passaram. No Syagri oficial, o papel `financeiro`, as tabelas de recebimento, o aviso de vencimento, o cron `financeiro_aviso_vencimento` e a coluna `compra_itens.taxa_dolar` existem. As 63 compras do oficial continuam com o dólar vazio. Nenhum recebimento foi gravado. A tela autenticada não foi percorrida: a ordem abre o login.
+
+## O que mudou
+O dólar do pedido ao fornecedor sai da negociação: o câmbio gravado na linha ou o custo em reais congelado naquela venda. A cotação do dia não preenche. Sem esse registro, o campo fica vazio e a tela avisa. O valor salvo no item, inclusive edição manual, prevalece ao reabrir. Pedido antigo com unitário em reais mantém o dólar implícito nesse valor. PDF e mensagem mostram o dólar efetivo.
+
+## O que entrou no oficial
+As migrations locais posteriores a `20261111230000`: papel financeiro, recebimentos, tipo `pagamento_vencimento`, aviso de vencimento e dólar negociado. A política de `public.products` só é recriada se a tabela existir; no oficial ela não existe. Migrations antigas, já aplicadas com outro número, não foram reexecutadas.
+
+## Próxima etapa
+Entrar como gestor, abrir um pedido de compra ligado a uma negociação e conferir o dólar, uma edição manual e o PDF.
+
+# Estado atual — 2026-11-19, lançamento único da lista Cibra
+
+## Verificado nesta revisão
+8 testes novos de lançamento por quarter passaram. O lint dos arquivos alterados ficou limpo. A tela autenticada não foi percorrida: o lançamento exige sessão de gestor. Nenhum lote foi gravado no Syagri-Test. O banco oficial não foi alterado.
+
+## O que mudou
+Planilha com mais de um quarter continua gerando uma lista por quarter. O botão de lançamento publica todas de uma vez, cada produto no quarter da própria lista. Quarter já concluído não é enviado de novo. Se a gravação de um quarter falha, os seguintes não entram e a nova tentativa continua só o que falta. Lista de um quarter só, e os demais fornecedores, seguem o lançamento de um lote.
+
+## Pendências
+Conferir na tela, com uma planilha Cibra de dois quarters, se um clique publica as duas listas.
+
+## Próxima etapa
+Entrar como gestor, importar a lista da Cibra e lançar os quarters juntos.
+
+# Estado atual — 2026-11-19, alinhamento da tabela de comissões
+
+## Verificado nesta revisão
+Cabeçalhos e valores da tabela de comissões ficam centralizados no desktop, e o cartão do mobile empilha os mesmos campos no centro. Cálculo, filtro e Excel não mudaram. A tela autenticada não foi percorrida: `/comissao` abre o login.
+
+## Próxima etapa
+Entrar como gestor e conferir a tabela no desktop e o cartão no celular.
+
+# Estado atual — 2026-11-19, Excel de comissões por produto
+
+## Verificado nesta revisão
+11 testes de exportação passaram, junto com os de situação financeira. As cinco falhas da suíte são `ENOENT` ao abrir arquivos em `Planilhas de Fornecedores/`, pasta ignorada pelo Git e ausente no disco. Os demais testes desses arquivos passaram. O lint dos arquivos alterados ficou limpo. A planilha usa o snapshot já gravado em `comissao_registro_itens` e a situação atual de `resumo_financeiro_pedidos`. Nenhum valor de comissão foi recalculado, o módulo financeiro não mudou e o banco não foi alterado. A tela autenticada não foi percorrida.
+
+## O que mudou
+A exportação passa a uma linha por produto: data da venda, vencimento vigente, consultor, cliente, produto, valor, margem individual, comissão em % e em R$, e Pago ou Não pago. Pago segue a tela: valor devido maior que zero e quitação integral. Valor zero quitado sai como Não pago. Pagamento parcial e estorno que reabre saldo ficam Não pago em todos os produtos. O valor calculado da comissão continua na linha. Os filtros e a permissão de gestor permanecem.
+
+## Pendências
+Registro sem itens de produto não entra no arquivo. A comissão do gestor João não foi implementada. A data da venda do Excel é `simulations.data_negociacao`; `data_venda` existe só na carga histórica.
+
+## Próxima etapa
+Entrar como gestor, exportar comissões e conferir um pedido com mais de um produto, um parcial e um quitado.
+
+# Estado atual — 2026-11-19, aviso de vencimento no teste
+
+## Verificado nesta revisão
+As migrations do aviso foram aplicadas só no Syagri-Test (`uszbvqmquniuorxkqyat`). A função `notificacoes.avisar_vencimentos_financeiros` existe e o cron `financeiro_aviso_vencimento` está ativo, `0 11 * * *`. Nenhum pedido real vencia em 22/11/2026. Um pedido fictício, com consultor sem inscrição push, gerou um aviso interno e uma entrega push `skipped` / `no_subscription`. A segunda execução devolveu zero. Usuário, cliente, pedido, aviso e entrega de teste foram apagados. O banco oficial não foi alterado. Frontend e Edge Function não foram publicados.
+
+## Pendências
+Publicar o frontend e a função `enviar-push-notificacao` continua necessário para o clique do aviso abrir o pedido no site oficial. A migration ainda não entrou no Syagri oficial.
+
+# Estado atual — 2026-11-19, aviso de vencimento
+
+## Verificado nesta revisão
+29 testes passaram em `vencimentoAvisos` e no destino do push. O lint desses arquivos ficou limpo. A rotina não foi aplicada no Syagri-Test nem no Syagri oficial. Nenhum recebimento, comissão ou classificador financeiro foi alterado. A tela autenticada não foi percorrida.
+
+## O que mudou
+O aviso de 3 dias reutiliza `public.notifications` e o gatilho de push já existente. A rotina `notificacoes.avisar_vencimentos_financeiros` escolhe pedido convertido, ativo, com saldo em aberto e consultor atual. A data é a de America/Sao_Paulo e o vencimento vigente, inclusive depois de renegociação. O registro `notificacoes.avisos_vencimento` guarda um envio por pedido e data. O cron previsto é `financeiro_aviso_vencimento`, às 11:00 UTC.
+
+## Pendências
+Aplicar as migrations `20261119123000` e `20261119123100` no Syagri-Test, com confirmação. Republicar o frontend e a função `enviar-push-notificacao` para o clique abrir o pedido. Sem isso, o aviso não entra no banco e o push publicado ainda não conhece o caminho novo. Não há variável nova.
+
+## Próxima etapa
+Confirmar a aplicação no Syagri-Test e, num pedido de teste que vença em 3 dias, chamar a função uma vez e de novo para ver um único aviso.
+
+# Estado atual — 2026-11-19, refinamento da tela financeira
+
+## Verificado nesta revisão
+Testes de situação financeira e de acesso passaram no Vitest. A listagem usa um status só, com filtro local na mesma regra de 3 dias. O recebimento pede confirmação antes de gravar e trava o segundo clique. Banco, comissão e usuários financeiros não foram alterados. A tela autenticada não foi percorrida: o fluxo exige login.
+
+## O que mudou
+Busca e filtro alinhados. Valores total, recebido e saldo mais claros. Modal de recebimento menor, com pagamento total e data de hoje em America/Sao_Paulo. Renegociação mostra a data atual e a nova. O histórico permanece.
+
+## Pendências
+O classificador SQL ainda marca próximo em 7 dias. A tela ignora essa janela e calcula os 3 dias no navegador. As decisões de valor congelado, pedido convertido e comissão continuam abertas como em 18/11.
+
+## Próxima etapa
+Entrar como financeiro ou gestor e conferir a listagem, o pagamento total e a renegociação no Syagri-Test.
+
+# Estado atual — 2026-11-18, módulo financeiro
+
+## Verificado nesta revisão
+13 testes de situação financeira e de acesso passaram. No Syagri-Test, `financeiro_classificar` devolveu pendente, parcial, quase quitado (saldo 0,01), quitado com comissão liberada, próximo, no prazo e pedido zerado sem liberar comissão. `registrar_recebimento` sem sessão respondeu "Não autenticado". O papel `anon` não lê nem grava as tabelas novas; `authenticated` só lê. Nenhum recebimento foi lançado em pedido existente. O banco Syagri oficial não foi alterado.
+
+## O que mudou
+Papel `financeiro`, carteira de recebimentos, estorno, renegociação de vencimento e consulta só leitura na lista e na tela do pedido. A comissão ganhou a coluna Liberação. O Excel de comissão não mudou.
+
+## Pendências
+Valor devido congelado no primeiro lançamento não acompanha mudança posterior do total do pedido. Recebimento só entra em pedido convertido e ativo. Próximo do vencimento são 7 dias. Pedido com valor zero fica quitado na cobrança e não libera comissão. Correção de valor é estorno mais novo recebimento. A tela autenticada não foi percorrida nesta sessão.
+
+## Próxima etapa
+Entrar como gestor no Syagri-Test, abrir Recebimentos e registrar um recebimento parcial num pedido convertido de teste. Só depois decidir a migration no Syagri oficial.
+
 # Estado atual — 2026-11-17, planta da OC
 
 ## Verificado nesta revisão
